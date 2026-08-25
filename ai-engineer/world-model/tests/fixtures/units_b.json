@@ -1,0 +1,6 @@
+[
+  {"unit":"ssh.service","load":"loaded","active":"failed","sub":"failed","description":"OpenSSH server daemon"},
+  {"unit":"cronie.service","load":"loaded","active":"inactive","sub":"dead","description":"Command scheduler"},
+  {"unit":"nginx.service","load":"loaded","active":"active","sub":"running","description":"The nginx HTTP and reverse proxy server"},
+  {"unit":"docker.service","load":"loaded","active":"failed","sub":"failed","description":"Docker Application Container Engine"}
+]

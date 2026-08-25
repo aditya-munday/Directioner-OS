@@ -1,0 +1,6 @@
+[
+  {"unit_file":"ssh.service","state":"enabled","preset":"enabled"},
+  {"unit_file":"cronie.service","state":"enabled","preset":"enabled"},
+  {"unit_file":"nginx.service","state":"disabled","preset":"disabled"},
+  {"unit_file":"docker.service","state":"disabled","preset":"disabled"}
+]

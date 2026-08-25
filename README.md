@@ -65,12 +65,20 @@ real hardware before it is proven in a disposable VM.
 
 ## Status
 
-- [x] Phase 0.1 bootable image: Containerfile / build.sh / CI defined
+- [x] Phase 0.1 bootable image — **verified in CI**: podman build → bootc-image-builder
+      (`--rootfs xfs`) → qcow2 → headless QEMU boot → SSH in → motd + systemd + bootc asserted
 - [x] Phase 0.2 Capability Layer skeleton: `file.read|write`, `package.install`
       (dry-run), `service.status|restart` over a Unix socket, audit-before-execute
 - [x] Phase 0.3 Audit log: append-only JSONL, `ai-worklog` CLI
-- [x] Phase 0.4 Kill-switch: `ai-killswitch engage|release|status`
-- [ ] Phase 1.1+ world-model, planner/implementer roles, benchmark suite, …
+- [x] Phase 0.4 Kill-switch: `ai-killswitch engage|release|status` (lock-file
+      re-read per request; cross-process engage verified live)
+- [x] Phase 1.1 World-model v1: SQLite package + service graphs, dnf5 repoquery /
+      rpm -qa sync adapters, systemctl snapshot + event-diff poller,
+      `ai-worldmodel` CLI (`depends-on`, `requires`, `unit`, `failed-since`,
+      `watch`, `--json`), work-log-staleness auto-resync — fixture-tested,
+      offline queries < 10 ms
+- [ ] Phase 1.2+ planner/implementer roles, dry-run UI, blast-radius rules,
+      benchmark suite, …
 
 See `docs/phase-0-checklist.md` for the detailed Phase 0 tracking.
 

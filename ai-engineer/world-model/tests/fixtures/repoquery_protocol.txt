@@ -1,0 +1,60 @@
+PKG|glibc|2.39-22.fc42|x86_64|The GNU libc libraries
+PROV|glibc|ld-linux-x86-64.so.2()(64bit)|
+END
+PKG|bash|5.2.26-3.fc42|x86_64|The GNU Bourne Again shell
+REQ|bash|glibc|>=|2.28
+REQ|bash|libtinfo.so.6()(64bit)||
+PROV|bash|/bin/sh|
+END
+PKG|coreutils|9.5-8.fc42|x86_64|A set of basic utilities from GNU
+REQ|coreutils|glibc|>=|2.28
+END
+PKG|systemd|256.4-1.fc42|x86_64|System and Service Manager
+REQ|systemd|dbus-broker||
+PROV|systemd|systemd = 256.4-1.fc42|
+END
+PKG|dbus-broker|36-2.fc42|x86_64|D-Bus message broker
+END
+PKG|openssl-libs|1:3.2.4-2.fc42|x86_64|Crypto-policies support for openssl
+PROV|openssl-libs|libssl.so.3()(64bit)|
+PROV|openssl-libs|libcrypto.so.3()(64bit)|
+PROV|openssl-libs|openssl-libs = 1:3.2.4-2.fc42|
+END
+PKG|openssl|1:3.2.4-2.fc42|x86_64|Utilities from the general purpose cryptography library
+REQ|openssl|openssl-libs|>=|1:3.0.0
+PROV|openssl|openssl = 1:3.2.4-2.fc42|
+END
+PKG|libcurl|8.9.1-1.fc42|x86_64|A library for getting files from web servers
+REQ|libcurl|libssl.so.3()(64bit)||
+END
+PKG|curl|8.9.1-1.fc42|x86_64|A utility for getting files from remote servers
+REQ|curl|libcurl|>=|7.60
+END
+PKG|nginx|2:1.26.1-1.fc42|x86_64|A high performance web server and reverse proxy server
+REQ|nginx|openssl|>=|1:1.1.1
+REQ|nginx|pcre2|>=|10.32
+REQ|nginx|systemd||
+PROV|nginx|webserver|
+END
+PKG|mod_ssl|2:1.26.1-1.fc42|x86_64|SSL/TLS module for the Apache HTTP Server
+REQ|mod_ssl|libssl.so.3()(64bit)||
+REQ|mod_ssl|openssl-libs|>=|1:3.0.8
+END
+PKG|stunnel|5.72-3.fc42|x86_64|A TLS encryption wrapper
+REQ|stunnel|openssl|>=|1:1.1.1
+END
+PKG|openssh-server|9.8p1-3.fc42|x86_64|OpenSSH server daemon
+REQ|openssh-server|libcrypto.so.3()(64bit)||
+END
+PKG|openssh-clients|9.8p1-3.fc42|x86_64|An open source SSH client applications
+REQ|openssh-clients|libcrypto.so.3()(64bit)||
+END
+PKG|firewalld|2.2.0-3.fc42|noarch|A firewall daemon with D-Bus interface
+REQ|firewalld|python3|>=|3.6
+END
+PKG|python3|3.13.0~rc1-1.fc42|x86_64|Version 3 of the Python interpreter
+PROV|python3|python(abi) = 3.13|
+END
+PKG|git-core|2.46.0-1.fc42|x86_64|Core package of git with minimal functionality
+REQ|git-core|libcurl|>=|7.62
+END

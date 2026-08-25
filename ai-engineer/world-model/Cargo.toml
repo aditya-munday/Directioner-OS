@@ -1,0 +1,23 @@
+[package]
+name = "world-model"
+description = "Directioner-OS System World-Model v1: local SQLite package + service graphs (Phase 1.1)"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+publish = false
+
+[dependencies]
+rusqlite = { version = "0.32", features = ["bundled"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+chrono = { version = "0.4", default-features = false, features = ["clock", "std"] }
+
+[[bin]]
+name = "ai-worldmodel"
+path = "src/bin/ai-worldmodel.rs"
+
+[lints]
+workspace = true
+[dev-dependencies]
+tempfile = "3"
