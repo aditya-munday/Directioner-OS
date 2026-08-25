@@ -45,8 +45,8 @@ impl CmdSpec {
 }
 
 pub const REPOQUERY_QF: &str = "PKG|%{NAME}|%{EVR}|%{ARCH}|%{SUMMARY}\n\
-[REQ|%{NAME}|%{REQUIRENAME}|%{REQUIREFLAGS:depflags}|%{REQUIREVERSION}\n]\
-[PROV|%{NAME}|%{PROVIDESNAME}|%{PROVIDESVERSION}\n]\
+[REQ|%{REQUIRENAME}|%{REQUIREFLAGS:depflags}|%{REQUIREVERSION}\n]\
+[PROV|%{PROVIDESNAME}|%{PROVIDESVERSION}\n]\
 END\n";
 
 pub fn dnf5_repoquery_spec(path_override: Option<&Path>) -> CmdSpec {
@@ -131,57 +131,41 @@ pub fn parse_line_protocol(text: &str) -> Result<PackageData, String> {
                 let pkg = current
                     .as_ref()
                     .ok_or_else(|| format!("line {}: REQ before any PKG", idx + 1))?;
-                if cols.len() < 5 {
+                if cols.len() < 4 {
                     return Err(format!(
-                        "line {}: REQ needs at least 5 columns, got {}",
+                        "line {}: REQ needs at least 4 columns, got {}",
                         idx + 1,
                         cols.len()
                     ));
                 }
-                if cols[1] != *pkg {
-                    return Err(format!(
-                        "line {}: REQ package '{}' does not match open record '{}'",
-                        idx + 1,
-                        cols[1],
-                        pkg
-                    ));
-                }
-                if cols[2].is_empty() || cols[2].starts_with('(') {
+                if cols[1].is_empty() || cols[1].starts_with('(') {
                     continue;
                 }
                 data.requires.push(RequireEdge {
                     pkg: pkg.clone(),
-                    dep: cols[2].to_string(),
-                    flags: cols[3].to_string(),
-                    version: cols[4..].join("|"),
+                    dep: cols[1].to_string(),
+                    flags: cols[2].to_string(),
+                    version: cols[3..].join("|"),
                 });
             }
             "PROV" => {
                 let pkg = current
                     .as_ref()
                     .ok_or_else(|| format!("line {}: PROV before any PKG", idx + 1))?;
-                if cols.len() < 4 {
+                if cols.len() < 3 {
                     return Err(format!(
-                        "line {}: PROV needs at least 4 columns, got {}",
+                        "line {}: PROV needs at least 3 columns, got {}",
                         idx + 1,
                         cols.len()
                     ));
                 }
-                if cols[1] != *pkg {
-                    return Err(format!(
-                        "line {}: PROV package '{}' does not match open record '{}'",
-                        idx + 1,
-                        cols[1],
-                        pkg
-                    ));
-                }
-                if cols[2].is_empty() || cols[2].starts_with('/') {
+                if cols[1].is_empty() || cols[1].starts_with('/') {
                     continue;
                 }
                 data.provides.push(ProvideEdge {
                     pkg: pkg.clone(),
-                    provide: cols[2].to_string(),
-                    version: cols[3..].join("|"),
+                    provide: cols[1].to_string(),
+                    version: cols[2..].join("|"),
                 });
             }
             "END" => {
