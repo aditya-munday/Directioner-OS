@@ -1,0 +1,33 @@
+[Unit]
+Description=AI Engineer Capability Layer daemon (ai-capabilityd)
+Documentation=file:///usr/share/doc/ai-capabilityd/README.md
+# Hard dependency: the capability daemon is the only way the AI touches the system.
+After=local-fs.target
+
+[Service]
+Type=simple
+ExecStart=/usr/bin/ai-capabilityd \
+    --socket /run/ai-capabilityd/ai-capabilityd.sock \
+    --audit-log /var/lib/ai-engineer/worklog.jsonl \
+    --lock-file /run/ai-capabilityd/ai-capabilityd.lock \
+    --do-not-touch /etc/ai-engineer/do-not-touch.list \
+    --work-root /home
+RuntimeDirectory=ai-capabilityd
+# Capability Layer needs privilege to perform package/service/file operations.
+# Tighten per-operation via SELinux domains (configs/selinux/), never via root shell.
+User=root
+Restart=on-failure
+RestartSec=2
+
+# Defense in depth: the process can only see these paths.
+# Lockdown increases below as adapters are wired to SELinux domains.
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=false
+ReadWritePaths=/var/lib/ai-engineer /etc/ai-engineer
+ProtectKernelTunables=true
+ProtectControlGroups=true
+
+[Install]
+WantedBy=multi-user.target

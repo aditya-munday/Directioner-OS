@@ -1,0 +1,17 @@
+[Unit]
+Description=AI Engineer kill-switch (engages immediately, independent of agent health)
+# This unit is deliberately a fire-extinguisher: it stops every ai-* service and
+# writes the locks ai-capabilityd refuses to operate under. It must be bindable to
+# a physical key combo and a recovery-menu entry (guide §6.5 / Phase 0.4).
+DefaultDependencies=no
+Conflicts=shutdown.target
+Before=shutdown.target
+
+[Service]
+Type=oneshot
+ExecStart=/usr/bin/ai-killswitch engage --stop-service
+# One-shot: do not restart, do not linger.
+RemainAfterExit=no
+
+[Install]
+WantedBy=multi-user.target

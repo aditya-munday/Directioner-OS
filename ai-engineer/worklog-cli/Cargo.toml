@@ -1,0 +1,20 @@
+[package]
+name = "worklog-cli"
+description = "Directioner-OS Work Log CLI — read the append-only AI Engineer audit journal"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+publish = false
+
+[dependencies]
+capability-layer = { path = "../capability-layer" }
+chrono = { version = "0.4", default-features = false, features = ["clock", "std"] }
+serde_json = "1"
+
+[[bin]]
+name = "ai-worklog"
+path = "src/main.rs"
+
+[lints]
+workspace = true

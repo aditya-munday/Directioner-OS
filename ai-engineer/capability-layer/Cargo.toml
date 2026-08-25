@@ -1,0 +1,28 @@
+[package]
+name = "capability-layer"
+description = "Directioner-OS Capability Layer: typed, audited, kill-switchable system API (Phase 0.2/0.3/0.4)"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+publish = false
+
+[dependencies]
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+chrono = { version = "0.4", default-features = false, features = ["clock", "std", "serde"] }
+parking_lot = "0.12"
+
+[dev-dependencies]
+tempfile = "3"
+
+[[bin]]
+name = "ai-capabilityd"
+path = "src/main.rs"
+
+[[bin]]
+name = "ai-killswitch"
+path = "src/bin/ai-killswitch.rs"
+
+[lints]
+workspace = true

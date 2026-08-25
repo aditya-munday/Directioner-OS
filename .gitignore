@@ -1,0 +1,24 @@
+# Rust build artifacts
+target/
+**/target/
+
+# Local runtime artifacts (dev-mode daemon defaults)
+/run/
+/tmp/ai-engineer/
+*.sock
+*.lock
+
+# Image build output
+image/output/
+image/*.qcow2
+
+# Editor / OS
+.DS_Store
+*.swp
+.idea/
+.vscode/
+
+# Local state
+local-state/
+
+# NOTE: Cargo.lock is committed for this application workspace (reproducible builds).

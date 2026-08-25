@@ -1,0 +1,28 @@
+# Directioner-OS — Phase 0.1 bootable custom image
+#
+# Pipeline: Containerfile (in) → bootc container → bootc-image-builder → qcow2 (out)
+# Rule: configuration & layering on top of Fedora — never modify Fedora source.
+# Base: Fedora 42 bootc (ostree image). See guide §1.
+
+FROM quay.io/fedora/fedora-bootc:42
+
+# ------------------------------------------------------------------
+# Sanity-check layer: prove the pipeline works (guide §1.2).
+# A fresh VM must boot with every package + config we add present.
+# ------------------------------------------------------------------
+RUN dnf install -y neovim tmux htop \
+    && dnf clean all
+
+RUN echo 'Hello from the AI-Native OS build' > /etc/motd
+
+# ------------------------------------------------------------------
+# Phase 0 bundle (once ai-capabilityd etc. are packaged as RPMs):
+#   COPY configs/systemd/ /usr/lib/systemd/system/  (or ship an RPM)
+#   RUN dnf install -y ai-capabilityd ai-worklog \
+#       && systemctl enable ai-capabilityd.service \
+#       && dnf clean all
+# The services are distributed as layered RPMs, not baked patches.
+# ------------------------------------------------------------------
+
+# bootc images should not carry metadata-only layers; keep this file minimal
+# until the Phase 0 RPMs exist.

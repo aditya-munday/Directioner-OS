@@ -1,0 +1,18 @@
+[workspace]
+resolver = "2"
+members = ["capability-layer", "worklog-cli"]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2024"
+license = "Apache-2.0"
+repository = "https://github.com/your-org/Directioner-OS"
+
+# Shared lints for the whole workspace.
+[workspace.lints.rust]
+unsafe_code = "forbid"
+missing_docs = "warn"
+
+[profile.release]
+lto = true
+strip = true
