@@ -209,13 +209,18 @@ jobs:
           ssh_cmd 'test -f /tmp/wm.sqlite && echo DB_CREATED' | grep -q DB_CREATED \
             || { echo 'FAIL: world-model sqlite DB not created'; exit 1; }
 
-          echo '==> assertion 5: depends-on openssl returns real, non-empty results'
-          depends_out=$(ssh_cmd '/tmp/ai-worldmodel --db /tmp/wm.sqlite depends-on openssl 2>&1')
-          echo "$depends_out"
-          pkg_count=$(echo "$depends_out" | grep -E '^[0-9]+ package' | awk '{print $1}')
-          echo "depends-on openssl -> ${pkg_count:-none} package(s)"
-          echo "$depends_out" | grep -Eq '^[1-9][0-9]* package\(s\) depend on openssl:' \
-            || { echo 'FAIL: depends-on openssl did not return any depending packages'; exit 1; }
+          echo '==> assertion 5: reverse dependency queries return real, non-empty results'
+          echo '--> testing depends-on glibc'
+          glibc_out=$(ssh_cmd '/tmp/ai-worldmodel --db /tmp/wm.sqlite depends-on glibc 2>&1')
+          echo "$glibc_out"
+          echo "$glibc_out" | grep -Eq '^[1-9][0-9]* package\(s\) depend on glibc:' \
+            || { echo 'FAIL: depends-on glibc returned no packages'; exit 1; }
+
+          echo '--> testing depends-on openssl-libs'
+          openssl_out=$(ssh_cmd '/tmp/ai-worldmodel --db /tmp/wm.sqlite depends-on openssl-libs 2>&1')
+          echo "$openssl_out"
+          echo "$openssl_out" | grep -Eq '^[1-9][0-9]* package\(s\) depend on openssl-libs:' \
+            || { echo 'FAIL: depends-on openssl-libs returned no packages'; exit 1; }
 
           echo '==> assertion 6: failed-since returns structurally sane output'
           failed_out=$(ssh_cmd '/tmp/ai-worldmodel --db /tmp/wm.sqlite failed-since 1h 2>&1')
