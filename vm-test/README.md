@@ -32,14 +32,23 @@ rm vm-test/run.qcow2   # disposable — next run starts clean again
 3. Real machine only with the dry-run/preview step actually read.
 4. Pin the previous bootc deployment until the new one has been used ≥ 1 day.
 
-## CI smoke contract
-
-The CI `vm-smoke` job boots the produced qcow2 with the serial console in
-`-nographic` mode and asserts the custom motd (`Hello from the AI-Native OS build`)
-appears on the console. That proves the image boots to a login prompt.
-
 Future phases will add scenario runners here:
 
 - `scenarios/` — one directory per benchmark task (setup script, task prompt, checker)
 - `scored/` — pass/fail result JSON the Benchmark Suite aggregates
 - Phase 3 will add fault injection (break a service / boot slot, measure MTTR to rollback)
+
+## CI smoke contract
+
+The CI `vm-smoke` job boots the produced qcow2 headlessly with user-mode
+networking (port 2222 → guest 22), waits for SSH using the disposable `ci`
+user, then asserts over SSH: the custom motd is present, systemd reached
+`running`/`degraded`, and `bootc --version` works. That is the guide §2.3
+contract: "SSH in, check a systemd unit is active."
+
+## About `ci_key` / `ci_key.pub`
+
+A throwaway ed25519 keypair whose public half is injected into CI-built images
+(`config.toml` at build time, user `ci`). It exists only so the headless VM
+smoke test can SSH into a freshly booted disposable VM. It grants access to
+nothing else — never reuse it outside this repo's CI.

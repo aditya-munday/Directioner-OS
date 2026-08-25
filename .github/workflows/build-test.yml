@@ -1,13 +1,13 @@
 # Directioner-OS CI (guide §2.3, §4)
 #
 # Every push:
-#   1. cargo test the Phase 0 capability layer + worklog (fast, plain ubuntu runner)
-#   2. podman build the bootc image (validates layers/packages)
-#   3. bootc-image-builder -> qcow2 (validates a real disk image is produced)
-#   4. headless VM smoke test: boot the qcow2, ssh in, check the custom motd
-#      and a systemd unit. Uses KVM when /dev/kvm exists, else TCG (slow but works
-#      on GitHub-hosted runners). Can be skipped with --skip-vm-smoke when the
-#      runner has no virtualization.
+#   1. cargo test the Phase 0 capability layer + worklog
+#   2. podman build the bootc image (rootful, so bootc-image-builder shares storage)
+#   3. bootc-image-builder -> qcow2, with a disposable CI user injected for SSH
+#   4. headless VM smoke test: boot the qcow2 (KVM if present, else TCG),
+#      SSH in over user-mode networking, assert the custom motd and that
+#      systemd reached running/degraded. Uses the guide's contract: "SSH in,
+#      check a systemd unit is active".
 name: build-test
 
 on:
@@ -17,7 +17,7 @@ on:
   workflow_dispatch:
     inputs:
       skip-vm-smoke:
-        description: 'Skip the slow TCG VM boot smoke test'
+        description: 'Skip the slow VM boot smoke test'
         type: boolean
         default: false
 
@@ -38,8 +38,6 @@ jobs:
         run: cargo fmt --all -- --check
       - name: clippy
         working-directory: ai-engineer
-        # -A missing-docs: documented code is the long-term goal, but the CI gate
-        # must not fail on the Phase 0 skeleton while docs are being written.
         run: cargo clippy --workspace --all-targets -- -D warnings -A missing-docs
       - name: test
         working-directory: ai-engineer
@@ -51,24 +49,36 @@ jobs:
     needs: rust-tests
     steps:
       - uses: actions/checkout@v4
-      - name: Install podman + bootc tooling
+      - name: Install podman
         run: |
           sudo apt-get update
-          sudo apt-get install -y podman qemu-utils
-      - name: podman build
+          sudo apt-get install -y podman
+      - name: Build OS image (rootful so the builder sees the same storage)
         working-directory: image
         run: |
-          podman build -t "${{ env.IMAGE_TAG }}" -f Containerfile .
-      - name: bootc-image-builder -> qcow2
+          sudo podman build -t "${{ env.IMAGE_TAG }}" -f Containerfile .
+          sudo podman images | grep ai-os
+      - name: Emit qcow2 via bootc-image-builder (with CI user for SSH smoke test)
         working-directory: image
         run: |
           mkdir -p output
+          PUBKEY="$(tr -d '\n' < ../vm-test/ci_key.pub)"
+          cat > config.toml <<EOF
+          [[customizations.user]]
+          name = "ci"
+          key = "${PUBKEY}"
+          groups = ["wheel"]
+          EOF
+          echo '--- config.toml ---'; cat config.toml
           sudo podman run --rm --privileged \
             --security-opt label=type:unconfined_t \
             -v "$(pwd)/output":/output \
+            -v "$(pwd)/config.toml":/config.toml:ro \
             -v /var/lib/containers/storage:/var/lib/containers/storage \
             quay.io/centos-bootc/bootc-image-builder:latest \
-            --type qcow2 "${{ env.IMAGE_TAG }}"
+            --type qcow2 --config /config.toml \
+            "${{ env.IMAGE_TAG }}"
+          ls -la output/qcow2/
       - name: Upload disk image artifact
         uses: actions/upload-artifact@v4
         with:
@@ -77,45 +87,83 @@ jobs:
           if-no-files-found: error
 
   vm-smoke:
-    name: headless VM smoke test
+    name: headless VM boot + SSH smoke test
     runs-on: ubuntu-24.04
     needs: build-image
+    timeout-minutes: 50
     if: ${{ !(github.event.inputs.skip-vm-smoke == 'true') }}
     steps:
       - uses: actions/checkout@v4
-      - name: Download qcow2
+      - name: Download qcow2 artifact
         uses: actions/download-artifact@v4
         with:
           name: ai-os-qcow2
           path: vm
-      - name: Install qemu + ssh tooling
+      - name: Install qemu
         run: |
           sudo apt-get update
-          sudo apt-get install -y qemu-system-x86 qemu-utils sshpass
-      - name: Boot image headlessly and smoke-test
-        id: smoke
+          sudo apt-get install -y qemu-system-x86
+      - name: Boot image headlessly, wait for SSH, assert motd + systemd
         run: |
-          set -e
-          # Prefer KVM when available; GitHub-hosted runners fall back to TCG.
-          ACCEL="tcg"
-          [ -e /dev/kvm ] && [ -w /dev/kvm ] && ACCEL="kvm"
-          echo "using accel: $ACCEL"
-          # Fresh disposable overlay so a crashed run can't dirty the artifact.
+          set -euo pipefail
+          chmod 600 vm-test/ci_key
+          ACCEL=tcg
+          if [ -e /dev/kvm ] && [ -w /dev/kvm ]; then ACCEL=kvm; fi
+          echo "==> accel: $ACCEL"
+
           qemu-img create -f qcow2 -F qcow2 -b vm/disk.qcow2 vm/run.qcow2
-          # Boot with cloud-init-free config: enable SSH via kernel cmdline is not
-          # possible for firstboot; instead connect over the serial console.
-          # Simpler smoke contract (guide §1.4): the login shell must show our
-          # custom /etc/motd on the serial console.
-          timeout 1500 qemu-system-x86_64 \
-            -machine accel="$ACCEL" -m 4096 -smp 2 \
-            -drive file=vm/run.qcow2,format=qcow2 \
-            -nographic -serial mon:stdio \
-            > vm/console.log 2>&1 || true
-          echo "--- console log tail ---"
-          tail -n 60 vm/console.log
-          grep -q "Hello from the AI-Native OS build" vm/console.log \
-            && echo "SMOKE TEST PASS: boot reached motd" \
-            || { echo "SMOKE TEST FAIL: motd not seen on serial console" >&2; exit 1; }
+
+          qemu-system-x86_64 \
+            -machine accel=$ACCEL -cpu max -m 4096 -smp 4 \
+            -drive file=vm/run.qcow2,format=qcow2,if=virtio \
+            -netdev user,id=n0,hostfwd=tcp:127.0.0.1:2222-:22 \
+            -device virtio-net-pci,netdev=n0 \
+            -display none \
+            -serial file:vm/console.log \
+            -pidfile vm/qemu.pid &
+          QEMU_JOB_PID=$!
+          cleanup() { kill $QEMU_JOB_PID 2>/dev/null || true; }
+          trap cleanup EXIT
+
+          SSH_OPTS="-i vm-test/ci_key -p 2222 -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o ConnectTimeout=5 -o BatchMode=yes"
+          reachable=""
+          for i in $(seq 1 150); do
+            if ssh $SSH_OPTS ci@127.0.0.1 'echo up' 2>/dev/null | grep -q '^up$'; then
+              reachable=yes
+              echo "==> SSH reachable after ~$((i*10))s"
+              break
+            fi
+            sleep 10
+          done
+          if [ -z "$reachable" ]; then
+            echo '==> FAIL: VM never became SSH-reachable'
+            tail -120 vm/console.log || true
+            exit 1
+          fi
+
+          ssh_cmd() {
+            ssh $SSH_OPTS ci@127.0.0.1 "$@"
+          }
+
+          echo '==> assertion 1: custom motd is present'
+          MOTD=$(ssh_cmd 'cat /etc/motd')
+          echo "$MOTD"
+          echo "$MOTD" | grep -q 'Hello from the AI-Native OS build' \
+            || { echo 'FAIL: motd missing'; exit 1; }
+
+          echo '==> assertion 2: systemd reached a healthy state'
+          STATE=$(ssh_cmd 'systemctl is-system-running 2>/dev/null || true')
+          echo "systemctl is-system-running -> ${STATE:-<empty>}"
+          case "${STATE:-}" in
+            running|degraded) ;;
+            *) echo "FAIL: unexpected systemd state: ${STATE:-<empty>}"; exit 1 ;;
+          esac
+
+          echo '==> assertion 3: bootc tooling exists on the booted system'
+          ssh_cmd 'command -v bootc && bootc --version' \
+            || { echo 'FAIL: bootc not usable'; exit 1; }
+
+          echo '==> SMOKE TEST PASS (booted, SSH in, motd + systemd verified)'
       - name: Upload console log on failure
         if: failure()
         uses: actions/upload-artifact@v4
