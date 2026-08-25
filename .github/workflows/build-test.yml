@@ -86,10 +86,31 @@ jobs:
           path: image/output/qcow2/disk.qcow2
           if-no-files-found: error
 
-  vm-smoke:
-    name: headless VM boot + SSH smoke test
+  build-worldmodel:
+    name: build world-model binary
     runs-on: ubuntu-24.04
-    needs: build-image
+    needs: rust-tests
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy, rustfmt
+      - name: build release binary
+        working-directory: ai-engineer
+        run: |
+          cargo build --release -p world-model
+          ls -la target/release/ai-worldmodel
+      - name: Upload world-model binary artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ai-worldmodel-bin
+          path: ai-engineer/target/release/ai-worldmodel
+          if-no-files-found: error
+
+  vm-smoke:
+    name: headless VM boot + SSH smoke test + world-model real sync
+    runs-on: ubuntu-24.04
+    needs: [build-image, build-worldmodel]
     timeout-minutes: 50
     if: ${{ !(github.event.inputs.skip-vm-smoke == 'true') }}
     steps:
@@ -98,6 +119,11 @@ jobs:
         uses: actions/download-artifact@v4
         with:
           name: ai-os-qcow2
+          path: vm
+      - name: Download world-model binary artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: ai-worldmodel-bin
           path: vm
       - name: Install qemu
         run: |
@@ -164,7 +190,39 @@ jobs:
           ssh_cmd 'command -v bootc && bootc --version' \
             || { echo 'FAIL: bootc not usable'; exit 1; }
 
-          echo '==> SMOKE TEST PASS (booted, SSH in, motd + systemd verified)'
+          echo '==> assertion 4: deploy ai-worldmodel to the booted VM and sync against real data'
+          if [ -f vm/ai-worldmodel ]; then
+            WM_BIN=vm/ai-worldmodel
+          elif [ -f vm/ai-worldmodel-bin/ai-worldmodel ]; then
+            WM_BIN=vm/ai-worldmodel-bin/ai-worldmodel
+          else
+            WM_BIN=$(find vm -name ai-worldmodel -type f | head -1)
+          fi
+          echo "deploying binary: $WM_BIN"
+          scp $SSH_OPTS "$WM_BIN" ci@127.0.0.1:/tmp/ai-worldmodel
+          ssh_cmd 'chmod +x /tmp/ai-worldmodel'
+
+          echo '==> run ai-worldmodel sync (dnf5 + systemctl) for real, inside the VM'
+          sync_out=$(ssh_cmd '/tmp/ai-worldmodel --db /tmp/wm.sqlite sync 2>&1')
+          echo "$sync_out"
+          ssh_cmd 'test -f /tmp/wm.sqlite && echo DB_CREATED' | grep -q DB_CREATED \
+            || { echo 'FAIL: world-model sqlite DB not created'; exit 1; }
+
+          echo '==> assertion 5: depends-on openssl returns real, non-empty results'
+          depends_out=$(ssh_cmd '/tmp/ai-worldmodel --db /tmp/wm.sqlite depends-on openssl 2>&1')
+          echo "$depends_out"
+          pkg_count=$(echo "$depends_out" | grep -E '^[0-9]+ package' | awk '{print $1}')
+          echo "depends-on openssl -> ${pkg_count:-none} package(s)"
+          echo "$depends_out" | grep -Eq '^[1-9][0-9]* package\(s\) depend on openssl:' \
+            || { echo 'FAIL: depends-on openssl did not return any depending packages'; exit 1; }
+
+          echo '==> assertion 6: failed-since returns structurally sane output'
+          failed_out=$(ssh_cmd '/tmp/ai-worldmodel --db /tmp/wm.sqlite failed-since 1h 2>&1')
+          echo "$failed_out"
+          echo "$failed_out" | grep -Eq '^[0-9]+ unit failure\(s\) within 1h:' \
+            || { echo 'FAIL: failed-since output not structurally valid'; exit 1; }
+
+          echo '==> END TO END PASS (motd + systemd + bootc + world-model sync + real queries verified)'
       - name: Upload console log on failure
         if: failure()
         uses: actions/upload-artifact@v4
