@@ -111,7 +111,8 @@ jobs:
           if [ -e /dev/kvm ] && [ -w /dev/kvm ]; then ACCEL=kvm; fi
           echo "==> accel: $ACCEL"
 
-          qemu-img create -f qcow2 -F qcow2 -b vm/disk.qcow2 vm/run.qcow2
+          qemu-img create -f qcow2 -F qcow2 \
+            -b "$(pwd)/vm/disk.qcow2" vm/run.qcow2
 
           qemu-system-x86_64 \
             -machine accel=$ACCEL -cpu max -m 4096 -smp 4 \
