@@ -153,6 +153,7 @@ jobs:
           trap cleanup EXIT
 
           SSH_OPTS="-i vm-test/ci_key -p 2222 -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o ConnectTimeout=5 -o BatchMode=yes"
+          SCP_OPTS="-i vm-test/ci_key -P 2222 -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o ConnectTimeout=5 -o BatchMode=yes"
           reachable=""
           for i in $(seq 1 150); do
             if ssh $SSH_OPTS ci@127.0.0.1 'echo up' 2>/dev/null | grep -q '^up$'; then
@@ -199,7 +200,7 @@ jobs:
             WM_BIN=$(find vm -name ai-worldmodel -type f | head -1)
           fi
           echo "deploying binary: $WM_BIN"
-          scp $SSH_OPTS "$WM_BIN" ci@127.0.0.1:/tmp/ai-worldmodel
+          scp $SCP_OPTS "$WM_BIN" ci@127.0.0.1:/tmp/ai-worldmodel
           ssh_cmd 'chmod +x /tmp/ai-worldmodel'
 
           echo '==> run ai-worldmodel sync (dnf5 + systemctl) for real, inside the VM'
