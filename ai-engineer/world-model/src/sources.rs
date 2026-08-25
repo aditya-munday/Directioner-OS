@@ -45,8 +45,9 @@ impl CmdSpec {
 }
 
 pub const REPOQUERY_QF: &str = "PKG|%{NAME}|%{EVR}|%{ARCH}|%{SUMMARY}\n\
-[%{REQUIRENAME}|%{REQUIREFLAGS:depflags}|%{REQUIREVERSION}\n]\
-[%{PROVIDESNAME}|%{PROVIDESVERSION}\n]END\n";
+[REQ|%{NAME}|%{REQUIRENAME}|%{REQUIREFLAGS:depflags}|%{REQUIREVERSION}\n]\
+[PROV|%{NAME}|%{PROVIDESNAME}|%{PROVIDESVERSION}\n]\
+END\n";
 
 pub fn dnf5_repoquery_spec(path_override: Option<&Path>) -> CmdSpec {
     CmdSpec::new("dnf5")
@@ -83,7 +84,7 @@ pub fn systemctl_unit_files_spec(path_override: Option<&Path>) -> CmdSpec {
 }
 
 fn sanitize(field: &str) -> String {
-    field.replace(['\t', '\r'], " ").trim_end().to_string()
+    field.replace(['\t', '\r', '\n'], " ").trim().to_string()
 }
 
 pub fn parse_line_protocol(text: &str) -> Result<PackageData, String> {
@@ -91,38 +92,48 @@ pub fn parse_line_protocol(text: &str) -> Result<PackageData, String> {
     let mut current: Option<String> = None;
 
     for (idx, raw) in text.lines().enumerate() {
-        let line = raw.trim_end_matches('\r');
+        let line = raw.trim_end_matches('\r').trim();
         if line.is_empty() {
             continue;
         }
         let cols: Vec<&str> = line.split('|').collect();
         match cols[0] {
             "PKG" => {
-                if cols.len() != 5 {
+                if cols.len() < 5 {
                     return Err(format!(
-                        "line {}: PKG needs 5 columns, got {}",
+                        "line {}: PKG needs at least 5 columns, got {}",
                         idx + 1,
                         cols.len()
                     ));
                 }
-                if data.packages.iter().any(|p| p.name == cols[1]) {
-                    return Err(format!("line {}: duplicate package {}", idx + 1, cols[1]));
+                let name = cols[1].to_string();
+                let evr = cols[2].to_string();
+                let arch = cols[3].to_string();
+                let summary = sanitize(&cols[4..].join("|"));
+                current = Some(name.clone());
+                if let Some(existing) = data.packages.iter_mut().find(|p| p.name == name) {
+                    *existing = PackageRow {
+                        name,
+                        evr,
+                        arch,
+                        summary,
+                    };
+                } else {
+                    data.packages.push(PackageRow {
+                        name,
+                        evr,
+                        arch,
+                        summary,
+                    });
                 }
-                current = Some(cols[1].to_string());
-                data.packages.push(PackageRow {
-                    name: cols[1].to_string(),
-                    evr: cols[2].to_string(),
-                    arch: cols[3].to_string(),
-                    summary: sanitize(cols[4]),
-                });
             }
             "REQ" => {
                 let pkg = current
                     .as_ref()
                     .ok_or_else(|| format!("line {}: REQ before any PKG", idx + 1))?;
-                if cols.len() != 5 {
+                if cols.len() < 5 {
                     return Err(format!(
-                        "line {}: REQ needs 5 columns, got {}",
+                        "line {}: REQ needs at least 5 columns, got {}",
                         idx + 1,
                         cols.len()
                     ));
@@ -142,16 +153,16 @@ pub fn parse_line_protocol(text: &str) -> Result<PackageData, String> {
                     pkg: pkg.clone(),
                     dep: cols[2].to_string(),
                     flags: cols[3].to_string(),
-                    version: cols[4].to_string(),
+                    version: cols[4..].join("|"),
                 });
             }
             "PROV" => {
                 let pkg = current
                     .as_ref()
                     .ok_or_else(|| format!("line {}: PROV before any PKG", idx + 1))?;
-                if cols.len() != 4 {
+                if cols.len() < 4 {
                     return Err(format!(
-                        "line {}: PROV needs 4 columns, got {}",
+                        "line {}: PROV needs at least 4 columns, got {}",
                         idx + 1,
                         cols.len()
                     ));
@@ -170,7 +181,7 @@ pub fn parse_line_protocol(text: &str) -> Result<PackageData, String> {
                 data.provides.push(ProvideEdge {
                     pkg: pkg.clone(),
                     provide: cols[2].to_string(),
-                    version: cols[3].to_string(),
+                    version: cols[3..].join("|"),
                 });
             }
             "END" => {

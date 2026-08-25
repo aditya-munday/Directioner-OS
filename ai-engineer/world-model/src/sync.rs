@@ -12,7 +12,7 @@ pub fn sync_packages(conn: &Connection, data: &crate::model::PackageData) -> Res
 
     {
         let mut ins_pkg = tx
-            .prepare("INSERT INTO packages(name, evr, arch, summary, synced_at) VALUES (?1, ?2, ?3, ?4, ?5)")
+            .prepare("INSERT OR REPLACE INTO packages(name, evr, arch, summary, synced_at) VALUES (?1, ?2, ?3, ?4, ?5)")
             .map_err(|e| e.to_string())?;
         for p in &data.packages {
             ins_pkg
