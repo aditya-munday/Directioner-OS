@@ -76,7 +76,7 @@ jobs:
             -v "$(pwd)/config.toml":/config.toml:ro \
             -v /var/lib/containers/storage:/var/lib/containers/storage \
             quay.io/centos-bootc/bootc-image-builder:latest \
-            --type qcow2 --config /config.toml --local \
+            --type qcow2 --rootfs xfs --config /config.toml \
             "${{ env.IMAGE_TAG }}"
           ls -la output/qcow2/
       - name: Upload disk image artifact
