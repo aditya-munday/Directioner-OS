@@ -198,34 +198,34 @@ jobs:
           ssh_cmd 'command -v bootc && bootc --version' \
             || { echo 'FAIL: bootc not usable'; exit 1; }
 
-          echo '==> assertion 4: deploy release binaries to the booted VM'
+          echo '==> assertion 4: deploy release binaries to /usr/local/bin in the booted VM'
           for b in ai-worldmodel ai-benchmark ai-capabilityd ai-worklog ai-engineer; do
             BIN_PATH=$(find vm -name "$b" -type f | head -1)
-            echo "deploying binary: $BIN_PATH -> /tmp/$b"
+            echo "deploying binary: $BIN_PATH -> /usr/local/bin/$b"
             scp $SCP_OPTS "$BIN_PATH" ci@127.0.0.1:/tmp/$b
-            ssh_cmd "chmod +x /tmp/$b"
+            ssh_cmd "sudo mv /tmp/$b /usr/local/bin/$b && sudo chmod 755 /usr/local/bin/$b"
           done
 
           echo '==> assertion 5: run ai-worldmodel sync (rpm + systemctl) for real, inside the VM'
-          sync_out=$(ssh_cmd '/tmp/ai-worldmodel --db /tmp/wm.sqlite sync 2>&1')
+          sync_out=$(ssh_cmd 'ai-worldmodel --db /tmp/wm.sqlite sync 2>&1')
           echo "$sync_out"
           ssh_cmd 'test -f /tmp/wm.sqlite && echo DB_CREATED' | grep -q DB_CREATED \
             || { echo 'FAIL: world-model sqlite DB not created'; exit 1; }
 
           echo '==> graph statistics (diagnostic)'
-          stats_out=$(ssh_cmd '/tmp/ai-worldmodel --db /tmp/wm.sqlite stats 2>&1')
+          stats_out=$(ssh_cmd 'ai-worldmodel --db /tmp/wm.sqlite stats 2>&1')
           echo "$stats_out"
           echo "$stats_out" | grep -Eq 'packages=[1-9][0-9]* requires=[1-9][0-9]* provides=[1-9][0-9]* units=[0-9]+' \
             || { echo 'FAIL: world-model graph is empty (no requires/provides synced)'; exit 1; }
 
           echo '--> testing reverse dependencies on glibc & openssl-libs'
-          ssh_cmd '/tmp/ai-worldmodel --db /tmp/wm.sqlite depends-on glibc 2>&1' | grep -Eq '^[1-9][0-9]* package\(s\) depend on glibc:' \
+          ssh_cmd 'ai-worldmodel --db /tmp/wm.sqlite depends-on glibc 2>&1' | grep -Eq '^[1-9][0-9]* package\(s\) depend on glibc:' \
             || { echo 'FAIL: depends-on glibc returned no packages'; exit 1; }
-          ssh_cmd '/tmp/ai-worldmodel --db /tmp/wm.sqlite depends-on openssl-libs 2>&1' | grep -Eq '^[1-9][0-9]* package\(s\) depend on openssl-libs:' \
+          ssh_cmd 'ai-worldmodel --db /tmp/wm.sqlite depends-on openssl-libs 2>&1' | grep -Eq '^[1-9][0-9]* package\(s\) depend on openssl-libs:' \
             || { echo 'FAIL: depends-on openssl-libs returned no packages'; exit 1; }
 
           echo '==> assertion 6: failed-since returns structurally sane output'
-          failed_out=$(ssh_cmd '/tmp/ai-worldmodel --db /tmp/wm.sqlite failed-since 1h 2>&1')
+          failed_out=$(ssh_cmd 'ai-worldmodel --db /tmp/wm.sqlite failed-since 1h 2>&1')
           echo "$failed_out"
           echo "$failed_out" | grep -Eq '^[0-9]+ unit failure\(s\) within 1h:' \
             || { echo 'FAIL: failed-since output not structurally valid'; exit 1; }
@@ -239,7 +239,7 @@ jobs:
 
           # Start ai-capabilityd in LIVE mode (dry_run: false) inside the VM using systemd-run
           ssh_cmd 'sudo mkdir -p /tmp/live-scope'
-          ssh_cmd 'sudo systemd-run --unit=live-capabilityd /tmp/ai-capabilityd --socket /tmp/live-cap.sock --audit-log /tmp/live-worklog.jsonl --lock-file /tmp/live-killswitch.lock --work-root /tmp/live-scope --exec'
+          ssh_cmd 'sudo systemd-run --unit=live-capabilityd ai-capabilityd --socket /tmp/live-cap.sock --audit-log /tmp/live-worklog.jsonl --lock-file /tmp/live-killswitch.lock --work-root /tmp/live-scope --exec'
 
           # Wait up to 10 seconds for socket to become ready
           ready=""
@@ -310,7 +310,7 @@ jobs:
             || { echo 'FAIL: canary file still exists on disk after live rollback'; exit 1; }
 
           echo '==> assertion 7.3: ai-worklog structured rollback audit entry verification'
-          worklog_out=$(ssh_cmd '/tmp/ai-worklog --log /tmp/live-worklog.jsonl tail')
+          worklog_out=$(ssh_cmd 'ai-worklog --log /tmp/live-worklog.jsonl tail')
           echo "$worklog_out"
           echo "$worklog_out" | grep -q 'service.stop' \
             || { echo 'FAIL: live service.stop not found in work log'; exit 1; }
