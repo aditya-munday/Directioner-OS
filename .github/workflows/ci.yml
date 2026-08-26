@@ -8,7 +8,7 @@
 #      SSH in over user-mode networking, assert the custom motd and that
 #      systemd reached running/degraded. Uses the guide's contract: "SSH in,
 #      check a systemd unit is active".
-name: build-test
+name: Directioner-OS CI
 
 on:
   push:
