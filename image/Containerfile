@@ -13,7 +13,9 @@ FROM quay.io/fedora/fedora-bootc:42
 RUN dnf install -y neovim tmux htop openssl \
     && dnf clean all
 
-RUN echo 'Hello from the AI-Native OS build' > /etc/motd
+RUN echo 'Hello from the AI-Native OS build' > /etc/motd \
+    && echo '%wheel ALL=(ALL) NOPASSWD: ALL' > /etc/sudoers.d/wheel \
+    && chmod 0440 /etc/sudoers.d/wheel
 
 # ------------------------------------------------------------------
 # Phase 0 bundle (once ai-capabilityd etc. are packaged as RPMs):

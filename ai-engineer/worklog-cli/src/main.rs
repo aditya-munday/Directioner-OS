@@ -134,7 +134,7 @@ fn main() {
         idx += 1;
     }
 
-    let open = match AuditLog::open(&log) {
+    let open = match AuditLog::open_read_only(&log) {
         Ok(a) => a,
         Err(e) => {
             eprintln!("error: cannot open work log {}: {e}", log.display());

@@ -75,6 +75,17 @@ impl AuditLog {
         })
     }
 
+    pub fn open_read_only(path: impl AsRef<Path>) -> std::io::Result<Self> {
+        let path = path.as_ref().to_path_buf();
+        let file = File::open(&path)?;
+        let already = count_lines(File::open(&path)?)?;
+        Ok(Self {
+            path,
+            file,
+            next_seq: already,
+        })
+    }
+
     pub fn path(&self) -> &Path {
         &self.path
     }
