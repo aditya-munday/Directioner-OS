@@ -28,28 +28,45 @@ pub struct UnitInfo {
     pub recent_events: Vec<UnitEventRow>,
 }
 
+pub fn comparable_base(s: &str) -> String {
+    let s = s.trim();
+    // Cut at the first '(' (soname version/arch suffix), e.g.
+    // libc.so.6(GLIBC_2.2.5)(64bit) -> libc.so.6
+    let s = s.split('(').next().unwrap_or(s);
+    // Cut at the first space or '=' (comparison operator), e.g.
+    // glibc >= 2.34 -> glibc ; openssl-libs = 1:3.0 -> openssl-libs
+    let cut = s.find([' ', '=']).unwrap_or(s.len());
+    s[..cut].to_string()
+}
+
 pub fn reverse_deps(conn: &Connection, name: &str) -> rusqlite::Result<Vec<String>> {
-    let mut stmt = conn.prepare(
-        "SELECT DISTINCT dependent FROM (
-            SELECT pkg AS dependent FROM pkg_requires
-             WHERE dep = ?1 OR dep LIKE ?1 || ' %' OR dep LIKE ?1 || '(%'
-            UNION
-            SELECT pr.pkg AS dependent FROM pkg_requires pr
-              JOIN pkg_provides pp ON (
-                pr.dep = pp.provide
-                OR pr.dep LIKE pp.provide || '(%'
-                OR pp.provide LIKE pr.dep || '(%'
-                OR pr.dep LIKE pp.provide || ' %'
-                OR pp.provide LIKE pr.dep || ' =%'
-              )
-             WHERE pp.pkg = ?1
-         ) ORDER BY dependent",
-    )?;
-    let rows = stmt
+    use std::collections::{BTreeSet, HashSet};
+
+    // Base names the requested package can satisfy: its own name plus every
+    // provide's basename (soname or capability).
+    let mut bases: HashSet<String> = HashSet::new();
+    bases.insert(comparable_base(name));
+
+    let mut stmt = conn.prepare("SELECT provide FROM pkg_provides WHERE pkg = ?1")?;
+    let provides = stmt
         .query_map(params![name], |r| r.get::<_, String>(0))?
         .filter_map(Result::ok)
-        .collect();
-    Ok(rows)
+        .collect::<Vec<String>>();
+    drop(stmt);
+    for p in provides {
+        bases.insert(comparable_base(&p));
+    }
+
+    // Any package whose dependency basename matches is a reverse dependency.
+    let mut stmt = conn.prepare("SELECT pkg, dep FROM pkg_requires")?;
+    let mut dependents: BTreeSet<String> = BTreeSet::new();
+    for row in stmt.query_map([], |r| Ok((r.get::<_, String>(0)?, r.get::<_, String>(1)?)))? {
+        let (pkg, dep) = row?;
+        if bases.contains(&comparable_base(&dep)) {
+            dependents.insert(pkg);
+        }
+    }
+    Ok(dependents.into_iter().collect())
 }
 
 pub fn requires(conn: &Connection, pkg: &str) -> rusqlite::Result<Vec<RequireInfo>> {
@@ -139,4 +156,25 @@ pub fn counts(conn: &Connection) -> rusqlite::Result<(i64, i64)> {
     let pkgs: i64 = conn.query_row("SELECT COUNT(*) FROM packages", [], |r| r.get(0))?;
     let units: i64 = conn.query_row("SELECT COUNT(*) FROM units", [], |r| r.get(0))?;
     Ok((pkgs, units))
+}
+
+#[derive(Debug, Clone, serde::Serialize)]
+pub struct GraphStats {
+    pub packages: i64,
+    pub requires: i64,
+    pub provides: i64,
+    pub units: i64,
+}
+
+pub fn graph_stats(conn: &Connection) -> rusqlite::Result<GraphStats> {
+    let packages: i64 = conn.query_row("SELECT COUNT(*) FROM packages", [], |r| r.get(0))?;
+    let requires: i64 = conn.query_row("SELECT COUNT(*) FROM pkg_requires", [], |r| r.get(0))?;
+    let provides: i64 = conn.query_row("SELECT COUNT(*) FROM pkg_provides", [], |r| r.get(0))?;
+    let units: i64 = conn.query_row("SELECT COUNT(*) FROM units", [], |r| r.get(0))?;
+    Ok(GraphStats {
+        packages,
+        requires,
+        provides,
+        units,
+    })
 }

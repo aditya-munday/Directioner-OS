@@ -162,6 +162,20 @@ fn main() {
     let result: Result<(), String> = (|| match command.as_str() {
         "sync" => ctx.full_sync(),
 
+        "stats" => {
+            let conn = ctx.open_db()?;
+            let s = query::graph_stats(&conn).map_err(|e| e.to_string())?;
+            if json_out {
+                println!("{}", serde_json::to_string_pretty(&s).unwrap());
+            } else {
+                println!(
+                    "packages={} requires={} provides={} units={}",
+                    s.packages, s.requires, s.provides, s.units
+                );
+            }
+            Ok(())
+        }
+
         "depends-on" | "reverse-deps" => {
             let pkg = cmd_args.first().ok_or("depends-on needs a package name")?;
             ctx.maybe_resync()?;

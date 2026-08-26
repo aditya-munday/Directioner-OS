@@ -172,6 +172,83 @@ fn unit_snapshot_diff_events_and_failed_since() {
 }
 
 #[test]
+fn reverse_deps_matches_soname_basename_with_version_suffix() {
+    // Reproduces the CI failure: `depends-on glibc` returned 0 because packages
+    // depend on versioned sonames (libc.so.6(GLIBC_2.2.5)(64bit)) which never
+    // exact-match the unversioned provide (libc.so.6()(64bit)).
+    let dir = tempfile::tempdir().unwrap();
+    let dbp = dir.path().join("wm.sqlite");
+    let conn = db::open(&dbp).unwrap();
+
+    fn row(name: &str) -> PackageRow {
+        PackageRow {
+            name: name.into(),
+            evr: "1.0-1".into(),
+            arch: "x86_64".into(),
+            summary: "pkg".into(),
+        }
+    }
+
+    let data = PackageData {
+        packages: vec![
+            row("glibc"),
+            row("coreutils"),
+            row("bash"),
+            row("openssl-libs"),
+        ],
+        requires: vec![
+            RequireEdge {
+                pkg: "bash".into(),
+                dep: "libc.so.6()(64bit)".into(),
+                flags: String::new(),
+                version: String::new(),
+            },
+            RequireEdge {
+                pkg: "coreutils".into(),
+                dep: "libc.so.6(GLIBC_2.2.5)(64bit)".into(),
+                flags: String::new(),
+                version: String::new(),
+            },
+            // A versioned pkg-name require, e.g. "glibc >= 2.34"
+            RequireEdge {
+                pkg: "openssl-libs".into(),
+                dep: "glibc >= 2.34".into(),
+                flags: ">=".into(),
+                version: "2.34".into(),
+            },
+        ],
+        provides: vec![
+            ProvideEdge {
+                pkg: "glibc".into(),
+                provide: "libc.so.6()(64bit)".into(),
+                version: String::new(),
+            },
+            ProvideEdge {
+                pkg: "glibc".into(),
+                provide: "ld-linux-x86-64.so.2()(64bit)".into(),
+                version: String::new(),
+            },
+        ],
+    };
+    sync::sync_packages(&conn, &data).unwrap();
+
+    let names = query::reverse_deps(&conn, "glibc").unwrap();
+    assert!(
+        names.contains(&"bash".to_string()),
+        "bash via unversioned soname: {names:?}"
+    );
+    assert!(
+        names.contains(&"coreutils".to_string()),
+        "coreutils via versioned soname: {names:?}"
+    );
+    assert!(
+        names.contains(&"openssl-libs".to_string()),
+        "openssl-libs via name+version: {names:?}"
+    );
+    assert!(!names.contains(&"glibc".to_string()));
+}
+
+#[test]
 fn worklog_staleness_roundtrip() {
     let dir = tempfile::tempdir().unwrap();
     let dbp = dir.path().join("wm.sqlite");

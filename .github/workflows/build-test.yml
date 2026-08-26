@@ -203,11 +203,17 @@ jobs:
           scp $SCP_OPTS "$WM_BIN" ci@127.0.0.1:/tmp/ai-worldmodel
           ssh_cmd 'chmod +x /tmp/ai-worldmodel'
 
-          echo '==> run ai-worldmodel sync (dnf5 + systemctl) for real, inside the VM'
+          echo '==> run ai-worldmodel sync (rpm + systemctl) for real, inside the VM'
           sync_out=$(ssh_cmd '/tmp/ai-worldmodel --db /tmp/wm.sqlite sync 2>&1')
           echo "$sync_out"
           ssh_cmd 'test -f /tmp/wm.sqlite && echo DB_CREATED' | grep -q DB_CREATED \
             || { echo 'FAIL: world-model sqlite DB not created'; exit 1; }
+
+          echo '==> graph statistics (diagnostic)'
+          stats_out=$(ssh_cmd '/tmp/ai-worldmodel --db /tmp/wm.sqlite stats 2>&1')
+          echo "$stats_out"
+          echo "$stats_out" | grep -Eq 'packages=[1-9][0-9]* requires=[1-9][0-9]* provides=[1-9][0-9]* units=[0-9]+' \
+            || { echo 'FAIL: world-model graph is empty (no requires/provides synced)'; exit 1; }
 
           echo '==> assertion 5: reverse dependency queries return real, non-empty results'
           echo '--> testing depends-on glibc'
