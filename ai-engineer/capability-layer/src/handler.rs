@@ -448,6 +448,7 @@ impl Handler {
             args,
             requester: req.requester.clone(),
             token: req.token.clone(),
+            is_rollback: req.is_rollback,
             outcome,
             duration_ms: started.elapsed().as_millis() as u64,
         };
@@ -523,6 +524,7 @@ mod tests {
             id: id.into(),
             requester: "test".into(),
             token: "test-token".into(),
+            is_rollback: false,
             capability: cap,
         }
     }

@@ -65,11 +65,33 @@ impl CapabilityClient {
     }
 
     /// Dispatch a single typed capability to `ai-capabilityd` and wait for response.
+    /// Dispatch a single typed capability to `ai-capabilityd` and wait for response.
     pub fn send(
         &self,
         capability: CapabilityKind,
         correlation_id: impl Into<String>,
         token: Option<String>,
+    ) -> Result<CapabilityResponse, ClientError> {
+        self.send_ext(capability, correlation_id, token, false)
+    }
+
+    /// Dispatch a capability designated specifically as a compensating rollback.
+    pub fn send_rollback(
+        &self,
+        capability: CapabilityKind,
+        correlation_id: impl Into<String>,
+        token: Option<String>,
+    ) -> Result<CapabilityResponse, ClientError> {
+        self.send_ext(capability, correlation_id, token, true)
+    }
+
+    /// Dispatch a capability with explicit rollback flag.
+    pub fn send_ext(
+        &self,
+        capability: CapabilityKind,
+        correlation_id: impl Into<String>,
+        token: Option<String>,
+        is_rollback: bool,
     ) -> Result<CapabilityResponse, ClientError> {
         let req_id = correlation_id.into();
         let tok = token.unwrap_or_else(|| format!("tok-{}", req_id));
@@ -79,6 +101,7 @@ impl CapabilityClient {
             id: req_id,
             requester: self.requester.clone(),
             token: tok,
+            is_rollback,
             capability,
         };
 

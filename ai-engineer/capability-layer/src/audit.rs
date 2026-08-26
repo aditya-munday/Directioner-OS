@@ -26,6 +26,8 @@ pub struct AuditEntry {
     pub args: Value,
     pub requester: String,
     pub token: String,
+    #[serde(default)]
+    pub is_rollback: bool,
     pub outcome: AuditOutcome,
     pub duration_ms: u64,
 }
@@ -40,6 +42,7 @@ impl AuditEntry {
             args: Value::Null,
             requester: String::new(),
             token: String::new(),
+            is_rollback: false,
             outcome: AuditOutcome::Denied {
                 reason: "placeholder".into(),
             },
@@ -170,6 +173,7 @@ mod tests {
             args: Value::Null,
             requester: "test".into(),
             token: "tok".into(),
+            is_rollback: false,
             outcome: AuditOutcome::Success {
                 result: Value::Null,
             },

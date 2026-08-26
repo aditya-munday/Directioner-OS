@@ -152,7 +152,9 @@ impl<'a> Implementer<'a> {
             let start = Instant::now();
             let correlation = format!("{}:{}", plan_id, rb.step_id);
 
-            let outcome = self.client.send(rb.capability.clone(), correlation, None);
+            let outcome = self
+                .client
+                .send_rollback(rb.capability.clone(), correlation, None);
             let duration_ms = start.elapsed().as_millis() as u64;
 
             let res = match outcome {

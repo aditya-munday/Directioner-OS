@@ -48,6 +48,9 @@ pub struct CapabilityRequest {
     pub requester: String,
     /// Short-lived capability token scoped to this plan.
     pub token: String,
+    /// Whether this capability call is part of a compensating rollback.
+    #[serde(default)]
+    pub is_rollback: bool,
     /// The typed action to perform, with its arguments.
     pub capability: CapabilityKind,
 }

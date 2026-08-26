@@ -34,6 +34,7 @@ fn req(id: &str, capability: CapabilityKind) -> CapabilityRequest {
         id: id.into(),
         requester: "itest".into(),
         token: "tok-1".into(),
+        is_rollback: false,
         capability,
     }
 }
@@ -237,6 +238,7 @@ fn json_shape_matches_documented_contract() {
         id: "r1".into(),
         requester: "test".into(),
         token: "tok".into(),
+        is_rollback: false,
         capability: CapabilityKind::PackageInstall {
             package: "nginx".into(),
             approved: true,

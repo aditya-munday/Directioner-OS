@@ -18,12 +18,11 @@ fn scan_and_print_alerts(entries: &[capability_layer::audit::AuditEntry]) {
     let failed_rollbacks: Vec<_> = entries
         .iter()
         .filter(|e| {
-            let is_rollback = e.request_id.contains("rb-") || e.request_id.contains("rollback");
             let is_failure = matches!(
                 e.outcome,
                 AuditOutcome::Denied { .. } | AuditOutcome::Error { .. }
             );
-            is_rollback && is_failure
+            e.is_rollback && is_failure
         })
         .collect();
 
