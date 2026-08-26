@@ -1,0 +1,371 @@
+//! Blast-radius scoring & approval gate policy engine (Phase 1.5).
+//!
+//! Evaluates the risk profile of individual capabilities and entire multi-step
+//! plans. Every action is assigned a quantitative blast-radius score (0–100)
+//! and classified into one of four approval tiers:
+//!
+//! - [`ApprovalTier::Auto`]: Zero/negligible side-effect risk (reads, status, pings).
+//! - [`ApprovalTier::Notify`]: Low risk, easily revertible actions in user-scoped space.
+//! - [`ApprovalTier::Confirm`]: Medium risk (package installs, system config writes, service restarts).
+//! - [`ApprovalTier::ExpertReview`]: High/destructive risk (core packages like `glibc`,
+//!   protected system units like `ssh`/`systemd-udevd`, critical files like `/etc/sudoers`).
+
+use capability_layer::CapabilityKind;
+use rusqlite::Connection;
+use serde::{Deserialize, Serialize};
+
+/// The approval gate tier determined by the blast-radius score.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ApprovalTier {
+    /// Action has no side-effects or negligible risk; executes automatically without prompting.
+    Auto,
+    /// Low-risk action; recorded in the Work Log and user is notified, but no prompt required.
+    Notify,
+    /// Moderate-risk action; requires explicit user approval (`--approve` or interactive `y/N`).
+    Confirm,
+    /// Critical or destructive action; requires explicit expert acknowledgment and double confirmation.
+    ExpertReview,
+}
+
+impl ApprovalTier {
+    /// Convert a 0–100 blast radius score to its corresponding approval tier.
+    pub fn from_score(score: u32) -> Self {
+        match score {
+            0..=19 => ApprovalTier::Auto,
+            20..=39 => ApprovalTier::Notify,
+            40..=79 => ApprovalTier::Confirm,
+            _ => ApprovalTier::ExpertReview,
+        }
+    }
+
+    /// Whether this tier requires interactive human approval before execution.
+    pub fn requires_confirmation(&self) -> bool {
+        matches!(self, ApprovalTier::Confirm | ApprovalTier::ExpertReview)
+    }
+}
+
+/// Detailed evaluation breakdown of an action's blast radius.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct BlastRadiusReport {
+    /// Overall composite score (0 to 100).
+    pub score: u32,
+    /// Approval tier assigned to this action.
+    pub tier: ApprovalTier,
+    /// Specific risk factors contributing to the score.
+    pub factors: Vec<String>,
+}
+
+/// Core package names whose modification has wide system blast radius.
+pub const CRITICAL_SYSTEM_PACKAGES: &[&str] = &[
+    "glibc",
+    "systemd",
+    "kernel",
+    "kernel-core",
+    "openssl",
+    "openssl-libs",
+    "dnf5",
+    "rpm",
+    "selinux-policy",
+    "polkit",
+    "dbus-broker",
+    "dbus",
+];
+
+/// Critical file path prefixes / patterns whose modification has wide system blast radius.
+pub const CRITICAL_SYSTEM_PATHS: &[&str] = &[
+    "/etc/sudoers",
+    "/etc/sudoers.d",
+    "/etc/shadow",
+    "/etc/passwd",
+    "/etc/fstab",
+    "/etc/ssh",
+    "/etc/pam.d",
+    "/etc/systemd/system.conf",
+    "/boot",
+];
+
+/// Evaluator that computes blast radius using policy rules and optional World Model queries.
+pub struct PolicyEngine;
+
+impl PolicyEngine {
+    /// Evaluate the blast radius of a single capability action.
+    pub fn evaluate_capability(cap: &CapabilityKind, db: Option<&Connection>) -> BlastRadiusReport {
+        let mut score: u32 = 0;
+        let mut factors = Vec::new();
+
+        match cap {
+            CapabilityKind::Ping => {
+                score = 0;
+                factors.push("Ping is a zero-risk liveness probe".into());
+            }
+            CapabilityKind::ServiceStatus { unit } => {
+                score = 5;
+                factors.push(format!(
+                    "Reading status of unit '{unit}' has no side effects"
+                ));
+            }
+            CapabilityKind::FileRead { path } => {
+                score = 5;
+                factors.push(format!("Reading file '{path}' has no side effects"));
+            }
+            CapabilityKind::FileWrite {
+                path,
+                content,
+                append,
+            } => {
+                let is_critical_path = CRITICAL_SYSTEM_PATHS
+                    .iter()
+                    .any(|crit| path.starts_with(crit));
+
+                if is_critical_path {
+                    score += 85;
+                    factors.push(format!(
+                        "Writing to critical system path '{path}' affects system security/boot"
+                    ));
+                } else if path.starts_with("/etc") {
+                    score += 50;
+                    factors.push(format!("Writing configuration inside '/etc': '{path}'"));
+                } else if path.starts_with("/var") || path.starts_with("/usr") {
+                    score += 45;
+                    factors.push(format!("Writing system path '{path}'"));
+                } else {
+                    // User / tmp space
+                    score += 25;
+                    factors.push(format!("Writing file in workspace/user scope: '{path}'"));
+                }
+
+                if *append {
+                    factors.push("Append mode preserves existing file contents".into());
+                } else if content.is_empty() {
+                    score += 15;
+                    factors.push("Truncating file to zero length (deletion-equivalent)".into());
+                } else {
+                    score += 5;
+                    factors.push(format!(
+                        "Overwriting file (content length {} bytes)",
+                        content.len()
+                    ));
+                }
+            }
+            CapabilityKind::PackageInstall { package, .. } => {
+                let pkg_lower = package.to_lowercase();
+                let is_critical = CRITICAL_SYSTEM_PACKAGES
+                    .iter()
+                    .any(|crit| pkg_lower == *crit || pkg_lower.starts_with(&format!("{crit}-")));
+
+                if is_critical {
+                    score += 85;
+                    factors.push(format!(
+                        "Package '{package}' is a core system component; modification carries high system blast radius"
+                    ));
+                } else {
+                    score += 45;
+                    factors.push(format!("Installing/updating package '{package}'"));
+                }
+
+                // Check world-model reverse dependency impact if database is provided
+                if let Some(conn) = db
+                    && let Ok(rev_deps) = world_model::query::reverse_deps(conn, package)
+                {
+                    let count = rev_deps.len();
+                    if count > 20 {
+                        score += 40;
+                        factors.push(format!(
+                            "Package has {count} reverse dependencies in World Model (critical dependency blast radius)"
+                        ));
+                    } else if count > 5 {
+                        score += 20;
+                        factors.push(format!(
+                            "Package has {count} reverse dependencies in World Model (moderate dependency blast radius)"
+                        ));
+                    } else if count > 0 {
+                        score += (count as u32).min(10);
+                        factors.push(format!(
+                            "Package has {count} reverse dependencies in World Model"
+                        ));
+                    }
+                }
+            }
+            CapabilityKind::ServiceRestart { unit, .. } => {
+                let protected = [
+                    "ssh.service",
+                    "systemd-udevd.service",
+                    "dbus.service",
+                    "firewalld.service",
+                ];
+                if protected.iter().any(|p| unit == p) {
+                    score += 90;
+                    factors.push(format!(
+                        "Unit '{unit}' is a protected/critical system daemon; restart may disconnect or destabilize machine"
+                    ));
+                } else {
+                    score += 50;
+                    factors.push(format!("Restarting systemd service unit '{unit}'"));
+                }
+
+                // Check unit state from world-model if available
+                if let Some(conn) = db
+                    && let Ok(Some(u_info)) = world_model::query::unit_info(conn, unit)
+                {
+                    factors.push(format!(
+                        "Current unit state in World Model: active='{}', substate='{}'",
+                        u_info.active_state, u_info.sub_state
+                    ));
+                }
+            }
+        }
+
+        // Clamp composite score to 0..=100
+        let final_score = score.min(100);
+        let tier = ApprovalTier::from_score(final_score);
+
+        BlastRadiusReport {
+            score: final_score,
+            tier,
+            factors,
+        }
+    }
+
+    /// Aggregate the blast radius score across a collection of capability actions.
+    pub fn evaluate_plan_aggregate(
+        caps: &[CapabilityKind],
+        db: Option<&Connection>,
+    ) -> BlastRadiusReport {
+        if caps.is_empty() {
+            return BlastRadiusReport {
+                score: 0,
+                tier: ApprovalTier::Auto,
+                factors: vec!["Empty plan has zero blast radius".into()],
+            };
+        }
+
+        let mut max_score = 0;
+        let mut all_factors = Vec::new();
+
+        for (idx, cap) in caps.iter().enumerate() {
+            let report = Self::evaluate_capability(cap, db);
+            if report.score > max_score {
+                max_score = report.score;
+            }
+            for factor in report.factors {
+                all_factors.push(format!("Step {}: {}", idx + 1, factor));
+            }
+        }
+
+        // If plan has multiple destructive/modifying steps, apply a modest multiplicity penalty
+        let modifying_steps = caps
+            .iter()
+            .filter(|c| {
+                !matches!(
+                    c,
+                    CapabilityKind::Ping
+                        | CapabilityKind::FileRead { .. }
+                        | CapabilityKind::ServiceStatus { .. }
+                )
+            })
+            .count();
+        if modifying_steps > 3 && max_score < 95 {
+            max_score = (max_score + 10).min(100);
+            all_factors.push(format!(
+                "Plan contains {modifying_steps} state-modifying actions (+10 multi-step factor)"
+            ));
+        }
+
+        let tier = ApprovalTier::from_score(max_score);
+        BlastRadiusReport {
+            score: max_score,
+            tier,
+            factors: all_factors,
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_ping_and_reads_are_auto_tier() {
+        let ping_rep = PolicyEngine::evaluate_capability(&CapabilityKind::Ping, None);
+        assert_eq!(ping_rep.tier, ApprovalTier::Auto);
+        assert_eq!(ping_rep.score, 0);
+
+        let read_rep = PolicyEngine::evaluate_capability(
+            &CapabilityKind::FileRead {
+                path: "/etc/nginx/nginx.conf".into(),
+            },
+            None,
+        );
+        assert_eq!(read_rep.tier, ApprovalTier::Auto);
+        assert!(!read_rep.tier.requires_confirmation());
+    }
+
+    #[test]
+    fn test_user_file_write_is_notify() {
+        let rep = PolicyEngine::evaluate_capability(
+            &CapabilityKind::FileWrite {
+                path: "/home/user/app.conf".into(),
+                content: "port=8080".into(),
+                append: false,
+            },
+            None,
+        );
+        assert_eq!(rep.tier, ApprovalTier::Notify);
+    }
+
+    #[test]
+    fn test_etc_write_and_service_restart_require_confirm() {
+        let rep = PolicyEngine::evaluate_capability(
+            &CapabilityKind::FileWrite {
+                path: "/etc/nginx/conf.d/app.conf".into(),
+                content: "server { listen 8080; }".into(),
+                append: false,
+            },
+            None,
+        );
+        assert_eq!(rep.tier, ApprovalTier::Confirm);
+        assert!(rep.tier.requires_confirmation());
+
+        let svc_rep = PolicyEngine::evaluate_capability(
+            &CapabilityKind::ServiceRestart {
+                unit: "nginx.service".into(),
+                approved: false,
+            },
+            None,
+        );
+        assert_eq!(svc_rep.tier, ApprovalTier::Confirm);
+    }
+
+    #[test]
+    fn test_critical_package_and_protected_unit_are_expert_review() {
+        let pkg_rep = PolicyEngine::evaluate_capability(
+            &CapabilityKind::PackageInstall {
+                package: "glibc".into(),
+                approved: false,
+            },
+            None,
+        );
+        assert_eq!(pkg_rep.tier, ApprovalTier::ExpertReview);
+        assert!(pkg_rep.score >= 80);
+
+        let sudoers_rep = PolicyEngine::evaluate_capability(
+            &CapabilityKind::FileWrite {
+                path: "/etc/sudoers.d/custom".into(),
+                content: "user ALL=(ALL) NOPASSWD: ALL".into(),
+                append: false,
+            },
+            None,
+        );
+        assert_eq!(sudoers_rep.tier, ApprovalTier::ExpertReview);
+
+        let ssh_rep = PolicyEngine::evaluate_capability(
+            &CapabilityKind::ServiceRestart {
+                unit: "ssh.service".into(),
+                approved: false,
+            },
+            None,
+        );
+        assert_eq!(ssh_rep.tier, ApprovalTier::ExpertReview);
+    }
+}

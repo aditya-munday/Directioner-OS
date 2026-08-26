@@ -1,0 +1,26 @@
+[package]
+name = "benchmark-suite"
+description = "Directioner-OS AI Engineer Benchmark Suite: scored test harness with 7 real-world scenarios (Phase 1.6)"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+publish = false
+
+[dependencies]
+control-plane = { path = "../control-plane" }
+capability-layer = { path = "../capability-layer" }
+world-model = { path = "../world-model" }
+parking_lot = "0.12"
+rusqlite = { version = "0.32", features = ["bundled"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+chrono = { version = "0.4", default-features = false, features = ["clock", "std", "serde"] }
+tempfile = "3"
+
+[[bin]]
+name = "ai-benchmark"
+path = "src/bin/ai-benchmark.rs"
+
+[lints]
+workspace = true

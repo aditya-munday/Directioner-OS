@@ -73,14 +73,36 @@ real hardware before it is proven in a disposable VM.
 - [x] Phase 0.4 Kill-switch: `ai-killswitch engage|release|status` (lock-file
       re-read per request; cross-process engage verified live)
 - [x] Phase 1.1 World-model v1: SQLite package + service graphs, dnf5 repoquery /
-      rpm -qa sync adapters, systemctl snapshot + event-diff poller,
-      `ai-worldmodel` CLI (`depends-on`, `requires`, `unit`, `failed-since`,
+      rpm -qa sync adapters (with `PROVIDENAME`/`PROVIDEVERSION` tags), systemctl snapshot + event-diff poller,
+      `ai-worldmodel` CLI (`sync`, `stats`, `depends-on`, `requires`, `unit`, `failed-since`,
       `watch`, `--json`), work-log-staleness auto-resync — fixture-tested,
       offline queries < 10 ms
-- [ ] Phase 1.2+ planner/implementer roles, dry-run UI, blast-radius rules,
-      benchmark suite, …
+- [x] Phase 1.2 Planner + Implementer roles: multi-step structured planning, automatic compensating
+      rollback generation, capability dispatch over Unix socket, and independent verification
+- [x] Phase 1.3 Dry-run / simulation engine: unified line diff generation for file modifications,
+      command projections for package/service actions
+- [x] Phase 1.4 Work Log UI & 3-Depth Explanations: `ai-engineer explain <intent> --depth 1|2|3`
+- [x] Phase 1.5 Blast-radius scoring & policy engine: 4-tier approval gates (`auto`, `notify`, `confirm`, `expert_review`)
+      with World Model reverse dependency scaling and protected system daemons
+- [x] Phase 1.6 AI Engineer Benchmark Suite: 7 real-world system scenarios, scored runner `ai-benchmark` (100% passing)
 
-See `docs/phase-0-checklist.md` for the detailed Phase 0 tracking.
+See `docs/phase-0-checklist.md` and `docs/phase-1-checklist.md` for detailed tracking.
+
+## AI Engineer CLI Commands
+
+### 1. Plan & Dry-Run
+```sh
+# Generate dry-run preview with unified diffs
+cargo run -p control-plane --bin ai-engineer -- dry-run "configure nginx on port 8080"
+
+# 3-Depth technical explanation
+cargo run -p control-plane --bin ai-engineer -- explain "configure nginx on port 8080" --depth 2
+```
+
+### 2. Execute Benchmark Suite
+```sh
+cargo run -p benchmark-suite --bin ai-benchmark
+```
 
 ## Reference documents
 

@@ -1,0 +1,29 @@
+//! Directioner-OS AI Engineer Control Plane (Phase 1.2 / 1.3 / 1.5).
+//!
+//! Orchestrates the multi-agent engineering workflow:
+//!
+//! 1. [`planner::Planner`] decomposes high-level intent into an auditable [`plan::Plan`].
+//! 2. [`policy::PolicyEngine`] evaluates blast radius and determines [`policy::ApprovalTier`].
+//! 3. [`simulation::Simulator`] generates dry-run diffs and side-effect projections.
+//! 4. [`implementer::Implementer`] dispatches steps over Unix socket to `ai-capabilityd`,
+//!    handling rollback upon failure.
+//! 5. [`verifier::Verifier`] independently confirms that post-execution system state
+//!    matches intent.
+
+pub mod client;
+pub mod implementer;
+pub mod plan;
+pub mod planner;
+pub mod policy;
+pub mod simulation;
+pub mod verifier;
+
+pub use client::{CapabilityClient, ClientError};
+pub use implementer::Implementer;
+pub use plan::{
+    Plan, PlanExecutionReport, PlanStatus, PlanStep, RollbackStep, StepExecutionResult,
+};
+pub use planner::{Planner, PlannerConfig};
+pub use policy::{ApprovalTier, BlastRadiusReport, PolicyEngine};
+pub use simulation::{PlanPreview, Simulator, StepPreview};
+pub use verifier::{VerificationCheck, VerificationReport, Verifier};

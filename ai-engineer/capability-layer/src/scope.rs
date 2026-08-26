@@ -21,8 +21,13 @@ impl ScopedPath {
     }
 
     pub fn resolve(&self, raw: &str) -> std::io::Result<PathBuf> {
-        let candidate = if Path::new(raw).is_absolute() {
-            PathBuf::from(raw)
+        let raw_p = Path::new(raw);
+        let candidate = if raw_p.is_absolute() {
+            if raw_p.starts_with(&self.root) {
+                raw_p.to_path_buf()
+            } else {
+                self.root.join(Self::safe_display(raw))
+            }
         } else {
             self.root.join(raw)
         };

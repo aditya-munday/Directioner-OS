@@ -170,8 +170,12 @@ impl Handler {
                 "path contains parent traversal: {raw}"
             )));
         }
-        let candidate = crate::scope::ScopedPath::safe_display(raw);
-        let path = self.scope.root().join(candidate);
+        let path = if raw_path.is_absolute() && raw_path.starts_with(self.scope.root()) {
+            raw_path.to_path_buf()
+        } else {
+            let candidate = crate::scope::ScopedPath::safe_display(raw);
+            self.scope.root().join(candidate)
+        };
         if !path.starts_with(self.scope.root()) {
             return Err(CapError::Denied(format!("path escapes work scope: {raw}")));
         }

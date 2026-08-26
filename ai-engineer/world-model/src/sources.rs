@@ -46,7 +46,7 @@ impl CmdSpec {
 
 pub const REPOQUERY_QF: &str = "PKG|%{NAME}|%{EVR}|%{ARCH}|%{SUMMARY}\n\
 [REQ|%{REQUIRENAME}|%{REQUIREFLAGS:depflags}|%{REQUIREVERSION}\n]\
-[PROV|%{PROVIDESNAME}|%{PROVIDESVERSION}\n]\
+[PROV|%{PROVIDENAME}|%{PROVIDEVERSION}\n]\
 END\n";
 
 pub fn dnf5_repoquery_spec(path_override: Option<&Path>) -> CmdSpec {
@@ -138,12 +138,13 @@ pub fn parse_line_protocol(text: &str) -> Result<PackageData, String> {
                         cols.len()
                     ));
                 }
-                if cols[1].is_empty() || cols[1].starts_with('(') {
+                let dep = cols[1].trim();
+                if dep.is_empty() || dep == "(none)" || dep.starts_with('(') {
                     continue;
                 }
                 data.requires.push(RequireEdge {
                     pkg: pkg.clone(),
-                    dep: cols[1].to_string(),
+                    dep: dep.to_string(),
                     flags: cols[2].to_string(),
                     version: cols[3..].join("|"),
                 });
@@ -159,12 +160,13 @@ pub fn parse_line_protocol(text: &str) -> Result<PackageData, String> {
                         cols.len()
                     ));
                 }
-                if cols[1].is_empty() || cols[1].starts_with('/') {
+                let prov = cols[1].trim();
+                if prov.is_empty() || prov == "(none)" {
                     continue;
                 }
                 data.provides.push(ProvideEdge {
                     pkg: pkg.clone(),
-                    provide: cols[1].to_string(),
+                    provide: prov.to_string(),
                     version: cols[2..].join("|"),
                 });
             }

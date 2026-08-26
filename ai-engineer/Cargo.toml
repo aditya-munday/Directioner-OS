@@ -1,6 +1,12 @@
 [workspace]
 resolver = "2"
-members = ["capability-layer", "worklog-cli", "world-model"]
+members = [
+    "capability-layer",
+    "worklog-cli",
+    "world-model",
+    "control-plane",
+    "benchmark-suite",
+]
 
 [workspace.package]
 version = "0.1.0"
