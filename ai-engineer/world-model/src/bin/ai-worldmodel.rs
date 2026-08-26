@@ -50,19 +50,23 @@ impl Ctx {
     }
 
     fn sync_packages_auto(&self) -> Result<(usize, &'static str), String> {
-        let attempted = Self::run_pkg_source(&sources::dnf5_repoquery_spec(None));
+        // rpm(1) is the primary adapter: its `--queryformat` implements the
+        // `[...]` array iteration natively and reliably. dnf5's queryformat
+        // engine may render the bracket blocks as literal text instead of
+        // iterating them, which would leave requires/provides empty.
+        let attempted = Self::run_pkg_source(&sources::rpm_qa_spec(None));
         let (data, adapter) = match attempted {
-            Ok(data) if !data.packages.is_empty() => (data, "dnf5 repoquery"),
+            Ok(data) if !data.packages.is_empty() => (data, "rpm -qa"),
             first => {
                 let err1 = first
                     .err()
-                    .unwrap_or_else(|| "dnf5 repoquery returned no packages".into());
-                let data = Self::run_pkg_source(&sources::rpm_qa_spec(None))
-                    .map_err(|err2| format!("dnf5: {err1}; rpm fallback: {err2}"))?;
+                    .unwrap_or_else(|| "rpm -qa returned no packages".into());
+                let data = Self::run_pkg_source(&sources::dnf5_repoquery_spec(None))
+                    .map_err(|err2| format!("rpm: {err1}; dnf5 fallback: {err2}"))?;
                 if data.packages.is_empty() {
-                    return Err(format!("dnf5: {err1}; rpm fallback returned 0 packages"));
+                    return Err(format!("rpm: {err1}; dnf5 fallback returned 0 packages"));
                 }
-                (data, "rpm -qa")
+                (data, "dnf5 repoquery")
             }
         };
         let conn = self.open_db()?;
