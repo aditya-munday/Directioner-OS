@@ -8,7 +8,7 @@ use capability_layer::CapabilityKind;
 use serde::{Deserialize, Serialize};
 
 use crate::plan::{Plan, PlanStep};
-use crate::policy::{ApprovalTier, CRITICAL_SYSTEM_PATHS};
+use crate::policy::{ApprovalTier, CRITICAL_SYSTEM_PACKAGES, CRITICAL_SYSTEM_PATHS};
 
 /// The outcome verdict produced by the Reviewer Agent.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -228,6 +228,22 @@ impl Reviewer {
                         step_id: Some(step.step_id.clone()),
                     });
                 }
+
+                // Check critical system files
+                if CRITICAL_SYSTEM_PATHS
+                    .iter()
+                    .any(|crit| path.starts_with(crit))
+                    && step.blast_radius.tier < ApprovalTier::ExpertReview
+                {
+                    findings.push(ReviewFinding {
+                        severity: FindingSeverity::Fatal,
+                        category: "policy_mismatch".into(),
+                        message: format!(
+                            "Deleting critical path '{path}' without ExpertReview approval tier"
+                        ),
+                        step_id: Some(step.step_id.clone()),
+                    });
+                }
             }
             CapabilityKind::PackageInstall { package, .. } => {
                 if package.trim().is_empty() {
@@ -240,6 +256,7 @@ impl Reviewer {
                 }
             }
             CapabilityKind::PackageRemove { package, .. } => {
+                let pkg_lower = package.to_lowercase();
                 if package == "glibc" || package == "systemd" || package == "kernel" {
                     findings.push(ReviewFinding {
                         severity: FindingSeverity::Fatal,
@@ -247,15 +264,71 @@ impl Reviewer {
                         message: format!("Refusing removal of vital system package '{package}'"),
                         step_id: Some(step.step_id.clone()),
                     });
+                } else if CRITICAL_SYSTEM_PACKAGES
+                    .iter()
+                    .any(|crit| pkg_lower == *crit || pkg_lower.starts_with(&format!("{crit}-")))
+                    && step.blast_radius.tier < ApprovalTier::ExpertReview
+                {
+                    findings.push(ReviewFinding {
+                        severity: FindingSeverity::Fatal,
+                        category: "policy_mismatch".into(),
+                        message: format!(
+                            "Removing core system package '{package}' without ExpertReview approval tier"
+                        ),
+                        step_id: Some(step.step_id.clone()),
+                    });
                 }
             }
-            CapabilityKind::ServiceRestart { unit, .. }
-            | CapabilityKind::ServiceStop { unit, .. } => {
+            CapabilityKind::ServiceRestart { unit, .. } => {
+                let protected = [
+                    "ssh.service",
+                    "systemd-udevd.service",
+                    "dbus.service",
+                    "firewalld.service",
+                ];
                 if unit == "systemd-udevd.service" {
                     findings.push(ReviewFinding {
                         severity: FindingSeverity::Fatal,
                         category: "critical_unit".into(),
-                        message: "Modifying systemd-udevd is forbidden".into(),
+                        message: "Restarting systemd-udevd is forbidden".into(),
+                        step_id: Some(step.step_id.clone()),
+                    });
+                } else if protected.iter().any(|p| unit == p)
+                    && step.blast_radius.tier < ApprovalTier::ExpertReview
+                {
+                    findings.push(ReviewFinding {
+                        severity: FindingSeverity::Fatal,
+                        category: "policy_mismatch".into(),
+                        message: format!(
+                            "Restarting protected daemon '{unit}' without ExpertReview approval tier"
+                        ),
+                        step_id: Some(step.step_id.clone()),
+                    });
+                }
+            }
+            CapabilityKind::ServiceStop { unit, .. } => {
+                let protected = [
+                    "ssh.service",
+                    "systemd-udevd.service",
+                    "dbus.service",
+                    "firewalld.service",
+                ];
+                if unit == "systemd-udevd.service" {
+                    findings.push(ReviewFinding {
+                        severity: FindingSeverity::Fatal,
+                        category: "critical_unit".into(),
+                        message: "Stopping systemd-udevd is forbidden".into(),
+                        step_id: Some(step.step_id.clone()),
+                    });
+                } else if protected.iter().any(|p| unit == p)
+                    && step.blast_radius.tier < ApprovalTier::ExpertReview
+                {
+                    findings.push(ReviewFinding {
+                        severity: FindingSeverity::Fatal,
+                        category: "policy_mismatch".into(),
+                        message: format!(
+                            "Stopping protected daemon '{unit}' without ExpertReview approval tier"
+                        ),
                         step_id: Some(step.step_id.clone()),
                     });
                 }
@@ -435,6 +508,52 @@ mod tests {
                 .findings
                 .iter()
                 .any(|f| f.category == "destructive_action")
+        );
+    }
+
+    #[test]
+    fn test_reviewer_rejects_protected_service_stop_without_expert_review() {
+        let mut rep = PolicyEngine::evaluate_capability(
+            &CapabilityKind::ServiceStop {
+                unit: "ssh.service".into(),
+                approved: true,
+            },
+            None,
+        );
+        // Force tier to Confirm to simulate policy calibration mismatch
+        rep.tier = ApprovalTier::Confirm;
+
+        let step = PlanStep {
+            step_id: "step-1".into(),
+            description: "Stop SSH daemon".into(),
+            capability: CapabilityKind::ServiceStop {
+                unit: "ssh.service".into(),
+                approved: true,
+            },
+            blast_radius: rep,
+            timeout_secs: 30,
+        };
+
+        let plan = Plan {
+            id: "plan-stop-ssh".into(),
+            intent: "Stop ssh".into(),
+            summary: "Dangerous stop plan".into(),
+            steps: vec![step],
+            rollback_steps: vec![],
+            aggregate_blast_radius: PolicyEngine::evaluate_plan_aggregate(&[], None),
+            created_at: "2026-08-26T00:00:00Z".into(),
+            status: crate::plan::PlanStatus::Draft,
+        };
+
+        let reviewer = Reviewer::new(ReviewerConfig::default());
+        let report = reviewer.review_plan(&plan);
+
+        assert_eq!(report.verdict, ReviewVerdict::Rejected);
+        assert!(
+            report
+                .findings
+                .iter()
+                .any(|f| f.category == "policy_mismatch")
         );
     }
 }

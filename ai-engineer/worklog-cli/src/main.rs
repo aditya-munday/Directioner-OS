@@ -14,6 +14,46 @@ fn default_log() -> PathBuf {
     PathBuf::from("/var/lib/ai-engineer/worklog.jsonl")
 }
 
+fn scan_and_print_alerts(entries: &[capability_layer::audit::AuditEntry]) {
+    let failed_rollbacks: Vec<_> = entries
+        .iter()
+        .filter(|e| {
+            let is_rollback = e.request_id.contains("rb-") || e.request_id.contains("rollback");
+            let is_failure = matches!(
+                e.outcome,
+                AuditOutcome::Denied { .. } | AuditOutcome::Error { .. }
+            );
+            is_rollback && is_failure
+        })
+        .collect();
+
+    if !failed_rollbacks.is_empty() {
+        eprintln!(
+            "╔══════════════════════════════════════════════════════════════════════════════════════╗"
+        );
+        eprintln!(
+            "║  🚨 CRITICAL SYSTEM ALERT: COMPENSATING ROLLBACK FAILURE DETECTED                    ║"
+        );
+        for fr in &failed_rollbacks {
+            let err_msg = match &fr.outcome {
+                AuditOutcome::Denied { reason } => format!("DENIED: {reason}"),
+                AuditOutcome::Error { message } => format!("ERROR: {message}"),
+                _ => "FAILED".into(),
+            };
+            eprintln!(
+                "║  • Seq #{}: '{}' on {} -> {} ║",
+                fr.seq, fr.capability, fr.request_id, err_msg
+            );
+        }
+        eprintln!(
+            "║  ACTION REQUIRED: System state may be dirty or inconsistent. Inspect immediately.   ║"
+        );
+        eprintln!(
+            "╚══════════════════════════════════════════════════════════════════════════════════════╝\n"
+        );
+    }
+}
+
 fn print_entry(idx: usize, e: &capability_layer::audit::AuditEntry) {
     println!(
         "#{} [{}] {} by {} ({} ms)",
@@ -112,6 +152,7 @@ fn main() {
                     exit(1);
                 }
             };
+            scan_and_print_alerts(&entries);
             for e in &entries {
                 print_entry(usize::MAX, e);
             }
@@ -124,6 +165,7 @@ fn main() {
                     exit(1);
                 }
             };
+            scan_and_print_alerts(&entries);
             let today = chrono::Utc::now().format("%Y-%m-%d").to_string();
             for e in entries.iter().filter(|e| e.timestamp.starts_with(&today)) {
                 print_entry(usize::MAX, e);
