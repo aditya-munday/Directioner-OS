@@ -119,7 +119,7 @@ jobs:
     runs-on: ubuntu-24.04
     needs: [build-image, build-binaries]
     timeout-minutes: 50
-    if: ${{ !(github.event.inputs.skip-vm-smoke == 'true') }}
+    if: ${{ !(github.event.inputs['skip-vm-smoke'] == 'true') }}
     steps:
       - uses: actions/checkout@v4
       - name: Download qcow2 artifact
