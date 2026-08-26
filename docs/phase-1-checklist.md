@@ -58,16 +58,25 @@ Legend: `[x]` done and verified · `[~]` scaffolded, needs CI/VM to verify · `[
 ---
 
 ## 1.6 AI Engineer Benchmark Suite (`benchmark-suite` crate)
-- [x] Automated scored test harness with 7 real-world system scenarios:
+- [x] Automated scored test harness with 7 real-world system scenarios + 1 explicit tracked gap:
   1. `webserver_setup`: Plan, preview diffs, execute nginx setup, and verify active state
   2. `service_remediation`: Inspect failed daemon, repair configuration, restart, verify
   3. `dependency_audit`: Verify `ExpertReview` tier assignment on packages with high reverse dependencies
-  4. `compensating_rollback`: Fault injection mid-flight triggers automatic rollback to baseline state
-  5. `policy_gate_enforcement`: Rejection of unapproved actions and protected units
-  6. `killswitch_hard_halt`: Immediate execution halt (<1s) upon killswitch engagement
-  7. `worklog_auditability`: 100% durable audit trail verification
+  4. `file_write_compensating_rollback`: Fault injection mid-flight triggers automatic compensating file.write rollback to baseline state
+  5. `package_service_rollback_gap`: Tracked capability gap verifying absence of `package.remove` / `service.stop` inverse operations
+  6. `policy_gate_enforcement`: Rejection of unapproved actions and protected units
+  7. `killswitch_hard_halt`: Immediate execution halt (<1s) upon killswitch engagement
+  8. `worklog_auditability`: 100% durable audit trail verification
 - [x] `ai-benchmark` CLI with terminal scorecard table and `--json` reporting
-- **Done when**: Benchmark runs with single trackable score `7/7 Passing (100.0%)`. ✔ (verified live)
+- **Done when**: Benchmark runs with trackable score `7/7 Passing (100.0%) | 1 Tracked Gap(s)`. ✔ (verified live)
+
+---
+
+## Explicit Tracked Phase 2 Capability Expansions
+The Phase 1 capability layer baseline intentionally defines 6 core primitives (`ping`, `file.read`, `file.write`, `package.install`, `service.status`, `service.restart`). The following inverse operations are explicitly tracked for Phase 2 implementation:
+- [ ] `file.delete`: True unlinking for newly created files during rollback (replaces Phase 1 zero-byte truncation).
+- [ ] `package.remove`: Clean package removal and transaction rollback for failed `package.install` actions.
+- [ ] `service.stop`: Daemon state restoration / deactivation for rollback of `service.restart` actions.
 
 ---
 

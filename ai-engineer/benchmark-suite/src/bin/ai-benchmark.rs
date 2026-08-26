@@ -36,7 +36,9 @@ OPTIONS:
         println!("{}", scorecard.render_terminal());
     }
 
-    if scorecard.passed_scenarios < scorecard.total_scenarios {
+    let unexpected_failures =
+        scorecard.total_scenarios - scorecard.passed_scenarios - scorecard.known_gap_scenarios;
+    if unexpected_failures > 0 {
         exit(1);
     }
 }

@@ -19,6 +19,8 @@ pub struct ScenarioResult {
     pub description: String,
     /// Whether the scenario met all pass criteria.
     pub passed: bool,
+    /// Whether this scenario represents a recognized capability gap.
+    pub is_known_gap: bool,
     /// Number of points scored for this scenario (0 or 1).
     pub score: u32,
     /// Maximum points available for this scenario.
@@ -34,13 +36,15 @@ pub struct ScenarioResult {
 pub struct BenchmarkScorecard {
     /// Total number of scenarios evaluated.
     pub total_scenarios: usize,
-    /// Number of scenarios passing all verification checks.
+    /// Number of implemented scenarios passing.
     pub passed_scenarios: usize,
+    /// Number of explicit tracked capability gap scenarios.
+    pub known_gap_scenarios: usize,
     /// Total score achieved.
     pub score: u32,
     /// Maximum possible score.
     pub max_score: u32,
-    /// Pass rate percentage (0.0 to 100.0).
+    /// Pass rate percentage across implemented scenarios (0.0 to 100.0).
     pub pass_rate_pct: f64,
     /// Total duration of all scenarios in milliseconds.
     pub total_duration_ms: u64,
@@ -56,51 +60,61 @@ impl BenchmarkScorecard {
 
         writeln!(
             &mut out,
-            "╔══════════════════════════════════════════════════════════════════════════════╗"
+            "╔══════════════════════════════════════════════════════════════════════════════════════════╗"
         )
         .unwrap();
         writeln!(
             &mut out,
-            "║           DIRECTIONER-OS AI ENGINEER BENCHMARK SUITE (PHASE 1.6)            ║"
+            "║                  DIRECTIONER-OS AI ENGINEER BENCHMARK SUITE (PHASE 1.6)                  ║"
         )
         .unwrap();
         writeln!(
             &mut out,
-            "╠══════════════════════════════════════════════════════════════════════════════╣"
+            "╠══════════════════════════════════════════════════════════════════════════════════════════╣"
         )
         .unwrap();
         writeln!(
             &mut out,
-            "║  Status: {}/{} Passing ({:.1}%)  │  Total Duration: {:>5} ms                  ║",
-            self.passed_scenarios, self.total_scenarios, self.pass_rate_pct, self.total_duration_ms
+            "║  Status: {}/{} Passing ({:.1}%) | {} Tracked Gap(s)  │  Duration: {:>5} ms                ║",
+            self.passed_scenarios,
+            self.total_scenarios - self.known_gap_scenarios,
+            self.pass_rate_pct,
+            self.known_gap_scenarios,
+            self.total_duration_ms
         )
         .unwrap();
         writeln!(
             &mut out,
-            "╠══════════════════════════════════════════════════════════════════════════════╣"
+            "╠══════════════════════════════════════════════════════════════════════════════════════════╣"
         )
         .unwrap();
         writeln!(
             &mut out,
-            "║  #  │ Scenario Name         │ Status │ Score │ Time (ms) │ Notes            ║"
+            "║  #  │ Scenario Name                    │ Status │ Score │ Time (ms) │ Notes              ║"
         )
         .unwrap();
         writeln!(
             &mut out,
-            "╟─────┼───────────────────────┼────────┼───────┼───────────┼──────────────────╢"
+            "╟─────┼──────────────────────────────────┼────────┼───────┼───────────┼────────────────────╢"
         )
         .unwrap();
 
         for (i, res) in self.results.iter().enumerate() {
-            let status_str = if res.passed { " PASS " } else { " FAIL " };
-            let notes_trimmed = if res.details.len() > 18 {
-                format!("{}…", &res.details[..17])
+            let status_str = if res.passed {
+                " PASS "
+            } else if res.is_known_gap {
+                " GAP  "
+            } else {
+                " FAIL "
+            };
+            let notes_trimmed = if res.details.len() > 20 {
+                format!("{}…", &res.details[..19])
             } else {
                 res.details.clone()
             };
             writeln!(
                 &mut out,
-                "║ {:>2}  │ {:<21} │ {:<6} │ {}/{}   │ {:>9} │ {:<16} ║",
+                "║ {:>2}  │ {:<32} │ {:<6} │ {}/{}   │ {:>9} │ {:<18} ║",
                 i + 1,
                 res.name,
                 status_str,
@@ -114,7 +128,7 @@ impl BenchmarkScorecard {
 
         writeln!(
             &mut out,
-            "╚══════════════════════════════════════════════════════════════════════════════╝"
+            "╚══════════════════════════════════════════════════════════════════════════════════════════╝"
         )
         .unwrap();
         out
@@ -127,9 +141,13 @@ pub trait BenchmarkScenario {
     fn name(&self) -> &'static str;
     /// Description of the scenario.
     fn description(&self) -> &'static str;
+    /// Whether this scenario represents a recognized capability gap.
+    fn is_known_gap(&self) -> bool {
+        false
+    }
     /// Maximum score points for this scenario.
     fn max_score(&self) -> u32 {
-        1
+        if self.is_known_gap() { 0 } else { 1 }
     }
     /// Execute the scenario and return pass/fail with diagnostic details.
     fn run(&self) -> (bool, String);
@@ -147,13 +165,14 @@ impl Default for BenchmarkRunner {
 }
 
 impl BenchmarkRunner {
-    /// Create a runner with the standard 7-scenario Phase 1 suite.
+    /// Create a runner with the standard Phase 1 suite (7 core scenarios + 1 tracked gap).
     pub fn standard_suite() -> Self {
         let scenarios: Vec<Box<dyn BenchmarkScenario>> = vec![
             Box::new(scenarios::WebserverScenario),
             Box::new(scenarios::RemediationScenario),
             Box::new(scenarios::DependencyAuditScenario),
             Box::new(scenarios::RollbackScenario),
+            Box::new(scenarios::PackageServiceRollbackGapScenario),
             Box::new(scenarios::BlastRadiusScenario),
             Box::new(scenarios::KillswitchScenario),
             Box::new(scenarios::AuditabilityScenario),
@@ -167,6 +186,7 @@ impl BenchmarkRunner {
         let total_start = Instant::now();
         let mut results = Vec::new();
         let mut passed_count = 0;
+        let mut gap_count = 0;
         let mut total_score = 0;
         let mut max_possible_score = 0;
 
@@ -174,6 +194,11 @@ impl BenchmarkRunner {
             let start = Instant::now();
             let (passed, details) = scenario.run();
             let duration_ms = start.elapsed().as_millis() as u64;
+
+            let is_gap = scenario.is_known_gap();
+            if is_gap {
+                gap_count += 1;
+            }
 
             let score = if passed { scenario.max_score() } else { 0 };
             if passed {
@@ -186,6 +211,7 @@ impl BenchmarkRunner {
                 name: scenario.name().to_string(),
                 description: scenario.description().to_string(),
                 passed,
+                is_known_gap: is_gap,
                 score,
                 max_score: scenario.max_score(),
                 duration_ms,
@@ -195,8 +221,9 @@ impl BenchmarkRunner {
 
         let total_duration_ms = total_start.elapsed().as_millis() as u64;
         let total_scenarios = self.scenarios.len();
-        let pass_rate_pct = if total_scenarios > 0 {
-            (passed_count as f64 / total_scenarios as f64) * 100.0
+        let implemented_scenarios = total_scenarios - gap_count;
+        let pass_rate_pct = if implemented_scenarios > 0 {
+            (passed_count as f64 / implemented_scenarios as f64) * 100.0
         } else {
             0.0
         };
@@ -204,6 +231,7 @@ impl BenchmarkRunner {
         BenchmarkScorecard {
             total_scenarios,
             passed_scenarios: passed_count,
+            known_gap_scenarios: gap_count,
             score: total_score,
             max_score: max_possible_score,
             pass_rate_pct,

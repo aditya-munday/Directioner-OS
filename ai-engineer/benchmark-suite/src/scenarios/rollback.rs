@@ -19,16 +19,16 @@ use parking_lot::Mutex;
 
 use crate::BenchmarkScenario;
 
-/// Scenario 4: Automatic execution of compensating rollback upon mid-flight step failure.
+/// Scenario 4: Automatic execution of compensating file.write rollback upon mid-flight step failure.
 pub struct RollbackScenario;
 
 impl BenchmarkScenario for RollbackScenario {
     fn name(&self) -> &'static str {
-        "compensating_rollback"
+        "file_write_compensating_rollback"
     }
 
     fn description(&self) -> &'static str {
-        "Abort forward execution and execute compensating rollback steps upon failure"
+        "Abort forward execution upon fault injection and execute compensating file.write rollback"
     }
 
     fn run(&self) -> (bool, String) {

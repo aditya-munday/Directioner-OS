@@ -6,6 +6,7 @@ pub mod dependency_audit;
 pub mod killswitch;
 pub mod remediation;
 pub mod rollback;
+pub mod rollback_gaps;
 pub mod webserver;
 
 pub use auditability::AuditabilityScenario;
@@ -14,4 +15,5 @@ pub use dependency_audit::DependencyAuditScenario;
 pub use killswitch::KillswitchScenario;
 pub use remediation::RemediationScenario;
 pub use rollback::RollbackScenario;
+pub use rollback_gaps::PackageServiceRollbackGapScenario;
 pub use webserver::WebserverScenario;

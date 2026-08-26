@@ -84,7 +84,12 @@ real hardware before it is proven in a disposable VM.
 - [x] Phase 1.4 Work Log UI & 3-Depth Explanations: `ai-engineer explain <intent> --depth 1|2|3`
 - [x] Phase 1.5 Blast-radius scoring & policy engine: 4-tier approval gates (`auto`, `notify`, `confirm`, `expert_review`)
       with World Model reverse dependency scaling and protected system daemons
-- [x] Phase 1.6 AI Engineer Benchmark Suite: 7 real-world system scenarios, scored runner `ai-benchmark` (100% passing)
+- [x] Phase 1.6 AI Engineer Benchmark Suite: 7 real-world system scenarios + 1 tracked capability gap, scored runner `ai-benchmark` (100% passing across implemented scenarios, transparently reporting Phase 2 gaps)
+
+### Phase 2 Capability Expansions (Tracked Backlog)
+- [ ] `file.delete`: File removal primitive for clean new file rollback (replaces zero-byte truncation)
+- [ ] `package.remove`: Clean package uninstall for `package.install` rollback
+- [ ] `service.stop`: Daemon state restoration for `service.restart` rollback
 
 See `docs/phase-0-checklist.md` and `docs/phase-1-checklist.md` for detailed tracking.
 

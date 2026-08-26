@@ -164,6 +164,11 @@ impl PolicyEngine {
                     factors.push(format!("Installing/updating package '{package}'"));
                 }
 
+                // Explicit irreversibility factor (no package.remove inverse capability in Phase 1)
+                factors.push(
+                    "No package.remove rollback capability exists in baseline layer (irreversible action; minimum Confirm tier required)".into(),
+                );
+
                 // Check world-model reverse dependency impact (fail-closed if unavailable)
                 match db {
                     Some(conn) => match world_model::query::reverse_deps(conn, package) {
@@ -219,6 +224,11 @@ impl PolicyEngine {
                     score += 50;
                     factors.push(format!("Restarting systemd service unit '{unit}'"));
                 }
+
+                // Explicit irreversibility factor (no service.stop rollback capability in Phase 1)
+                factors.push(
+                    "No service.stop / state-restoration capability exists in baseline layer (irreversible daemon state transition; minimum Confirm tier required)".into(),
+                );
 
                 // Check unit state from world-model if available
                 match db {
