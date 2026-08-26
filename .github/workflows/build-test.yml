@@ -237,10 +237,25 @@ jobs:
           ssh_cmd 'systemctl is-active canary-rollback.service' | grep -q '^active$' \
             || { echo 'FAIL: canary-rollback.service failed to start in VM'; exit 1; }
 
-          # Start ai-capabilityd in LIVE mode (dry_run: false) inside the VM as root
-          ssh_cmd 'sudo bash -c "mkdir -p /tmp/live-scope && nohup /tmp/ai-capabilityd --socket /tmp/live-cap.sock --audit-log /tmp/live-worklog.jsonl --lock-file /tmp/live-killswitch.lock --work-root /tmp/live-scope --exec >/tmp/cap.log 2>&1 & sleep 2 && chmod 666 /tmp/live-cap.sock /tmp/live-worklog.jsonl 2>/dev/null || true"'
-          ssh_cmd 'test -S /tmp/live-cap.sock' \
-            || { echo 'FAIL: live ai-capabilityd socket not found'; ssh_cmd 'cat /tmp/cap.log || true'; exit 1; }
+          # Start ai-capabilityd in LIVE mode (dry_run: false) inside the VM using systemd-run
+          ssh_cmd 'sudo mkdir -p /tmp/live-scope'
+          ssh_cmd 'sudo systemd-run --unit=live-capabilityd /tmp/ai-capabilityd --socket /tmp/live-cap.sock --audit-log /tmp/live-worklog.jsonl --lock-file /tmp/live-killswitch.lock --work-root /tmp/live-scope --exec'
+
+          # Wait up to 10 seconds for socket to become ready
+          ready=""
+          for i in $(seq 1 20); do
+            if ssh_cmd 'sudo chmod 666 /tmp/live-cap.sock /tmp/live-worklog.jsonl 2>/dev/null && test -S /tmp/live-cap.sock'; then
+              ready=yes
+              echo "ai-capabilityd live socket ready"
+              break
+            fi
+            sleep 0.5
+          done
+          if [ -z "$ready" ]; then
+            echo 'FAIL: ai-capabilityd live socket not ready'
+            ssh_cmd 'sudo journalctl -u live-capabilityd -n 50 --no-pager || true'
+            exit 1
+          fi
 
           # Execute live compensating rollback operations against the live guest via ai-capabilityd:
           # 1) file.write canary file
@@ -251,6 +266,7 @@ jobs:
 
           def send_cap(cap, is_rb=False):
               s = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+              s.settimeout(5.0)
               s.connect(\"/tmp/live-cap.sock\")
               req = {
                   \"api_version\": 1,
@@ -261,14 +277,9 @@ jobs:
                   \"capability\": cap
               }
               s.sendall(json.dumps(req).encode() + b\"\n\")
-              resp_raw = b\"\"
-              while not resp_raw.endswith(b\"\n\"):
-                  chunk = s.recv(4096)
-                  if not chunk:
-                      break
-                  resp_raw += chunk
+              resp_raw = s.makefile(\"r\").readline()
               s.close()
-              return json.loads(resp_raw.decode())
+              return json.loads(resp_raw)
 
           r1 = send_cap({\"capability\": \"file_write\", \"path\": \"canary.conf\", \"content\": \"val\n\", \"append\": False})
           print(\"r1 file_write:\", r1)
