@@ -86,8 +86,8 @@ jobs:
           path: image/output/qcow2/disk.qcow2
           if-no-files-found: error
 
-  build-worldmodel:
-    name: build world-model binary
+  build-binaries:
+    name: build release binaries
     runs-on: ubuntu-24.04
     needs: rust-tests
     steps:
@@ -95,22 +95,27 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
         with:
           components: clippy, rustfmt
-      - name: build release binary
+      - name: build release binaries
         working-directory: ai-engineer
         run: |
-          cargo build --release -p world-model
-          ls -la target/release/ai-worldmodel
-      - name: Upload world-model binary artifact
+          cargo build --release --workspace
+          ls -la target/release/ai-worldmodel target/release/ai-benchmark target/release/ai-capabilityd target/release/ai-worklog target/release/ai-engineer
+      - name: Upload release binaries artifact
         uses: actions/upload-artifact@v4
         with:
-          name: ai-worldmodel-bin
-          path: ai-engineer/target/release/ai-worldmodel
+          name: ai-binaries
+          path: |
+            ai-engineer/target/release/ai-worldmodel
+            ai-engineer/target/release/ai-benchmark
+            ai-engineer/target/release/ai-capabilityd
+            ai-engineer/target/release/ai-worklog
+            ai-engineer/target/release/ai-engineer
           if-no-files-found: error
 
   vm-smoke:
-    name: headless VM boot + SSH smoke test + world-model real sync
+    name: headless VM boot + SSH smoke test + world-model real sync + live rollback
     runs-on: ubuntu-24.04
-    needs: [build-image, build-worldmodel]
+    needs: [build-image, build-binaries]
     timeout-minutes: 50
     if: ${{ !(github.event.inputs.skip-vm-smoke == 'true') }}
     steps:
@@ -120,16 +125,16 @@ jobs:
         with:
           name: ai-os-qcow2
           path: vm
-      - name: Download world-model binary artifact
+      - name: Download release binaries artifact
         uses: actions/download-artifact@v4
         with:
-          name: ai-worldmodel-bin
+          name: ai-binaries
           path: vm
       - name: Install qemu
         run: |
           sudo apt-get update
           sudo apt-get install -y qemu-system-x86
-      - name: Boot image headlessly, wait for SSH, assert motd + systemd
+      - name: Boot image headlessly, wait for SSH, assert motd + systemd + live rollback
         run: |
           set -euo pipefail
           chmod 600 vm-test/ci_key
@@ -191,19 +196,15 @@ jobs:
           ssh_cmd 'command -v bootc && bootc --version' \
             || { echo 'FAIL: bootc not usable'; exit 1; }
 
-          echo '==> assertion 4: deploy ai-worldmodel to the booted VM and sync against real data'
-          if [ -f vm/ai-worldmodel ]; then
-            WM_BIN=vm/ai-worldmodel
-          elif [ -f vm/ai-worldmodel-bin/ai-worldmodel ]; then
-            WM_BIN=vm/ai-worldmodel-bin/ai-worldmodel
-          else
-            WM_BIN=$(find vm -name ai-worldmodel -type f | head -1)
-          fi
-          echo "deploying binary: $WM_BIN"
-          scp $SCP_OPTS "$WM_BIN" ci@127.0.0.1:/tmp/ai-worldmodel
-          ssh_cmd 'chmod +x /tmp/ai-worldmodel'
+          echo '==> assertion 4: deploy release binaries to the booted VM'
+          for b in ai-worldmodel ai-benchmark ai-capabilityd ai-worklog ai-engineer; do
+            BIN_PATH=$(find vm -name "$b" -type f | head -1)
+            echo "deploying binary: $BIN_PATH -> /tmp/$b"
+            scp $SCP_OPTS "$BIN_PATH" ci@127.0.0.1:/tmp/$b
+            ssh_cmd "chmod +x /tmp/$b"
+          done
 
-          echo '==> run ai-worldmodel sync (rpm + systemctl) for real, inside the VM'
+          echo '==> assertion 5: run ai-worldmodel sync (rpm + systemctl) for real, inside the VM'
           sync_out=$(ssh_cmd '/tmp/ai-worldmodel --db /tmp/wm.sqlite sync 2>&1')
           echo "$sync_out"
           ssh_cmd 'test -f /tmp/wm.sqlite && echo DB_CREATED' | grep -q DB_CREATED \
@@ -215,17 +216,10 @@ jobs:
           echo "$stats_out" | grep -Eq 'packages=[1-9][0-9]* requires=[1-9][0-9]* provides=[1-9][0-9]* units=[0-9]+' \
             || { echo 'FAIL: world-model graph is empty (no requires/provides synced)'; exit 1; }
 
-          echo '==> assertion 5: reverse dependency queries return real, non-empty results'
-          echo '--> testing depends-on glibc'
-          glibc_out=$(ssh_cmd '/tmp/ai-worldmodel --db /tmp/wm.sqlite depends-on glibc 2>&1')
-          echo "$glibc_out"
-          echo "$glibc_out" | grep -Eq '^[1-9][0-9]* package\(s\) depend on glibc:' \
+          echo '--> testing reverse dependencies on glibc & openssl-libs'
+          ssh_cmd '/tmp/ai-worldmodel --db /tmp/wm.sqlite depends-on glibc 2>&1' | grep -Eq '^[1-9][0-9]* package\(s\) depend on glibc:' \
             || { echo 'FAIL: depends-on glibc returned no packages'; exit 1; }
-
-          echo '--> testing depends-on openssl-libs'
-          openssl_out=$(ssh_cmd '/tmp/ai-worldmodel --db /tmp/wm.sqlite depends-on openssl-libs 2>&1')
-          echo "$openssl_out"
-          echo "$openssl_out" | grep -Eq '^[1-9][0-9]* package\(s\) depend on openssl-libs:' \
+          ssh_cmd '/tmp/ai-worldmodel --db /tmp/wm.sqlite depends-on openssl-libs 2>&1' | grep -Eq '^[1-9][0-9]* package\(s\) depend on openssl-libs:' \
             || { echo 'FAIL: depends-on openssl-libs returned no packages'; exit 1; }
 
           echo '==> assertion 6: failed-since returns structurally sane output'
@@ -234,7 +228,87 @@ jobs:
           echo "$failed_out" | grep -Eq '^[0-9]+ unit failure\(s\) within 1h:' \
             || { echo 'FAIL: failed-since output not structurally valid'; exit 1; }
 
-          echo '==> END TO END PASS (motd + systemd + bootc + world-model sync + real queries verified)'
+          echo '==> assertion 7: real live compensating rollback execution inside Fedora guest'
+          # Create and start a real live systemd service in the guest
+          ssh_cmd 'sudo bash -c "cat <<EOF > /etc/systemd/system/canary-rollback.service
+[Unit]
+Description=Canary Rollback Test Service
+[Service]
+Type=simple
+ExecStart=/usr/bin/sleep 3600
+EOF
+systemctl daemon-reload
+systemctl start canary-rollback.service
+"'
+          echo "checking live canary service is active..."
+          ssh_cmd 'systemctl is-active canary-rollback.service' | grep -q '^active$' \
+            || { echo 'FAIL: canary-rollback.service failed to start in VM'; exit 1; }
+
+          # Start ai-capabilityd in LIVE mode (dry_run: false) inside the VM as root
+          ssh_cmd 'sudo bash -c "
+mkdir -p /tmp/live-scope
+nohup /tmp/ai-capabilityd --socket /tmp/live-cap.sock --worklog /tmp/live-worklog.jsonl --scope /tmp/live-scope >/tmp/cap.log 2>&1 &
+sleep 2
+test -S /tmp/live-cap.sock
+"' || { echo 'FAIL: live ai-capabilityd failed to start inside VM'; ssh_cmd 'cat /tmp/cap.log || true'; exit 1; }
+
+          # Execute live compensating rollback operations against the live guest via ai-capabilityd:
+          # 1) file.write canary file
+          # 2) file.delete rollback -> deletes the canary file on the live filesystem
+          # 3) service.stop rollback -> stops the live systemd service
+          ssh_cmd 'python3 -c "
+import socket, json
+
+def send_cap(cap_dict, is_rollback=False):
+    s = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+    s.connect(\"/tmp/live-cap.sock\")
+    req = {
+        \"api_version\": 1,
+        \"id\": \"live-rb-test\",
+        \"requester\": \"vm-smoke\",
+        \"token\": \"tok-vm\",
+        \"is_rollback\": is_rollback,
+        \"capability\": cap_dict
+    }
+    s.sendall(json.dumps(req).encode() + b\"\n\")
+    resp = json.loads(s.makefile().readline())
+    s.close()
+    return resp
+
+# 1. Write file
+r1 = send_cap({\"capability\": \"file_write\", \"path\": \"/tmp/live-scope/canary.conf\", \"content\": \"canary_val\n\", \"append\": False})
+assert r1[\"status\"] == \"success\", f\"file_write failed: {r1}\"
+
+# 2. Rollback: delete file
+r2 = send_cap({\"capability\": \"file_delete\", \"path\": \"/tmp/live-scope/canary.conf\"}, is_rollback=True)
+assert r2[\"status\"] == \"success\", f\"file_delete rollback failed: {r2}\"
+
+# 3. Rollback: stop service
+r3 = send_cap({\"capability\": \"service_stop\", \"unit\": \"canary-rollback.service\", \"approved\": True}, is_rollback=True)
+assert r3[\"status\"] == \"success\", f\"service_stop rollback failed: {r3}\"
+"'
+
+          echo '==> assertion 7.1: live systemd inspection confirms canary service was stopped by rollback'
+          SVC_STATE=$(ssh_cmd 'systemctl is-active canary-rollback.service 2>/dev/null || true')
+          echo "canary-rollback.service is-active -> $SVC_STATE"
+          case "$SVC_STATE" in
+            inactive|failed) echo "Service successfully stopped in live guest." ;;
+            *) echo "FAIL: service was not stopped by live rollback: $SVC_STATE"; exit 1 ;;
+          esac
+
+          echo '==> assertion 7.2: live filesystem inspection confirms file was deleted by rollback'
+          ssh_cmd 'test ! -f /tmp/live-scope/canary.conf && echo DELETED' | grep -q DELETED \
+            || { echo 'FAIL: canary file still exists on disk after live rollback'; exit 1; }
+
+          echo '==> assertion 7.3: ai-worklog structured rollback audit entry verification'
+          worklog_out=$(ssh_cmd '/tmp/ai-worklog --log /tmp/live-worklog.jsonl tail')
+          echo "$worklog_out"
+          echo "$worklog_out" | grep -q 'service.stop' \
+            || { echo 'FAIL: live service.stop not found in work log'; exit 1; }
+          echo "$worklog_out" | grep -q 'file.delete' \
+            || { echo 'FAIL: live file.delete not found in work log'; exit 1; }
+
+          echo '==> END TO END PASS (motd + systemd + bootc + world-model sync + live in-guest rollback verified)'
       - name: Upload console log on failure
         if: failure()
         uses: actions/upload-artifact@v4
