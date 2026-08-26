@@ -164,26 +164,42 @@ impl PolicyEngine {
                     factors.push(format!("Installing/updating package '{package}'"));
                 }
 
-                // Check world-model reverse dependency impact if database is provided
-                if let Some(conn) = db
-                    && let Ok(rev_deps) = world_model::query::reverse_deps(conn, package)
-                {
-                    let count = rev_deps.len();
-                    if count > 20 {
-                        score += 40;
-                        factors.push(format!(
-                            "Package has {count} reverse dependencies in World Model (critical dependency blast radius)"
-                        ));
-                    } else if count > 5 {
-                        score += 20;
-                        factors.push(format!(
-                            "Package has {count} reverse dependencies in World Model (moderate dependency blast radius)"
-                        ));
-                    } else if count > 0 {
-                        score += (count as u32).min(10);
-                        factors.push(format!(
-                            "Package has {count} reverse dependencies in World Model"
-                        ));
+                // Check world-model reverse dependency impact (fail-closed if unavailable)
+                match db {
+                    Some(conn) => match world_model::query::reverse_deps(conn, package) {
+                        Ok(rev_deps) => {
+                            let count = rev_deps.len();
+                            if count > 20 {
+                                score += 40;
+                                factors.push(format!(
+                                    "Package has {count} reverse dependencies in World Model (critical dependency blast radius)"
+                                ));
+                            } else if count > 5 {
+                                score += 20;
+                                factors.push(format!(
+                                    "Package has {count} reverse dependencies in World Model (moderate dependency blast radius)"
+                                ));
+                            } else if count > 0 {
+                                score += (count as u32).min(10);
+                                factors.push(format!(
+                                    "Package has {count} reverse dependencies in World Model"
+                                ));
+                            }
+                        }
+                        Err(e) => {
+                            // Fail closed: query failed -> escalate to at least Confirm
+                            score = score.max(50);
+                            factors.push(format!(
+                                "World Model dependency query failed ({e}); failing closed with unknown-risk penalty"
+                            ));
+                        }
+                    },
+                    None => {
+                        // Fail closed: database connection offline -> escalate to at least Confirm
+                        score = score.max(50);
+                        factors.push(
+                            "World Model database offline/unavailable; failing closed with unknown dependency risk (minimum Confirm tier)".into(),
+                        );
                     }
                 }
             }
@@ -205,13 +221,21 @@ impl PolicyEngine {
                 }
 
                 // Check unit state from world-model if available
-                if let Some(conn) = db
-                    && let Ok(Some(u_info)) = world_model::query::unit_info(conn, unit)
-                {
-                    factors.push(format!(
-                        "Current unit state in World Model: active='{}', substate='{}'",
-                        u_info.active_state, u_info.sub_state
-                    ));
+                match db {
+                    Some(conn) => {
+                        if let Ok(Some(u_info)) = world_model::query::unit_info(conn, unit) {
+                            factors.push(format!(
+                                "Current unit state in World Model: active='{}', substate='{}'",
+                                u_info.active_state, u_info.sub_state
+                            ));
+                        }
+                    }
+                    None => {
+                        factors.push(
+                            "World Model offline; unit runtime state unverified prior to restart"
+                                .into(),
+                        );
+                    }
                 }
             }
         }
@@ -367,5 +391,26 @@ mod tests {
             None,
         );
         assert_eq!(ssh_rep.tier, ApprovalTier::ExpertReview);
+    }
+
+    #[test]
+    fn test_package_install_fails_closed_when_db_is_none() {
+        let pkg_rep = PolicyEngine::evaluate_capability(
+            &CapabilityKind::PackageInstall {
+                package: "ripgrep".into(),
+                approved: false,
+            },
+            None, // World Model DB is offline / unavailable
+        );
+
+        // Must fail closed with minimum Confirm tier and >= 50 risk score
+        assert_eq!(pkg_rep.tier, ApprovalTier::Confirm);
+        assert!(pkg_rep.score >= 50);
+        assert!(
+            pkg_rep
+                .factors
+                .iter()
+                .any(|f| f.contains("World Model database offline/unavailable"))
+        );
     }
 }

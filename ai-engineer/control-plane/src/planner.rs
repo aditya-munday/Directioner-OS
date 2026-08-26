@@ -332,11 +332,12 @@ mod tests {
         let new_path = temp.path().join("brand_new.conf");
 
         // Case 1: Pre-existing file
-        let rb_existing = make_file_write_rollback(
-            &existing_path.to_string_lossy(),
-            "step-1",
+        let rb_existing = make_file_write_rollback(&existing_path.to_string_lossy(), "step-1");
+        assert!(
+            rb_existing
+                .description
+                .contains("Restore pre-existing content")
         );
-        assert!(rb_existing.description.contains("Restore pre-existing content"));
         match rb_existing.capability {
             CapabilityKind::FileWrite { content, .. } => {
                 assert_eq!(content, "PORT=80\nDEBUG=0\n");
@@ -345,10 +346,7 @@ mod tests {
         }
 
         // Case 2: Brand new file (didn't exist before)
-        let rb_new = make_file_write_rollback(
-            &new_path.to_string_lossy(),
-            "step-1",
-        );
+        let rb_new = make_file_write_rollback(&new_path.to_string_lossy(), "step-1");
         assert!(rb_new.description.contains("Remove newly created file"));
         match rb_new.capability {
             CapabilityKind::FileWrite { content, .. } => {
