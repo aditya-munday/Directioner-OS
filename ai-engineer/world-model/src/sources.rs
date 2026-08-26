@@ -171,13 +171,10 @@ pub fn parse_line_protocol(text: &str) -> Result<PackageData, String> {
             "END" => {
                 current = None;
             }
-            other => return Err(format!("line {}: unknown tag '{}'", idx + 1, other)),
+            _ => continue,
         }
     }
 
-    if current.is_some() {
-        return Err("unterminated package record (missing END)".into());
-    }
     Ok(data)
 }
 

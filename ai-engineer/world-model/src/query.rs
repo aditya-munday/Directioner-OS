@@ -30,7 +30,20 @@ pub struct UnitInfo {
 
 pub fn reverse_deps(conn: &Connection, name: &str) -> rusqlite::Result<Vec<String>> {
     let mut stmt = conn.prepare(
-        "SELECT DISTINCT dependent FROM (\n         SELECT pkg AS dependent FROM pkg_requires WHERE dep = ?1\n         UNION\n         SELECT pr.pkg AS dependent FROM pkg_requires pr\n           JOIN pkg_provides pp ON pp.provide = pr.dep\n          WHERE pp.pkg = ?1\n         ) ORDER BY dependent",
+        "SELECT DISTINCT dependent FROM (
+            SELECT pkg AS dependent FROM pkg_requires
+             WHERE dep = ?1 OR dep LIKE ?1 || ' %' OR dep LIKE ?1 || '(%'
+            UNION
+            SELECT pr.pkg AS dependent FROM pkg_requires pr
+              JOIN pkg_provides pp ON (
+                pr.dep = pp.provide
+                OR pr.dep LIKE pp.provide || '(%'
+                OR pp.provide LIKE pr.dep || '(%'
+                OR pr.dep LIKE pp.provide || ' %'
+                OR pp.provide LIKE pr.dep || ' =%'
+              )
+             WHERE pp.pkg = ?1
+         ) ORDER BY dependent",
     )?;
     let rows = stmt
         .query_map(params![name], |r| r.get::<_, String>(0))?

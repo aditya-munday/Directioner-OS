@@ -59,6 +59,9 @@ impl Ctx {
                     .unwrap_or_else(|| "dnf5 repoquery returned no packages".into());
                 let data = Self::run_pkg_source(&sources::rpm_qa_spec(None))
                     .map_err(|err2| format!("dnf5: {err1}; rpm fallback: {err2}"))?;
+                if data.packages.is_empty() {
+                    return Err(format!("dnf5: {err1}; rpm fallback returned 0 packages"));
+                }
                 (data, "rpm -qa")
             }
         };
