@@ -1,49 +1,62 @@
-//! Benchmark Scenario 5: Package / Service Inverse Rollback Capability Gap (Tracked for Phase 2).
+//! Benchmark Scenario 5: Package / Service Inverse Rollback Capabilities (Phase 2).
 
 use control_plane::planner::{Planner, PlannerConfig};
 
 use crate::BenchmarkScenario;
 
 /// Scenario testing package/service rollback capabilities.
-///
-/// Explicitly documents that `package.remove` and `service.stop` capabilities
-/// do not exist in the 6 baseline capabilities of Phase 0/1 and are tracked for Phase 2.
-pub struct PackageServiceRollbackGapScenario;
+pub struct PackageServiceRollbackScenario;
 
-impl BenchmarkScenario for PackageServiceRollbackGapScenario {
+impl BenchmarkScenario for PackageServiceRollbackScenario {
     fn name(&self) -> &'static str {
-        "package_service_rollback_gap"
+        "package_service_compensating_rollback"
     }
 
     fn description(&self) -> &'static str {
-        "Verify package.remove / service.stop inverse rollback coverage (Phase 2 capability gap)"
+        "Verify package.remove / service.stop inverse rollback coverage (Phase 2)"
     }
 
     fn is_known_gap(&self) -> bool {
-        true
+        false
     }
 
     fn run(&self) -> (bool, String) {
         let planner = Planner::new(PlannerConfig::default());
-        let plan = planner.create_plan("install htop", None).unwrap();
 
-        // Check if package.remove rollback exists
-        let has_package_rollback = plan.rollback_steps.iter().any(|rb| {
+        // 1. Package install rollback assertion
+        let plan_pkg = planner.create_plan("install htop", None).unwrap();
+        let has_package_rollback = plan_pkg.rollback_steps.iter().any(|rb| {
             matches!(
-                rb.description.to_lowercase().as_str(),
-                d if d.contains("remove package") || d.contains("uninstall")
+                rb.capability,
+                capability_layer::CapabilityKind::PackageRemove { .. }
+            )
+        });
+
+        // 2. Service restart rollback assertion
+        let plan_svc = planner
+            .create_plan("fix nginx.service restart", None)
+            .unwrap();
+        let has_service_rollback = plan_svc.rollback_steps.iter().any(|rb| {
+            matches!(
+                rb.capability,
+                capability_layer::CapabilityKind::ServiceStop { .. }
             )
         });
 
         if !has_package_rollback {
             (
                 false,
-                "GAP: package.remove & service.stop inverse primitives absent in Phase 1 (deferred to Phase 2)".into(),
+                "Missing PackageRemove compensating rollback step for package install".into(),
+            )
+        } else if !has_service_rollback {
+            (
+                false,
+                "Missing ServiceStop compensating rollback step for service restart".into(),
             )
         } else {
             (
                 true,
-                "Package/service rollback capabilities are implemented".into(),
+                "Verified: PackageRemove and ServiceStop compensating rollbacks generated successfully".into(),
             )
         }
     }

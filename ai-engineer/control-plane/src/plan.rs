@@ -21,10 +21,10 @@ pub enum PlanStatus {
     Executing,
     /// All steps succeeded and verified by the Test/Verification Agent.
     Completed,
-    /// A step failed or was denied; forward execution halted.
-    Failed,
-    /// Compensating rollback actions were executed following a failure.
+    /// Compensating rollback actions were executed successfully following a failure.
     RolledBack,
+    /// One or more compensating rollback actions FAILED, leaving system in partial/dirty state.
+    RollbackFailed,
 }
 
 /// An atomic step within an execution plan.

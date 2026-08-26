@@ -11,19 +11,25 @@
 //!    matches intent.
 
 pub mod client;
+pub mod code_engine;
 pub mod implementer;
 pub mod plan;
 pub mod planner;
 pub mod policy;
+pub mod reviewer;
 pub mod simulation;
 pub mod verifier;
 
 pub use client::{CapabilityClient, ClientError};
+pub use code_engine::{BuildTestReport, CodeEngine, Diagnostic, TestFailure};
 pub use implementer::Implementer;
 pub use plan::{
     Plan, PlanExecutionReport, PlanStatus, PlanStep, RollbackStep, StepExecutionResult,
 };
 pub use planner::{Planner, PlannerConfig};
 pub use policy::{ApprovalTier, BlastRadiusReport, PolicyEngine};
+pub use reviewer::{
+    FindingSeverity, ReviewFinding, ReviewReport, ReviewVerdict, Reviewer, ReviewerConfig,
+};
 pub use simulation::{PlanPreview, Simulator, StepPreview};
 pub use verifier::{VerificationCheck, VerificationReport, Verifier};

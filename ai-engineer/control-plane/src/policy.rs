@@ -148,6 +148,30 @@ impl PolicyEngine {
                     ));
                 }
             }
+            CapabilityKind::FileDelete { path } => {
+                let is_critical_path = CRITICAL_SYSTEM_PATHS
+                    .iter()
+                    .any(|crit| path.starts_with(crit));
+
+                if is_critical_path {
+                    score += 95;
+                    factors.push(format!(
+                        "Deleting critical system file '{path}' may render system unbootable or insecure"
+                    ));
+                } else if path.starts_with("/etc") {
+                    score += 70;
+                    factors.push(format!(
+                        "Deleting configuration file inside '/etc': '{path}'"
+                    ));
+                } else if path.starts_with("/var") || path.starts_with("/usr") {
+                    score += 65;
+                    factors.push(format!("Deleting system file/directory '{path}'"));
+                } else {
+                    // User / workspace space
+                    score += 35;
+                    factors.push(format!("Deleting file in workspace/user scope: '{path}'"));
+                }
+            }
             CapabilityKind::PackageInstall { package, .. } => {
                 let pkg_lower = package.to_lowercase();
                 let is_critical = CRITICAL_SYSTEM_PACKAGES
@@ -164,10 +188,8 @@ impl PolicyEngine {
                     factors.push(format!("Installing/updating package '{package}'"));
                 }
 
-                // Explicit irreversibility factor (no package.remove inverse capability in Phase 1)
-                factors.push(
-                    "No package.remove rollback capability exists in baseline layer (irreversible action; minimum Confirm tier required)".into(),
-                );
+                // Compensating rollback capability note
+                factors.push("Compensating package.remove rollback capability is available".into());
 
                 // Check world-model reverse dependency impact (fail-closed if unavailable)
                 match db {
@@ -208,6 +230,50 @@ impl PolicyEngine {
                     }
                 }
             }
+            CapabilityKind::PackageRemove { package, .. } => {
+                let pkg_lower = package.to_lowercase();
+                let is_critical = CRITICAL_SYSTEM_PACKAGES
+                    .iter()
+                    .any(|crit| pkg_lower == *crit || pkg_lower.starts_with(&format!("{crit}-")));
+
+                if is_critical {
+                    score += 95;
+                    factors.push(format!(
+                        "Package '{package}' is a core system component; removal carries destructive system blast radius"
+                    ));
+                } else {
+                    score += 55;
+                    factors.push(format!("Removing package '{package}'"));
+                }
+
+                // Check world-model reverse dependencies that would break if removed
+                match db {
+                    Some(conn) => match world_model::query::reverse_deps(conn, package) {
+                        Ok(rev_deps) => {
+                            let count = rev_deps.len();
+                            if count > 0 {
+                                score += (count as u32 * 5).min(40);
+                                factors.push(format!(
+                                    "Removing package breaks {count} dependent packages in World Model"
+                                ));
+                            }
+                        }
+                        Err(e) => {
+                            score = score.max(60);
+                            factors.push(format!(
+                                "World Model reverse dependency query failed ({e}); failing closed"
+                            ));
+                        }
+                    },
+                    None => {
+                        score = score.max(60);
+                        factors.push(
+                            "World Model database offline; failing closed on package removal risk"
+                                .into(),
+                        );
+                    }
+                }
+            }
             CapabilityKind::ServiceRestart { unit, .. } => {
                 let protected = [
                     "ssh.service",
@@ -225,11 +291,6 @@ impl PolicyEngine {
                     factors.push(format!("Restarting systemd service unit '{unit}'"));
                 }
 
-                // Explicit irreversibility factor (no service.stop rollback capability in Phase 1)
-                factors.push(
-                    "No service.stop / state-restoration capability exists in baseline layer (irreversible daemon state transition; minimum Confirm tier required)".into(),
-                );
-
                 // Check unit state from world-model if available
                 match db {
                     Some(conn) => {
@@ -246,6 +307,23 @@ impl PolicyEngine {
                                 .into(),
                         );
                     }
+                }
+            }
+            CapabilityKind::ServiceStop { unit, .. } => {
+                let protected = [
+                    "ssh.service",
+                    "systemd-udevd.service",
+                    "dbus.service",
+                    "firewalld.service",
+                ];
+                if protected.iter().any(|p| unit == p) {
+                    score += 95;
+                    factors.push(format!(
+                        "Unit '{unit}' is a protected/critical system daemon; stopping it will destabilize the machine"
+                    ));
+                } else {
+                    score += 50;
+                    factors.push(format!("Stopping systemd service unit '{unit}'"));
                 }
             }
         }

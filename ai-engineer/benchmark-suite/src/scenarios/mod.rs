@@ -15,5 +15,5 @@ pub use dependency_audit::DependencyAuditScenario;
 pub use killswitch::KillswitchScenario;
 pub use remediation::RemediationScenario;
 pub use rollback::RollbackScenario;
-pub use rollback_gaps::PackageServiceRollbackGapScenario;
+pub use rollback_gaps::PackageServiceRollbackScenario;
 pub use webserver::WebserverScenario;

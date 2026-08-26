@@ -23,8 +23,9 @@ USAGE:
 
 COMMANDS:
     plan <INTENT>        Generate a structured multi-step plan with blast-radius scoring
+    review <INTENT>      Run independent multi-agent Reviewer audit on synthesized plan
     dry-run <INTENT>     Simulate plan and generate unified diffs without modifying state
-    apply <INTENT>       Plan, preview, prompt for confirmation, and execute via Capability Layer
+    apply <INTENT>       Plan, review, preview, prompt for confirmation, and execute via Capability Layer
     explain <INTENT>     Provide 3-depth explanation (summary, engineering plan, raw diffs)
 
 OPTIONS:
@@ -196,6 +197,40 @@ fn main() {
                 println!("\nRollback steps available: {}", plan.rollback_steps.len());
             }
         }
+        "review" => {
+            let reviewer = control_plane::reviewer::Reviewer::new(
+                control_plane::reviewer::ReviewerConfig::default(),
+            );
+            let report = reviewer.review_plan(&plan);
+
+            if args.json {
+                println!("{}", serde_json::to_string_pretty(&report).unwrap());
+            } else {
+                println!("══════════════════════════════════════════════════════════════════════");
+                println!("  REVIEWER AGENT AUDIT REPORT");
+                println!("  Plan:    {}", plan.id);
+                println!("  Verdict: {:?}", report.verdict);
+                println!("  Summary: {}", report.summary);
+                println!("──────────────────────────────────────────────────────────────────────");
+                if report.findings.is_empty() {
+                    println!("  ✔ No invariant violations or warnings found.");
+                } else {
+                    println!("  Findings ({}) :", report.findings.len());
+                    for (i, f) in report.findings.iter().enumerate() {
+                        let icon = match f.severity {
+                            control_plane::reviewer::FindingSeverity::Fatal => "✘ [FATAL]",
+                            control_plane::reviewer::FindingSeverity::Warning => "▲ [WARN]",
+                            control_plane::reviewer::FindingSeverity::Info => "ℹ [INFO]",
+                        };
+                        println!("    {}. {} [{}] {}", i + 1, icon, f.category, f.message);
+                    }
+                }
+                println!("══════════════════════════════════════════════════════════════════════");
+            }
+            if report.verdict == control_plane::reviewer::ReviewVerdict::Rejected {
+                exit(1);
+            }
+        }
         "dry-run" => {
             let preview = Simulator::simulate_plan(&plan, Some(&args.work_root));
             if args.json {
@@ -205,6 +240,19 @@ fn main() {
             }
         }
         "apply" => {
+            // Independent Reviewer Agent pass before presentation/execution
+            let reviewer = control_plane::reviewer::Reviewer::new(
+                control_plane::reviewer::ReviewerConfig::default(),
+            );
+            let review_report = reviewer.review_plan(&plan);
+            if review_report.verdict == control_plane::reviewer::ReviewVerdict::Rejected {
+                eprintln!("\nExecution BLOCKED by Reviewer Agent:");
+                for f in &review_report.findings {
+                    eprintln!("  ✘ [{:?}] {}: {}", f.severity, f.category, f.message);
+                }
+                exit(1);
+            }
+
             let preview = Simulator::simulate_plan(&plan, Some(&args.work_root));
             if !args.json {
                 println!("{}", preview.render_terminal());

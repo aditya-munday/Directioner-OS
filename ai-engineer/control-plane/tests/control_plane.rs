@@ -34,7 +34,7 @@ fn test_planner_and_simulation_pipeline() {
 
     assert_eq!(plan.status, PlanStatus::Draft);
     assert_eq!(plan.steps.len(), 3);
-    assert_eq!(plan.rollback_steps.len(), 1);
+    assert_eq!(plan.rollback_steps.len(), 3);
 
     // Blast radius evaluation
     assert!(plan.aggregate_blast_radius.score >= 45);

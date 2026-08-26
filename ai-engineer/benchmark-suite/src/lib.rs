@@ -172,7 +172,7 @@ impl BenchmarkRunner {
             Box::new(scenarios::RemediationScenario),
             Box::new(scenarios::DependencyAuditScenario),
             Box::new(scenarios::RollbackScenario),
-            Box::new(scenarios::PackageServiceRollbackGapScenario),
+            Box::new(scenarios::PackageServiceRollbackScenario),
             Box::new(scenarios::BlastRadiusScenario),
             Box::new(scenarios::KillswitchScenario),
             Box::new(scenarios::AuditabilityScenario),

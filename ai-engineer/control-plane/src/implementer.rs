@@ -49,15 +49,30 @@ impl<'a> Implementer<'a> {
                 self.execute_rollback(&plan.rollback_steps, &plan.id, &failed_id);
             let total_duration_ms = total_start.elapsed().as_millis() as u64;
 
+            let any_rollback_failed = rollback_results.iter().any(|r| !r.success);
+            let (final_status, message) = if any_rollback_failed {
+                (
+                    PlanStatus::RollbackFailed,
+                    format!(
+                        "CRITICAL: Plan aborted at step '{failed_id}', and one or more compensating rollback steps FAILED. Manual remediation required."
+                    ),
+                )
+            } else {
+                (
+                    PlanStatus::RolledBack,
+                    format!(
+                        "Plan aborted at step '{failed_id}'; all compensating rollback steps executed successfully."
+                    ),
+                )
+            };
+
             return PlanExecutionReport {
                 plan_id: plan.id.clone(),
-                final_status: PlanStatus::RolledBack,
+                final_status,
                 step_results,
                 rollback_results,
                 total_duration_ms,
-                message: format!(
-                    "Plan aborted at step '{failed_id}'; compensating rollback steps executed."
-                ),
+                message,
             };
         }
 

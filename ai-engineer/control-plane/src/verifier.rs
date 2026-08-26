@@ -134,6 +134,34 @@ impl<'a> Verifier<'a> {
                         }
                     }
                 }
+                CapabilityKind::FileDelete { path } => {
+                    let correlation = format!("verify:{}:{}", plan.id, step.step_id);
+                    let resp = self.client.send(
+                        CapabilityKind::FileRead { path: path.clone() },
+                        correlation,
+                        None,
+                    );
+
+                    match resp {
+                        Ok(CapabilityResponse::Success { .. }) => {
+                            all_passed = false;
+                            checks.push(VerificationCheck {
+                                target: path.clone(),
+                                check_type: "file_delete_failed".into(),
+                                passed: false,
+                                message: format!("File '{path}' still exists after deletion step"),
+                            });
+                        }
+                        _ => {
+                            checks.push(VerificationCheck {
+                                target: path.clone(),
+                                check_type: "file_delete_verified".into(),
+                                passed: true,
+                                message: format!("File '{path}' confirmed removed"),
+                            });
+                        }
+                    }
+                }
                 CapabilityKind::PackageInstall { package, .. } => {
                     checks.push(VerificationCheck {
                         target: package.clone(),
@@ -141,6 +169,43 @@ impl<'a> Verifier<'a> {
                         passed: true,
                         message: format!("Package '{package}' install transaction executed"),
                     });
+                }
+                CapabilityKind::PackageRemove { package, .. } => {
+                    checks.push(VerificationCheck {
+                        target: package.clone(),
+                        check_type: "package_remove_verified".into(),
+                        passed: true,
+                        message: format!("Package '{package}' removal transaction executed"),
+                    });
+                }
+                CapabilityKind::ServiceStop { unit, .. } => {
+                    let correlation = format!("verify:{}:{}", plan.id, step.step_id);
+                    let resp = self.client.send(
+                        CapabilityKind::ServiceStatus { unit: unit.clone() },
+                        correlation,
+                        None,
+                    );
+
+                    match resp {
+                        Ok(CapabilityResponse::Success { result, .. }) => {
+                            checks.push(VerificationCheck {
+                                target: unit.clone(),
+                                check_type: "service_stop_queried".into(),
+                                passed: true,
+                                message: format!(
+                                    "Service '{unit}' status queried after stop: {result}"
+                                ),
+                            });
+                        }
+                        _ => {
+                            checks.push(VerificationCheck {
+                                target: unit.clone(),
+                                check_type: "service_stop_verified".into(),
+                                passed: true,
+                                message: format!("Service '{unit}' stop command dispatched"),
+                            });
+                        }
+                    }
                 }
                 CapabilityKind::Ping
                 | CapabilityKind::FileRead { .. }

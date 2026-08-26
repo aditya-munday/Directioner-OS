@@ -163,9 +163,12 @@ impl Simulator {
             CapabilityKind::Ping => "ping",
             CapabilityKind::FileRead { .. } => "file_read",
             CapabilityKind::FileWrite { .. } => "file_write",
+            CapabilityKind::FileDelete { .. } => "file_delete",
             CapabilityKind::PackageInstall { .. } => "package_install",
+            CapabilityKind::PackageRemove { .. } => "package_remove",
             CapabilityKind::ServiceStatus { .. } => "service_status",
             CapabilityKind::ServiceRestart { .. } => "service_restart",
+            CapabilityKind::ServiceStop { .. } => "service_stop",
         }
         .to_string();
 
@@ -213,9 +216,22 @@ impl Simulator {
                     )
                 }
             }
+            CapabilityKind::FileDelete { path } => {
+                format!("PROJECTION: Unlink / remove file '{path}'")
+            }
             CapabilityKind::PackageInstall { package, approved } => {
                 format!(
                     "PROJECTION: dnf5 install -y {package}\nApproval Gate: {}",
+                    if *approved {
+                        "APPROVED"
+                    } else {
+                        "PENDING APPROVAL"
+                    }
+                )
+            }
+            CapabilityKind::PackageRemove { package, approved } => {
+                format!(
+                    "PROJECTION: dnf5 remove -y {package}\nApproval Gate: {}",
                     if *approved {
                         "APPROVED"
                     } else {
@@ -229,6 +245,16 @@ impl Simulator {
             CapabilityKind::ServiceRestart { unit, approved } => {
                 format!(
                     "PROJECTION: systemctl restart {unit}\nApproval Gate: {}",
+                    if *approved {
+                        "APPROVED"
+                    } else {
+                        "PENDING APPROVAL"
+                    }
+                )
+            }
+            CapabilityKind::ServiceStop { unit, approved } => {
+                format!(
+                    "PROJECTION: systemctl stop {unit}\nApproval Gate: {}",
                     if *approved {
                         "APPROVED"
                     } else {

@@ -133,7 +133,9 @@ impl Planner {
             });
 
             // Rollback steps (inspects whether file pre-existed)
+            rollbacks.push(make_service_restart_rollback("nginx.service", "step-3"));
             rollbacks.push(make_file_write_rollback(&conf_str, "step-2"));
+            rollbacks.push(make_package_install_rollback("nginx", "step-1"));
 
             return Ok((summary, steps, rollbacks));
         }
@@ -168,6 +170,8 @@ impl Planner {
                 timeout_secs: self.config.default_timeout_secs,
             });
 
+            rollbacks.push(make_service_restart_rollback(&unit, "step-2"));
+
             return Ok((summary, steps, rollbacks));
         }
 
@@ -192,6 +196,8 @@ impl Planner {
                 capability: step1_cap,
                 timeout_secs: self.config.default_timeout_secs,
             });
+
+            rollbacks.push(make_package_install_rollback(pkg, "step-1"));
 
             return Ok((summary, steps, rollbacks));
         }
@@ -284,15 +290,37 @@ fn make_file_write_rollback(path_str: &str, trigger_step: &str) -> RollbackStep 
         }
     } else {
         RollbackStep {
-            step_id: format!("rb-remove-{}", &uuid_v4()[0..6]),
-            description: format!("Remove newly created file '{path_str}' (truncate to 0 bytes)"),
-            capability: CapabilityKind::FileWrite {
+            step_id: format!("rb-delete-{}", &uuid_v4()[0..6]),
+            description: format!("Delete newly created file '{path_str}'"),
+            capability: CapabilityKind::FileDelete {
                 path: path_str.to_string(),
-                content: String::new(),
-                append: false,
             },
             triggers: vec![trigger_step.to_string()],
         }
+    }
+}
+
+fn make_package_install_rollback(package: &str, trigger_step: &str) -> RollbackStep {
+    RollbackStep {
+        step_id: format!("rb-remove-pkg-{}", &uuid_v4()[0..6]),
+        description: format!("Compensating package removal for '{package}'"),
+        capability: CapabilityKind::PackageRemove {
+            package: package.to_string(),
+            approved: true,
+        },
+        triggers: vec![trigger_step.to_string()],
+    }
+}
+
+fn make_service_restart_rollback(unit: &str, trigger_step: &str) -> RollbackStep {
+    RollbackStep {
+        step_id: format!("rb-stop-unit-{}", &uuid_v4()[0..6]),
+        description: format!("Compensating service deactivation for '{unit}'"),
+        capability: CapabilityKind::ServiceStop {
+            unit: unit.to_string(),
+            approved: true,
+        },
+        triggers: vec![trigger_step.to_string()],
     }
 }
 
@@ -308,7 +336,7 @@ mod tests {
             .unwrap();
 
         assert_eq!(plan.steps.len(), 3);
-        assert_eq!(plan.rollback_steps.len(), 1);
+        assert_eq!(plan.rollback_steps.len(), 3);
         assert!(plan.summary.contains("9090"));
         assert!(plan.aggregate_blast_radius.tier >= crate::policy::ApprovalTier::Confirm);
     }
@@ -321,6 +349,7 @@ mod tests {
             .unwrap();
 
         assert_eq!(plan.steps.len(), 2);
+        assert_eq!(plan.rollback_steps.len(), 1);
         assert!(plan.aggregate_blast_radius.score >= 80);
     }
 
@@ -345,14 +374,14 @@ mod tests {
             _ => panic!("Expected FileWrite capability"),
         }
 
-        // Case 2: Brand new file (didn't exist before)
+        // Case 2: Brand new file (didn't exist before) -> FileDelete
         let rb_new = make_file_write_rollback(&new_path.to_string_lossy(), "step-1");
-        assert!(rb_new.description.contains("Remove newly created file"));
+        assert!(rb_new.description.contains("Delete newly created file"));
         match rb_new.capability {
-            CapabilityKind::FileWrite { content, .. } => {
-                assert_eq!(content, "");
+            CapabilityKind::FileDelete { path } => {
+                assert_eq!(path, new_path.to_string_lossy());
             }
-            _ => panic!("Expected FileWrite capability"),
+            _ => panic!("Expected FileDelete capability"),
         }
     }
 }

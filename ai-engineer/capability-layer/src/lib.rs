@@ -71,9 +71,21 @@ pub enum CapabilityKind {
         /// If true, append; otherwise truncate-then-write.
         append: bool,
     },
+    /// Delete (unlink) a file inside the work scope.
+    FileDelete {
+        /// Absolute path to delete.
+        path: String,
+    },
     /// Install a package. Requires `approved == true` in production (approval gate).
     PackageInstall {
         /// Package name (or name-version spec) to install.
+        package: String,
+        /// Whether the human approval gate has cleared this specific plan step.
+        approved: bool,
+    },
+    /// Remove a package. Requires `approved == true` in production (approval gate).
+    PackageRemove {
+        /// Package name to remove.
         package: String,
         /// Whether the human approval gate has cleared this specific plan step.
         approved: bool,
@@ -85,6 +97,13 @@ pub enum CapabilityKind {
     },
     /// Restart a systemd unit. Requires approval and is refused for protected units.
     ServiceRestart {
+        /// Unit name, e.g. `nginx.service`.
+        unit: String,
+        /// Whether the human approval gate has cleared this specific plan step.
+        approved: bool,
+    },
+    /// Stop a systemd unit. Requires approval and is refused for protected units.
+    ServiceStop {
         /// Unit name, e.g. `nginx.service`.
         unit: String,
         /// Whether the human approval gate has cleared this specific plan step.

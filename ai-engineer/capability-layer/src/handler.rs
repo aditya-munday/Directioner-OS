@@ -83,12 +83,19 @@ impl Handler {
                 content,
                 append,
             } => self.cap_file_write(path, content, *append),
+            CapabilityKind::FileDelete { path } => self.cap_file_delete(path),
             CapabilityKind::PackageInstall { package, approved } => {
                 self.cap_package_install(package, *approved)
+            }
+            CapabilityKind::PackageRemove { package, approved } => {
+                self.cap_package_remove(package, *approved)
             }
             CapabilityKind::ServiceStatus { unit } => self.cap_service_status(unit),
             CapabilityKind::ServiceRestart { unit, approved } => {
                 self.cap_service_restart(unit, *approved)
+            }
+            CapabilityKind::ServiceStop { unit, approved } => {
+                self.cap_service_stop(unit, *approved)
             }
         };
 
@@ -201,6 +208,43 @@ impl Handler {
         }))
     }
 
+    fn cap_file_delete(&self, raw: &str) -> std::result::Result<Value, CapError> {
+        let raw_path = std::path::Path::new(raw);
+        if raw_path
+            .components()
+            .any(|c| matches!(c, std::path::Component::ParentDir))
+        {
+            return Err(CapError::Denied(format!(
+                "path contains parent traversal: {raw}"
+            )));
+        }
+        let path = if raw_path.is_absolute() && raw_path.starts_with(self.scope.root()) {
+            raw_path.to_path_buf()
+        } else {
+            let candidate = crate::scope::ScopedPath::safe_display(raw);
+            self.scope.root().join(candidate)
+        };
+        if !path.starts_with(self.scope.root()) {
+            return Err(CapError::Denied(format!("path escapes work scope: {raw}")));
+        }
+        if !path.exists() {
+            return Ok(json!({
+                "path": path.display().to_string(),
+                "deleted": false,
+                "note": "file did not exist",
+            }));
+        }
+        if path.is_dir() {
+            std::fs::remove_dir_all(&path).map_err(|e| CapError::Internal(e.to_string()))?;
+        } else {
+            std::fs::remove_file(&path).map_err(|e| CapError::Internal(e.to_string()))?;
+        }
+        Ok(json!({
+            "path": path.display().to_string(),
+            "deleted": true,
+        }))
+    }
+
     fn cap_package_install(
         &self,
         package: &str,
@@ -232,6 +276,47 @@ impl Handler {
                 } else {
                     Err(CapError::Internal(format!(
                         "dnf failed: {}",
+                        String::from_utf8_lossy(&out.stderr)
+                    )))
+                }
+            }
+            None => Err(CapError::Internal(
+                "package adapter unavailable: dnf5/dnf not found".into(),
+            )),
+        }
+    }
+
+    fn cap_package_remove(
+        &self,
+        package: &str,
+        approved: bool,
+    ) -> std::result::Result<Value, CapError> {
+        if self.config.approval_required && !approved {
+            return Err(CapError::Denied(format!(
+                "approval gate not cleared (approved=false) for package.remove {package}"
+            )));
+        }
+        if self.config.dry_run {
+            return Ok(json!({
+                "dry_run": true,
+                "would_run": format!("dnf5 remove -y {package}"),
+                "package": package,
+            }));
+        }
+        let dnf = which("dnf5").or_else(|| which("dnf"));
+        match dnf {
+            Some(bin) => {
+                let out = std::process::Command::new(&bin)
+                    .arg("remove")
+                    .arg("-y")
+                    .arg(package)
+                    .output()
+                    .map_err(|e| CapError::Internal(e.to_string()))?;
+                if out.status.success() {
+                    Ok(json!({ "package": package, "status": "removed" }))
+                } else {
+                    Err(CapError::Internal(format!(
+                        "dnf remove failed: {}",
                         String::from_utf8_lossy(&out.stderr)
                     )))
                 }
@@ -306,6 +391,47 @@ impl Handler {
         }
     }
 
+    fn cap_service_stop(&self, unit: &str, approved: bool) -> std::result::Result<Value, CapError> {
+        if self.config.protected_units.iter().any(|u| u == unit) {
+            return Err(CapError::Denied(format!(
+                "unit is on the protected/do-not-touch list: {unit}"
+            )));
+        }
+        if self.config.approval_required && !approved {
+            return Err(CapError::Denied(format!(
+                "approval gate not cleared (approved=false) for service.stop {unit}"
+            )));
+        }
+        if self.config.dry_run {
+            return Ok(json!({
+                "unit": unit,
+                "dry_run": true,
+                "would_run": format!("systemctl stop {unit}"),
+            }));
+        }
+        if let Some(sysctl) = which("systemctl") {
+            let out = std::process::Command::new(&sysctl)
+                .arg("stop")
+                .arg(unit)
+                .output()
+                .map_err(|e| CapError::Internal(e.to_string()))?;
+            if out.status.success() {
+                Ok(json!({ "unit": unit, "stopped": true }))
+            } else {
+                Err(CapError::Internal(format!(
+                    "systemctl stop failed: {}",
+                    String::from_utf8_lossy(&out.stderr)
+                )))
+            }
+        } else {
+            Ok(json!({
+                "unit": unit,
+                "stopped": true,
+                "adapter": "simulated",
+            }))
+        }
+    }
+
     fn audit_write(
         &mut self,
         req: &CapabilityRequest,
@@ -336,9 +462,12 @@ fn capability_name(cap: &CapabilityKind) -> String {
         CapabilityKind::Ping => "ping".into(),
         CapabilityKind::FileRead { .. } => "file.read".into(),
         CapabilityKind::FileWrite { .. } => "file.write".into(),
+        CapabilityKind::FileDelete { .. } => "file.delete".into(),
         CapabilityKind::PackageInstall { .. } => "package.install".into(),
+        CapabilityKind::PackageRemove { .. } => "package.remove".into(),
         CapabilityKind::ServiceStatus { .. } => "service.status".into(),
         CapabilityKind::ServiceRestart { .. } => "service.restart".into(),
+        CapabilityKind::ServiceStop { .. } => "service.stop".into(),
     }
 }
 
@@ -349,11 +478,18 @@ fn redacted_args(cap: &CapabilityKind) -> Value {
         CapabilityKind::FileWrite { path, append, .. } => {
             json!({ "path": path, "append": append, "content_bytes_redacted": true })
         }
+        CapabilityKind::FileDelete { path } => json!({ "path": path }),
         CapabilityKind::PackageInstall { package, approved } => {
+            json!({ "package": package, "approved": approved })
+        }
+        CapabilityKind::PackageRemove { package, approved } => {
             json!({ "package": package, "approved": approved })
         }
         CapabilityKind::ServiceStatus { unit } => json!({ "unit": unit }),
         CapabilityKind::ServiceRestart { unit, approved } => {
+            json!({ "unit": unit, "approved": approved })
+        }
+        CapabilityKind::ServiceStop { unit, approved } => {
             json!({ "unit": unit, "approved": approved })
         }
     }
@@ -519,5 +655,119 @@ mod tests {
             ))
             .unwrap();
         assert!(matches!(resp, CapabilityResponse::Denied { .. }));
+    }
+
+    #[test]
+    fn file_delete_removes_file_within_scope() {
+        let dir = tempfile::tempdir().unwrap();
+        let mut h = handler(dir.path(), HandlerConfig::default());
+        h.execute(&req(
+            "del1",
+            CapabilityKind::FileWrite {
+                path: "tmp/file.txt".into(),
+                content: "to be deleted".into(),
+                append: false,
+            },
+        ))
+        .unwrap();
+
+        assert!(dir.path().join("tmp/file.txt").exists());
+
+        let (_, resp) = h
+            .execute(&req(
+                "del2",
+                CapabilityKind::FileDelete {
+                    path: "tmp/file.txt".into(),
+                },
+            ))
+            .unwrap();
+
+        match resp {
+            CapabilityResponse::Success { result, .. } => {
+                assert_eq!(result["deleted"], true);
+            }
+            other => panic!("unexpected response: {other:?}"),
+        }
+        assert!(!dir.path().join("tmp/file.txt").exists());
+    }
+
+    #[test]
+    fn package_remove_approved_dry_run_reports_projection() {
+        let dir = tempfile::tempdir().unwrap();
+        let mut h = handler(dir.path(), HandlerConfig::default());
+        let (_, resp) = h
+            .execute(&req(
+                "pkg_rem",
+                CapabilityKind::PackageRemove {
+                    package: "nginx".into(),
+                    approved: true,
+                },
+            ))
+            .unwrap();
+        match resp {
+            CapabilityResponse::Success { result, .. } => {
+                assert_eq!(result["dry_run"], true);
+                assert!(
+                    result["would_run"]
+                        .as_str()
+                        .unwrap()
+                        .contains("dnf5 remove -y nginx")
+                );
+            }
+            other => panic!("unexpected response: {other:?}"),
+        }
+    }
+
+    #[test]
+    fn service_stop_respects_protected_list_and_approval() {
+        let dir = tempfile::tempdir().unwrap();
+        let mut h = handler(dir.path(), HandlerConfig::default());
+
+        // Protected unit denied
+        let (_, resp) = h
+            .execute(&req(
+                "srv_stop_prot",
+                CapabilityKind::ServiceStop {
+                    unit: "ssh.service".into(),
+                    approved: true,
+                },
+            ))
+            .unwrap();
+        assert!(matches!(resp, CapabilityResponse::Denied { .. }));
+
+        // Unapproved denied
+        let (_, resp) = h
+            .execute(&req(
+                "srv_stop_unappr",
+                CapabilityKind::ServiceStop {
+                    unit: "custom.service".into(),
+                    approved: false,
+                },
+            ))
+            .unwrap();
+        assert!(matches!(resp, CapabilityResponse::Denied { .. }));
+
+        // Approved success
+        let (_, resp) = h
+            .execute(&req(
+                "srv_stop_ok",
+                CapabilityKind::ServiceStop {
+                    unit: "custom.service".into(),
+                    approved: true,
+                },
+            ))
+            .unwrap();
+        match resp {
+            CapabilityResponse::Success { result, .. } => {
+                assert_eq!(result["dry_run"], true);
+                assert!(
+                    result["would_run"]
+                        .as_str()
+                        .unwrap()
+                        .contains("systemctl stop custom.service")
+                );
+            }
+            other => panic!("unexpected response: {other:?}"),
+        }
     }
 }
