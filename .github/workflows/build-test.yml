@@ -238,29 +238,52 @@ jobs:
             || { echo 'FAIL: canary-rollback.service failed to start in VM'; exit 1; }
 
           # Start ai-capabilityd in LIVE mode (dry_run: false) inside the VM as root
-          ssh_cmd 'sudo bash -c "mkdir -p /tmp/live-scope && nohup /tmp/ai-capabilityd --socket /tmp/live-cap.sock --audit-log /tmp/live-worklog.jsonl --lock-file /tmp/live-killswitch.lock --work-root /tmp/live-scope --exec >/tmp/cap.log 2>&1 & sleep 2 && chmod 666 /tmp/live-cap.sock && test -S /tmp/live-cap.sock"' \
-            || { echo 'FAIL: live ai-capabilityd failed to start inside VM'; ssh_cmd 'cat /tmp/cap.log || true'; exit 1; }
+          ssh_cmd 'sudo bash -c "mkdir -p /tmp/live-scope && nohup /tmp/ai-capabilityd --socket /tmp/live-cap.sock --audit-log /tmp/live-worklog.jsonl --lock-file /tmp/live-killswitch.lock --work-root /tmp/live-scope --exec >/tmp/cap.log 2>&1 & sleep 2 && chmod 666 /tmp/live-cap.sock /tmp/live-worklog.jsonl 2>/dev/null || true"'
+          ssh_cmd 'test -S /tmp/live-cap.sock' \
+            || { echo 'FAIL: live ai-capabilityd socket not found'; ssh_cmd 'cat /tmp/cap.log || true'; exit 1; }
 
           # Execute live compensating rollback operations against the live guest via ai-capabilityd:
           # 1) file.write canary file
           # 2) file.delete rollback -> deletes the canary file on the live filesystem
           # 3) service.stop rollback -> stops the live systemd service
           ssh_cmd 'python3 -c "
-          import socket, json
-          s = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
-          s.connect(\"/tmp/live-cap.sock\")
-          def send_cap(cap, is_rb=False):
-              req = {\"api_version\": 1, \"id\": \"live-rb\", \"requester\": \"vm-smoke\", \"token\": \"tok-vm\", \"is_rollback\": is_rb, \"capability\": cap}
-              s.sendall(json.dumps(req).encode() + b\"\n\")
-              return json.loads(s.makefile().readline())
+          import socket, json, sys
 
-          r1 = send_cap({\"capability\": \"file_write\", \"path\": \"/tmp/live-scope/canary.conf\", \"content\": \"val\n\", \"append\": False})
-          assert r1[\"status\"] == \"success\", f\"write failed: {r1}\"
-          r2 = send_cap({\"capability\": \"file_delete\", \"path\": \"/tmp/live-scope/canary.conf\"}, is_rb=True)
-          assert r2[\"status\"] == \"success\", f\"delete failed: {r2}\"
+          def send_cap(cap, is_rb=False):
+              s = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+              s.connect(\"/tmp/live-cap.sock\")
+              req = {
+                  \"api_version\": 1,
+                  \"id\": \"live-rb\",
+                  \"requester\": \"vm-smoke\",
+                  \"token\": \"tok-vm\",
+                  \"is_rollback\": is_rb,
+                  \"capability\": cap
+              }
+              s.sendall(json.dumps(req).encode() + b\"\n\")
+              resp_raw = b\"\"
+              while not resp_raw.endswith(b\"\n\"):
+                  chunk = s.recv(4096)
+                  if not chunk:
+                      break
+                  resp_raw += chunk
+              s.close()
+              return json.loads(resp_raw.decode())
+
+          r1 = send_cap({\"capability\": \"file_write\", \"path\": \"canary.conf\", \"content\": \"val\n\", \"append\": False})
+          print(\"r1 file_write:\", r1)
+          if r1.get(\"status\") != \"success\":
+              sys.exit(f\"file_write failed: {r1}\")
+
+          r2 = send_cap({\"capability\": \"file_delete\", \"path\": \"canary.conf\"}, is_rb=True)
+          print(\"r2 file_delete rb:\", r2)
+          if r2.get(\"status\") != \"success\":
+              sys.exit(f\"file_delete rb failed: {r2}\")
+
           r3 = send_cap({\"capability\": \"service_stop\", \"unit\": \"canary-rollback.service\", \"approved\": True}, is_rb=True)
-          assert r3[\"status\"] == \"success\", f\"stop failed: {r3}\"
-          s.close()
+          print(\"r3 service_stop rb:\", r3)
+          if r3.get(\"status\") != \"success\":
+              sys.exit(f\"service_stop rb failed: {r3}\")
           "'
 
           echo '==> assertion 7.1: live systemd inspection confirms canary service was stopped by rollback'
