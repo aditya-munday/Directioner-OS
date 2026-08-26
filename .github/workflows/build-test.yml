@@ -97,19 +97,21 @@ jobs:
           components: clippy, rustfmt
       - name: build release binaries
         working-directory: ai-engineer
+        run: cargo build --release --workspace
+      - name: Stage release binaries
         run: |
-          cargo build --release --workspace
-          ls -la target/release/ai-worldmodel target/release/ai-benchmark target/release/ai-capabilityd target/release/ai-worklog target/release/ai-engineer
+          mkdir -p dist_bin
+          cp ai-engineer/target/release/ai-worldmodel dist_bin/
+          cp ai-engineer/target/release/ai-benchmark dist_bin/
+          cp ai-engineer/target/release/ai-capabilityd dist_bin/
+          cp ai-engineer/target/release/ai-worklog dist_bin/
+          cp ai-engineer/target/release/ai-engineer dist_bin/
+          ls -la dist_bin/
       - name: Upload release binaries artifact
         uses: actions/upload-artifact@v4
         with:
           name: ai-binaries
-          path: |
-            ai-engineer/target/release/ai-worldmodel
-            ai-engineer/target/release/ai-benchmark
-            ai-engineer/target/release/ai-capabilityd
-            ai-engineer/target/release/ai-worklog
-            ai-engineer/target/release/ai-engineer
+          path: dist_bin/
           if-no-files-found: error
 
   vm-smoke:
@@ -129,7 +131,7 @@ jobs:
         uses: actions/download-artifact@v4
         with:
           name: ai-binaries
-          path: vm
+          path: vm/bin
       - name: Install qemu
         run: |
           sudo apt-get update
