@@ -238,7 +238,7 @@ jobs:
             || { echo 'FAIL: canary-rollback.service failed to start in VM'; exit 1; }
 
           # Start ai-capabilityd in LIVE mode (dry_run: false) inside the VM as root
-          ssh_cmd 'sudo bash -c "mkdir -p /tmp/live-scope && nohup /tmp/ai-capabilityd --socket /tmp/live-cap.sock --worklog /tmp/live-worklog.jsonl --scope /tmp/live-scope >/tmp/cap.log 2>&1 & sleep 2 && test -S /tmp/live-cap.sock"' \
+          ssh_cmd 'sudo bash -c "mkdir -p /tmp/live-scope && nohup /tmp/ai-capabilityd --socket /tmp/live-cap.sock --audit-log /tmp/live-worklog.jsonl --lock-file /tmp/live-killswitch.lock --work-root /tmp/live-scope --exec >/tmp/cap.log 2>&1 & sleep 2 && chmod 666 /tmp/live-cap.sock && test -S /tmp/live-cap.sock"' \
             || { echo 'FAIL: live ai-capabilityd failed to start inside VM'; ssh_cmd 'cat /tmp/cap.log || true'; exit 1; }
 
           # Execute live compensating rollback operations against the live guest via ai-capabilityd:
