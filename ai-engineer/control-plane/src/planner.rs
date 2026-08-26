@@ -132,17 +132,8 @@ impl Planner {
                 timeout_secs: self.config.default_timeout_secs,
             });
 
-            // Rollback steps
-            rollbacks.push(RollbackStep {
-                step_id: "rb-1".into(),
-                description: "Remove created nginx configuration file".into(),
-                capability: CapabilityKind::FileWrite {
-                    path: conf_str,
-                    content: String::new(),
-                    append: false,
-                },
-                triggers: vec!["step-2".into(), "step-3".into()],
-            });
+            // Rollback steps (inspects whether file pre-existed)
+            rollbacks.push(make_file_write_rollback(&conf_str, "step-2"));
 
             return Ok((summary, steps, rollbacks));
         }
@@ -224,16 +215,7 @@ impl Planner {
                 timeout_secs: self.config.default_timeout_secs,
             });
 
-            rollbacks.push(RollbackStep {
-                step_id: "rb-1".into(),
-                description: format!("Revert/truncate '{path_str}'"),
-                capability: CapabilityKind::FileWrite {
-                    path: path_str,
-                    content: String::new(),
-                    append: false,
-                },
-                triggers: vec!["step-1".into()],
-            });
+            rollbacks.push(make_file_write_rollback(&path_str, "step-1"));
 
             return Ok((summary, steps, rollbacks));
         }
@@ -283,6 +265,37 @@ fn uuid_v4() -> String {
     format!("{:016x}", nanos)
 }
 
+fn make_file_write_rollback(path_str: &str, trigger_step: &str) -> RollbackStep {
+    let p = std::path::Path::new(path_str);
+    if p.exists() && p.is_file() {
+        let original_content = std::fs::read_to_string(p).unwrap_or_default();
+        RollbackStep {
+            step_id: format!("rb-restore-{}", &uuid_v4()[0..6]),
+            description: format!(
+                "Restore pre-existing content of '{path_str}' ({} bytes)",
+                original_content.len()
+            ),
+            capability: CapabilityKind::FileWrite {
+                path: path_str.to_string(),
+                content: original_content,
+                append: false,
+            },
+            triggers: vec![trigger_step.to_string()],
+        }
+    } else {
+        RollbackStep {
+            step_id: format!("rb-remove-{}", &uuid_v4()[0..6]),
+            description: format!("Remove newly created file '{path_str}' (truncate to 0 bytes)"),
+            capability: CapabilityKind::FileWrite {
+                path: path_str.to_string(),
+                content: String::new(),
+                append: false,
+            },
+            triggers: vec![trigger_step.to_string()],
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -309,5 +322,39 @@ mod tests {
 
         assert_eq!(plan.steps.len(), 2);
         assert!(plan.aggregate_blast_radius.score >= 80);
+    }
+
+    #[test]
+    fn test_rollback_generation_preexisting_vs_new_file() {
+        let temp = tempfile::tempdir().unwrap();
+        let existing_path = temp.path().join("existing.conf");
+        std::fs::write(&existing_path, "PORT=80\nDEBUG=0\n").unwrap();
+        let new_path = temp.path().join("brand_new.conf");
+
+        // Case 1: Pre-existing file
+        let rb_existing = make_file_write_rollback(
+            &existing_path.to_string_lossy(),
+            "step-1",
+        );
+        assert!(rb_existing.description.contains("Restore pre-existing content"));
+        match rb_existing.capability {
+            CapabilityKind::FileWrite { content, .. } => {
+                assert_eq!(content, "PORT=80\nDEBUG=0\n");
+            }
+            _ => panic!("Expected FileWrite capability"),
+        }
+
+        // Case 2: Brand new file (didn't exist before)
+        let rb_new = make_file_write_rollback(
+            &new_path.to_string_lossy(),
+            "step-1",
+        );
+        assert!(rb_new.description.contains("Remove newly created file"));
+        match rb_new.capability {
+            CapabilityKind::FileWrite { content, .. } => {
+                assert_eq!(content, "");
+            }
+            _ => panic!("Expected FileWrite capability"),
+        }
     }
 }
