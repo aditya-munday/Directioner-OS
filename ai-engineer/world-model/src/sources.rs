@@ -45,8 +45,8 @@ impl CmdSpec {
 }
 
 pub const REPOQUERY_QF: &str = "PKG|%{NAME}|%{EVR}|%{ARCH}|%{SUMMARY}\n\
-[REQ|%{REQUIRENAME}|%{REQUIREFLAGS:depflags}|%{REQUIREVERSION}\n]\
-[PROV|%{PROVIDENAME}|%{PROVIDEVERSION}\n]\
+[REQ|%{REQUIRESNAME}|%{REQUIRESFLAGS}|%{REQUIRESVERSION}\n]\
+[PROV|%{PROVIDESNAME}|%{PROVIDESVERSION}\n]\
 END\n";
 
 pub fn dnf5_repoquery_spec(path_override: Option<&Path>) -> CmdSpec {
