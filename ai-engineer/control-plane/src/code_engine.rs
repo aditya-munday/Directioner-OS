@@ -194,6 +194,139 @@ impl CodeEngine {
             error_diag.message
         ))
     }
+
+    /// Synthesize an executable execution Plan from compiler diagnostics.
+    pub fn synthesize_plan_from_diagnostics(
+        &self,
+        diagnostics: &[Diagnostic],
+        db: Option<&rusqlite::Connection>,
+    ) -> Option<crate::plan::Plan> {
+        use crate::plan::{Plan, PlanStatus, PlanStep, RollbackStep};
+        use crate::policy::PolicyEngine;
+        use capability_layer::CapabilityKind;
+
+        let intent = Self::synthesize_remediation_intent(diagnostics)?;
+        let mut steps = Vec::new();
+        let mut rollback_steps = Vec::new();
+
+        let mut step_num = 1;
+        for diag in diagnostics {
+            if diag.level != "error" {
+                continue;
+            }
+            if let Some(file_path) = &diag.file_path {
+                let target_path = if Path::new(file_path).is_absolute() {
+                    PathBuf::from(file_path)
+                } else {
+                    self.workspace_root.join(file_path)
+                };
+
+                let step_id = format!("step-{}", step_num);
+                let desc = format!(
+                    "Apply compiler diagnostic fix for {} ({})",
+                    file_path, diag.message
+                );
+
+                let (previous_content, is_new_file) = if target_path.exists() {
+                    match std::fs::read_to_string(&target_path) {
+                        Ok(c) => (Some(c), false),
+                        Err(_) => (None, false),
+                    }
+                } else {
+                    (None, true)
+                };
+
+                let new_content = if let (Some(prev), Some(rep), Some(line_num)) = (
+                    &previous_content,
+                    &diag.suggested_replacement,
+                    diag.line_number,
+                ) {
+                    let mut lines: Vec<&str> = prev.lines().collect();
+                    if line_num > 0 && line_num <= lines.len() {
+                        lines[line_num - 1] = rep;
+                        let mut joined = lines.join("\n");
+                        joined.push('\n');
+                        joined
+                    } else {
+                        rep.clone()
+                    }
+                } else if let Some(rep) = &diag.suggested_replacement {
+                    rep.clone()
+                } else {
+                    format!("// TODO: Fix compiler diagnostic in {}\n", file_path)
+                };
+
+                let cap = CapabilityKind::FileWrite {
+                    path: target_path.to_string_lossy().to_string(),
+                    content: new_content,
+                    append: false,
+                };
+
+                let blast_radius = PolicyEngine::evaluate_capability(&cap, db);
+
+                steps.push(PlanStep {
+                    step_id: step_id.clone(),
+                    description: desc,
+                    capability: cap,
+                    blast_radius,
+                    timeout_secs: 30,
+                });
+
+                if is_new_file {
+                    rollback_steps.push(RollbackStep {
+                        step_id: format!("rollback-{}", step_id),
+                        description: format!("Delete newly created file {}", file_path),
+                        capability: CapabilityKind::FileDelete {
+                            path: target_path.to_string_lossy().to_string(),
+                        },
+                        triggers: vec![step_id],
+                    });
+                } else if let Some(prev) = previous_content {
+                    rollback_steps.push(RollbackStep {
+                        step_id: format!("rollback-{}", step_id),
+                        description: format!("Restore original content of {}", file_path),
+                        capability: CapabilityKind::FileWrite {
+                            path: target_path.to_string_lossy().to_string(),
+                            content: prev,
+                            append: false,
+                        },
+                        triggers: vec![step_id],
+                    });
+                }
+
+                step_num += 1;
+            }
+        }
+
+        if steps.is_empty() {
+            return None;
+        }
+
+        let caps: Vec<CapabilityKind> = steps.iter().map(|s| s.capability.clone()).collect();
+        let aggregate_blast_radius = PolicyEngine::evaluate_plan_aggregate(&caps, db);
+
+        let plan_id = format!(
+            "plan-fix-{}",
+            &chrono::Utc::now()
+                .timestamp_nanos_opt()
+                .unwrap_or(0)
+                .to_string()[..8]
+        );
+
+        Some(Plan {
+            id: plan_id,
+            intent,
+            summary: format!(
+                "Automated compiler diagnostic remediation with {} step(s)",
+                steps.len()
+            ),
+            steps,
+            rollback_steps,
+            aggregate_blast_radius,
+            created_at: chrono::Utc::now().to_rfc3339(),
+            status: PlanStatus::Draft,
+        })
+    }
 }
 
 #[cfg(test)]
@@ -244,5 +377,38 @@ mod tests {
         assert_eq!(report.failed_tests, 1);
         assert_eq!(report.failures.len(), 1);
         assert_eq!(report.failures[0].name, "test_app.py::test_auth");
+    }
+
+    #[test]
+    fn test_synthesize_plan_from_diagnostics() {
+        let temp_dir = std::env::temp_dir().join(format!(
+            "ai_engine_test_{}",
+            chrono::Utc::now().timestamp_nanos_opt().unwrap_or(0)
+        ));
+        std::fs::create_dir_all(&temp_dir).unwrap();
+
+        let test_file = temp_dir.join("main.rs");
+        std::fs::write(&test_file, "fn main() {\n    let x = \"wrong\";\n}\n").unwrap();
+
+        let engine = CodeEngine::new(&temp_dir);
+        let diags = vec![Diagnostic {
+            level: "error".into(),
+            code: Some("E0308".into()),
+            message: "mismatched types".into(),
+            file_path: Some("main.rs".into()),
+            line_number: Some(2),
+            column_number: Some(5),
+            suggested_replacement: Some("    let x = 42;".into()),
+        }];
+
+        let plan = engine.synthesize_plan_from_diagnostics(&diags, None);
+        assert!(plan.is_some());
+        let plan = plan.unwrap();
+
+        assert_eq!(plan.steps.len(), 1);
+        assert_eq!(plan.rollback_steps.len(), 1);
+        assert!(plan.intent.contains("mismatched types"));
+
+        let _ = std::fs::remove_dir_all(&temp_dir);
     }
 }
