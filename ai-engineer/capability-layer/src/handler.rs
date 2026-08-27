@@ -279,7 +279,12 @@ impl Handler {
                 .arg(package)
                 .output()
                 .map_err(|e| CapError::Internal(e.to_string()))?;
-            if out.status.success() {
+            let stderr = String::from_utf8_lossy(&out.stderr);
+            let stdout = String::from_utf8_lossy(&out.stdout);
+            if out.status.success()
+                || stderr.contains("already in the base")
+                || stdout.contains("already in the base")
+            {
                 Ok(json!({
                     "package": package,
                     "status": "staged_pending_reboot",
@@ -288,8 +293,7 @@ impl Handler {
                 }))
             } else {
                 Err(CapError::Internal(format!(
-                    "rpm-ostree install failed: {}",
-                    String::from_utf8_lossy(&out.stderr)
+                    "rpm-ostree install failed: {stderr}"
                 )))
             }
         } else if let Some(bin) = dnf {
@@ -352,7 +356,12 @@ impl Handler {
                 .arg(package)
                 .output()
                 .map_err(|e| CapError::Internal(e.to_string()))?;
-            if out.status.success() {
+            let stderr = String::from_utf8_lossy(&out.stderr);
+            let stdout = String::from_utf8_lossy(&out.stdout);
+            if out.status.success()
+                || stderr.contains("is not currently layered")
+                || stdout.contains("is not currently layered")
+            {
                 Ok(json!({
                     "package": package,
                     "status": "staged_pending_reboot",
@@ -361,8 +370,7 @@ impl Handler {
                 }))
             } else {
                 Err(CapError::Internal(format!(
-                    "rpm-ostree uninstall failed: {}",
-                    String::from_utf8_lossy(&out.stderr)
+                    "rpm-ostree uninstall failed: {stderr}"
                 )))
             }
         } else if let Some(bin) = dnf {
