@@ -100,6 +100,93 @@ impl<'a> Implementer<'a> {
         }
     }
 
+    /// Execute compensating rollback for all steps in a plan (e.g. following post-execution verification failure).
+    pub fn rollback_all(&self, plan: &Plan) -> PlanExecutionReport {
+        let total_start = Instant::now();
+        let mut rollback_results = Vec::new();
+
+        for rb in plan.rollback_steps.iter().rev() {
+            let start = Instant::now();
+            let correlation = format!("{}:{}", plan.id, rb.step_id);
+            let outcome = self
+                .client
+                .send_rollback(rb.capability.clone(), correlation, None);
+            let duration_ms = start.elapsed().as_millis() as u64;
+
+            let res = match outcome {
+                Ok(CapabilityResponse::Success {
+                    result, audit_seq, ..
+                }) => StepExecutionResult {
+                    step_id: rb.step_id.clone(),
+                    success: true,
+                    details: result,
+                    audit_seq,
+                    duration_ms,
+                },
+                Ok(CapabilityResponse::Denied {
+                    reason, audit_seq, ..
+                }) => StepExecutionResult {
+                    step_id: rb.step_id.clone(),
+                    success: false,
+                    details: serde_json::json!({ "denied": reason }),
+                    audit_seq,
+                    duration_ms,
+                },
+                Ok(CapabilityResponse::Error {
+                    message, audit_seq, ..
+                }) => StepExecutionResult {
+                    step_id: rb.step_id.clone(),
+                    success: false,
+                    details: serde_json::json!({ "error": message }),
+                    audit_seq,
+                    duration_ms,
+                },
+                Err(e) => StepExecutionResult {
+                    step_id: rb.step_id.clone(),
+                    success: false,
+                    details: serde_json::json!({ "client_error": e.to_string() }),
+                    audit_seq: 0,
+                    duration_ms,
+                },
+            };
+            rollback_results.push(res);
+        }
+
+        let total_duration_ms = total_start.elapsed().as_millis() as u64;
+        let any_rollback_failed = rollback_results.iter().any(|r| !r.success);
+        let has_deferred_rollback = rollback_results.iter().any(|r| {
+            r.details.get("deployment_deferred") == Some(&serde_json::Value::Bool(true))
+                || r.details.get("status")
+                    == Some(&serde_json::Value::String("staged_pending_reboot".into()))
+        });
+
+        let (final_status, message) = if any_rollback_failed {
+            (
+                PlanStatus::RollbackFailed,
+                "CRITICAL: Full plan rollback failed on one or more compensating steps. Manual remediation required.".into(),
+            )
+        } else if has_deferred_rollback {
+            (
+                PlanStatus::RollbackPendingReboot,
+                "Plan rolled back; compensating deployment changes staged (requires system reboot).".into(),
+            )
+        } else {
+            (
+                PlanStatus::RolledBack,
+                "All compensating rollback steps executed successfully.".into(),
+            )
+        };
+
+        PlanExecutionReport {
+            plan_id: plan.id.clone(),
+            final_status,
+            step_results: Vec::new(),
+            rollback_results,
+            total_duration_ms,
+            message,
+        }
+    }
+
     /// Execute a single forward step.
     fn execute_step(&self, step: &PlanStep, plan_id: &str) -> StepExecutionResult {
         let start = Instant::now();

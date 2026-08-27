@@ -16,7 +16,7 @@ use rusqlite::Connection;
 
 fn print_usage() {
     eprintln!(
-        r#"Directioner-OS AI Engineer CLI (Phase 1 Control Plane)
+        r#"Directioner-OS AI Engineer CLI (Phase 1 & Phase 2 Control Plane)
 
 USAGE:
     ai-engineer <COMMAND> [OPTIONS]
@@ -27,12 +27,14 @@ COMMANDS:
     dry-run <INTENT>     Simulate plan and generate unified diffs without modifying state
     apply <INTENT>       Plan, review, preview, prompt for confirmation, and execute via Capability Layer
     explain <INTENT>     Provide 3-depth explanation (summary, engineering plan, raw diffs)
+    diagnose [PATH]      Scan workspace, parse compiler diagnostics, and localize cross-crate root causes
+    fix [PATH]           Synthesize multi-crate repair plan, audit with Reviewer, preview diffs, and apply with verification
 
 OPTIONS:
     --socket <PATH>      Path to ai-capabilityd Unix domain socket (default: /tmp/ai-engineer/ai-capabilityd.sock)
     --db <PATH>          Path to world-model SQLite DB (default: /tmp/ai-engineer/worldmodel.db)
-    --work-root <PATH>   Path root for scoped file operations (default: /tmp/ai-engineer/scope)
-    --auto-approve       Bypass interactive confirmation prompt for eligible tiers
+    --work-root <PATH>   Path root for workspace source operations (default: current directory or /tmp/ai-engineer/scope)
+    --auto-approve       Bypass interactive confirmation prompt (strictly limited to low-risk Notify tier)
     --depth <1|2|3>      Explanation depth (1=Summary, 2=Engineering, 3=Raw) [default: 2]
     --json               Output raw JSON format
     -h, --help           Print help information
@@ -151,6 +153,193 @@ fn main() {
         }
     };
 
+    let target_dir = if !args.intent.is_empty() && Path::new(&args.intent).exists() {
+        PathBuf::from(&args.intent)
+    } else {
+        args.work_root.clone()
+    };
+
+    let db_conn = open_db(&args.db_path);
+
+    if args.command == "diagnose" {
+        let mut engine = control_plane::CodeEngine::new(&target_dir);
+        let _ = engine.build_symbol_graph();
+
+        let report = match engine.run_cargo_check() {
+            Ok(r) => r,
+            Err(e) => {
+                eprintln!("Diagnostic execution failed: {e}");
+                exit(1);
+            }
+        };
+
+        if args.json {
+            println!("{}", serde_json::to_string_pretty(&report).unwrap());
+        } else {
+            println!("══════════════════════════════════════════════════════════════════════");
+            println!("  DIRECTIONER-OS CODE DIAGNOSTICS & SYMBOL LOCALIZATION");
+            println!("  Target: {}", target_dir.display());
+            println!(
+                "  Status: {}",
+                if report.success {
+                    "PASSED (Clean)"
+                } else {
+                    "ERRORS DETECTED"
+                }
+            );
+            println!("──────────────────────────────────────────────────────────────────────");
+
+            if report.diagnostics.is_empty() {
+                println!("  ✔ No compiler errors or warnings detected in workspace.");
+            } else {
+                for (i, diag) in report.diagnostics.iter().enumerate() {
+                    let code_display = diag.code.as_deref().unwrap_or("error");
+                    let loc_display = match (&diag.file_path, diag.line_number) {
+                        (Some(f), Some(l)) => format!("{f}:{l}"),
+                        (Some(f), None) => f.clone(),
+                        _ => "workspace".into(),
+                    };
+
+                    println!(
+                        "  {}. ✘ [{}] {}: {}",
+                        i + 1,
+                        code_display,
+                        loc_display,
+                        diag.message
+                    );
+
+                    if let Some(root) = engine.localize_diagnostic_root(diag) {
+                        let sym_str = root.symbol_name.as_deref().unwrap_or("<anonymous>");
+                        println!(
+                            "     ↳ Cross-Crate Root Cause: References '{}' defined in crate '{}' at {}:{}",
+                            sym_str,
+                            root.upstream_crate,
+                            root.definition_file.display(),
+                            root.definition_line
+                        );
+                    }
+                }
+            }
+            println!("══════════════════════════════════════════════════════════════════════");
+        }
+        if !report.success {
+            exit(1);
+        }
+        return;
+    }
+
+    if args.command == "fix" {
+        let mut engine = control_plane::CodeEngine::new(&target_dir);
+        let _ = engine.build_symbol_graph();
+
+        let initial_report = match engine.run_cargo_check() {
+            Ok(r) => r,
+            Err(e) => {
+                eprintln!("Diagnostic check failed: {e}");
+                exit(1);
+            }
+        };
+
+        if initial_report.success {
+            println!(
+                "Workspace at {} is clean; no compiler fixes required.",
+                target_dir.display()
+            );
+            return;
+        }
+
+        let plan = match engine
+            .synthesize_cross_crate_plan(&initial_report.diagnostics, db_conn.as_ref())
+        {
+            Some(p) => p,
+            None => {
+                eprintln!("Could not synthesize automated remediation plan from diagnostics.");
+                exit(1);
+            }
+        };
+
+        // 1. Reviewer audit
+        let reviewer = control_plane::reviewer::Reviewer::new(
+            control_plane::reviewer::ReviewerConfig::default(),
+        );
+        let review_report = reviewer.review_plan(&plan);
+        if review_report.verdict == control_plane::reviewer::ReviewVerdict::Rejected {
+            eprintln!("\nRemediation plan BLOCKED by Reviewer Agent:");
+            for f in &review_report.findings {
+                eprintln!("  ✘ [{:?}] {}: {}", f.severity, f.category, f.message);
+            }
+            exit(1);
+        }
+
+        // 2. Simulation preview (mandatory)
+        let preview = Simulator::simulate_plan(&plan, Some(&target_dir));
+        println!("{}", preview.render_terminal());
+
+        // 3. Strict auto-approve policy enforcement
+        if plan.aggregate_blast_radius.tier.requires_confirmation() {
+            if args.auto_approve {
+                eprintln!(
+                    "\nAuto-approve REFUSED: Plan requires {:?} confirmation (exceeds auto-approvable low-risk threshold).",
+                    plan.aggregate_blast_radius.tier
+                );
+                exit(1);
+            }
+
+            eprint!(
+                "\nApproval required for Tier {:?}. Proceed with execution? [y/N]: ",
+                plan.aggregate_blast_radius.tier
+            );
+            use std::io::{self, BufRead};
+            let mut line = String::new();
+            let stdin = io::stdin();
+            stdin.lock().read_line(&mut line).unwrap();
+            if line.trim().to_lowercase() != "y" && line.trim().to_lowercase() != "yes" {
+                eprintln!("Execution cancelled by user.");
+                exit(0);
+            }
+        }
+
+        // 4. Implement plan
+        let client = CapabilityClient::new(&args.socket_path, "ai-engineer-cli");
+        let implementer = Implementer::new(&client);
+        let report = implementer.execute_plan(&plan);
+
+        if report.final_status != control_plane::PlanStatus::Completed {
+            eprintln!(
+                "\nExecution aborted during step application: {:?}",
+                report.final_status
+            );
+            eprintln!("Message: {}", report.message);
+            exit(1);
+        }
+
+        // 5. Re-verify
+        let re_check = match engine.run_cargo_check() {
+            Ok(r) => r,
+            Err(e) => {
+                eprintln!("Re-verification command failed: {e}");
+                exit(1);
+            }
+        };
+
+        if !re_check.success {
+            eprintln!(
+                "\nRe-verification FAILED. Initiating atomic compensating rollback in reverse order..."
+            );
+            let rb_report = implementer.rollback_all(&plan);
+            eprintln!("Rollback status: {:?}", rb_report.final_status);
+            exit(1);
+        }
+
+        println!("══════════════════════════════════════════════════════════════════════");
+        println!(
+            "  REMEDIATION SUCCESSFUL: All {} patch steps verified.",
+            plan.steps.len()
+        );
+        println!("══════════════════════════════════════════════════════════════════════");
+        return;
+    }
+
     if args.intent.is_empty() && args.command != "help" {
         eprintln!(
             "Error: intent string is required for command '{}'",
@@ -159,7 +348,6 @@ fn main() {
         exit(1);
     }
 
-    let db_conn = open_db(&args.db_path);
     let planner = Planner::new(PlannerConfig {
         work_root: args.work_root.clone(),
         default_timeout_secs: 30,
