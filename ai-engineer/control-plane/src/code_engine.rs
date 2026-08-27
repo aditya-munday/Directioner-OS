@@ -327,6 +327,176 @@ impl CodeEngine {
             status: PlanStatus::Draft,
         })
     }
+
+    /// Run cargo check or clippy with JSON message format on the workspace.
+    pub fn run_cargo_check(&self) -> Result<BuildTestReport, String> {
+        let output = std::process::Command::new("cargo")
+            .arg("check")
+            .arg("--message-format=json")
+            .current_dir(&self.workspace_root)
+            .output()
+            .map_err(|e| format!("Failed to invoke cargo check: {e}"))?;
+
+        let stdout = String::from_utf8_lossy(&output.stdout);
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        let diagnostics = Self::parse_cargo_json(&stdout);
+        let has_errors = diagnostics.iter().any(|d| d.level == "error");
+        let success = output.status.success() && !has_errors;
+
+        Ok(BuildTestReport {
+            success,
+            total_tests: 0,
+            passed_tests: 0,
+            failed_tests: if success { 0 } else { 1 },
+            failures: Vec::new(),
+            diagnostics,
+            raw_snippet: if success {
+                String::new()
+            } else {
+                stderr.chars().take(1000).collect()
+            },
+        })
+    }
+
+    /// Run cargo test and collect test results and diagnostics.
+    pub fn run_cargo_test(&self) -> Result<BuildTestReport, String> {
+        let output = std::process::Command::new("cargo")
+            .arg("test")
+            .arg("--")
+            .arg("--nocapture")
+            .current_dir(&self.workspace_root)
+            .output()
+            .map_err(|e| format!("Failed to invoke cargo test: {e}"))?;
+
+        let stdout = String::from_utf8_lossy(&output.stdout);
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        let success = output.status.success();
+
+        let mut failures = Vec::new();
+        for line in stdout.lines() {
+            if line.starts_with("test ") && line.ends_with(" ... FAILED") {
+                let name = line
+                    .trim_start_matches("test ")
+                    .trim_end_matches(" ... FAILED")
+                    .to_string();
+                failures.push(TestFailure {
+                    name,
+                    message: "Test execution failed".into(),
+                    duration_secs: None,
+                });
+            }
+        }
+
+        let failed_count = failures.len();
+
+        Ok(BuildTestReport {
+            success,
+            total_tests: failed_count,
+            passed_tests: 0,
+            failed_tests: failed_count,
+            failures,
+            diagnostics: Vec::new(),
+            raw_snippet: if success {
+                String::new()
+            } else {
+                format!("{stdout}\n{stderr}").chars().take(1000).collect()
+            },
+        })
+    }
+
+    /// Run pytest and parse output report if available.
+    pub fn run_pytest(&self) -> Result<BuildTestReport, String> {
+        let output = std::process::Command::new("pytest")
+            .arg("--json-report")
+            .arg("--json-report-file=.report.json")
+            .current_dir(&self.workspace_root)
+            .output()
+            .map_err(|e| format!("Failed to invoke pytest: {e}"))?;
+
+        let report_file = self.workspace_root.join(".report.json");
+        if report_file.exists() {
+            if let Ok(content) = std::fs::read_to_string(&report_file) {
+                let _ = std::fs::remove_file(&report_file);
+                return Ok(Self::parse_pytest_json(&content));
+            }
+        }
+
+        let stdout = String::from_utf8_lossy(&output.stdout);
+        Ok(Self::parse_pytest_json(&stdout))
+    }
+
+    /// Execute automated remediation loop: test -> diagnose -> plan -> review -> implement -> verify.
+    pub fn execute_remediation_loop(
+        &self,
+        implementer: &crate::implementer::Implementer,
+        reviewer: &crate::reviewer::Reviewer,
+        db: Option<&rusqlite::Connection>,
+        max_iterations: usize,
+    ) -> Result<RemediationResult, String> {
+        let initial_report = self.run_cargo_check()?;
+        if initial_report.success {
+            return Ok(RemediationResult {
+                resolved: true,
+                iterations: 0,
+                initial_report: initial_report.clone(),
+                final_report: initial_report,
+                plan_history: Vec::new(),
+            });
+        }
+
+        let mut current_report = initial_report.clone();
+        let mut plan_history = Vec::new();
+        let mut iterations = 0;
+
+        while iterations < max_iterations && !current_report.success {
+            iterations += 1;
+            let plan = self
+                .synthesize_plan_from_diagnostics(&current_report.diagnostics, db)
+                .ok_or_else(|| "Could not synthesize plan from diagnostics".to_string())?;
+
+            let review = reviewer.review_plan(&plan);
+            if review.verdict == crate::reviewer::ReviewVerdict::Rejected {
+                return Err(format!(
+                    "Reviewer rejected remediation plan: {}",
+                    review.summary
+                ));
+            }
+
+            let exec_report = implementer.execute_plan(&plan);
+            let succeeded = exec_report.final_status == crate::plan::PlanStatus::Completed;
+            plan_history.push(exec_report);
+
+            if !succeeded {
+                return Err("Plan execution failed during remediation".into());
+            }
+
+            current_report = self.run_cargo_check()?;
+        }
+
+        let resolved = current_report.success;
+        Ok(RemediationResult {
+            resolved,
+            iterations,
+            initial_report,
+            final_report: current_report,
+            plan_history,
+        })
+    }
+}
+
+/// Summary result of an automated remediation loop.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct RemediationResult {
+    /// Whether all diagnostics/failures were resolved.
+    pub resolved: bool,
+    /// Number of repair iterations attempted.
+    pub iterations: usize,
+    /// The initial diagnostic report before repair.
+    pub initial_report: BuildTestReport,
+    /// The final diagnostic report after repair.
+    pub final_report: BuildTestReport,
+    /// History of executed plans and execution reports.
+    pub plan_history: Vec<crate::plan::PlanExecutionReport>,
 }
 
 #[cfg(test)]
@@ -408,6 +578,57 @@ mod tests {
         assert_eq!(plan.steps.len(), 1);
         assert_eq!(plan.rollback_steps.len(), 1);
         assert!(plan.intent.contains("mismatched types"));
+
+        let _ = std::fs::remove_dir_all(&temp_dir);
+    }
+
+    #[test]
+    fn test_code_engine_remediation_workflow() {
+        let temp_dir = std::env::temp_dir().join(format!(
+            "ai_remediation_test_{}",
+            chrono::Utc::now().timestamp_nanos_opt().unwrap_or(0)
+        ));
+        std::fs::create_dir_all(&temp_dir).unwrap();
+
+        let test_file = temp_dir.join("broken.rs");
+        std::fs::write(&test_file, "let a = 1;\nlet b = \"hello\";\n").unwrap();
+
+        let engine = CodeEngine::new(&temp_dir);
+        let diags = vec![Diagnostic {
+            level: "error".into(),
+            code: Some("E0308".into()),
+            message: "mismatched types".into(),
+            file_path: Some("broken.rs".into()),
+            line_number: Some(2),
+            column_number: Some(1),
+            suggested_replacement: Some("let b = 2;".into()),
+        }];
+
+        let plan = engine
+            .synthesize_plan_from_diagnostics(&diags, None)
+            .unwrap();
+        assert_eq!(plan.steps.len(), 1);
+        assert_eq!(plan.rollback_steps.len(), 1);
+
+        // Verification of step capability
+        if let capability_layer::CapabilityKind::FileWrite { path, content, .. } =
+            &plan.steps[0].capability
+        {
+            assert!(path.ends_with("broken.rs"));
+            assert_eq!(content, "let a = 1;\nlet b = 2;\n");
+        } else {
+            panic!("Expected FileWrite capability");
+        }
+
+        // Verification of rollback capability
+        if let capability_layer::CapabilityKind::FileWrite { path, content, .. } =
+            &plan.rollback_steps[0].capability
+        {
+            assert!(path.ends_with("broken.rs"));
+            assert_eq!(content, "let a = 1;\nlet b = \"hello\";\n");
+        } else {
+            panic!("Expected FileWrite rollback capability");
+        }
 
         let _ = std::fs::remove_dir_all(&temp_dir);
     }
