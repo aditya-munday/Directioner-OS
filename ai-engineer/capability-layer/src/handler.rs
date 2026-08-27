@@ -282,17 +282,23 @@ impl Handler {
                 .map_err(|e| CapError::Internal(e.to_string()))?;
             let stderr = String::from_utf8_lossy(&out.stderr);
             let stdout = String::from_utf8_lossy(&out.stdout);
-            if out.status.success()
-                || stderr.contains("already in the base")
+            if out.status.success() {
+                Ok(json!({
+                    "package": package,
+                    "status": "staged_pending_reboot",
+                    "adapter": "rpm-ostree",
+                    "deployment_deferred": true
+                }))
+            } else if stderr.contains("already in the base")
                 || stdout.contains("already in the base")
                 || stderr.contains("already provided")
                 || stdout.contains("already provided")
             {
                 Ok(json!({
                     "package": package,
-                    "status": "staged_pending_reboot",
+                    "status": "noop_already_installed",
                     "adapter": "rpm-ostree",
-                    "deployment_deferred": true
+                    "deployment_deferred": false
                 }))
             } else {
                 Err(CapError::Internal(format!(
@@ -362,17 +368,23 @@ impl Handler {
                 .map_err(|e| CapError::Internal(e.to_string()))?;
             let stderr = String::from_utf8_lossy(&out.stderr);
             let stdout = String::from_utf8_lossy(&out.stdout);
-            if out.status.success()
-                || stderr.contains("is not currently layered")
+            if out.status.success() {
+                Ok(json!({
+                    "package": package,
+                    "status": "staged_pending_reboot",
+                    "adapter": "rpm-ostree",
+                    "deployment_deferred": true
+                }))
+            } else if stderr.contains("is not currently layered")
                 || stdout.contains("is not currently layered")
                 || stderr.contains("is not currently requested")
                 || stdout.contains("is not currently requested")
             {
                 Ok(json!({
                     "package": package,
-                    "status": "staged_pending_reboot",
+                    "status": "noop_already_absent",
                     "adapter": "rpm-ostree",
-                    "deployment_deferred": true
+                    "deployment_deferred": false
                 }))
             } else {
                 Err(CapError::Internal(format!(

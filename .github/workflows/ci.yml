@@ -335,7 +335,13 @@ jobs:
           echo "$worklog_out" | grep -q 'package.remove' \
             || { echo 'FAIL: live package.remove not found in work log'; exit 1; }
 
-          echo '==> END TO END PASS (motd + systemd + bootc + world-model sync + live in-guest rollback verified)'
+          echo '==> assertion 8: run in-guest benchmark suite asserting RollbackPendingReboot end-to-end'
+          bench_out=$(ssh_cmd '/var/lib/ai-bin/ai-benchmark')
+          echo "$bench_out"
+          echo "$bench_out" | grep -q 'package_service_compensating_rollback │  PASS ' \
+            || { echo 'FAIL: package_service_compensating_rollback scenario failed in live guest'; exit 1; }
+
+          echo '==> END TO END PASS (motd + systemd + bootc + world-model sync + live in-guest rollback + in-guest benchmark verified)'
       - name: Upload console log on failure
         if: failure()
         uses: actions/upload-artifact@v4
