@@ -6,12 +6,35 @@
 use serde::{Deserialize, Serialize};
 use std::path::{Path, PathBuf};
 
+use crate::symbol_graph::WorkspaceSymbolGraph;
+
+/// A span reference in a compiler diagnostic.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct DiagnosticSpan {
+    /// File path where the span is located.
+    pub file_path: String,
+    /// 1-based start line.
+    pub line_start: usize,
+    /// 1-based end line.
+    pub line_end: usize,
+    /// 1-based start column.
+    pub column_start: usize,
+    /// 1-based end column.
+    pub column_end: usize,
+    /// Whether this is the primary error span.
+    pub is_primary: bool,
+    /// Diagnostic label or annotation on the span.
+    pub label: Option<String>,
+    /// Machine-applicable suggested replacement, if available.
+    pub suggested_replacement: Option<String>,
+}
+
 /// A parsed compiler diagnostic or linter finding.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct Diagnostic {
     /// Severity level ("error", "warning", "note", "help").
     pub level: String,
-    /// Compiler error code (e.g. "E0308", "E0425"), if present.
+    /// Compiler error code (e.g. "E0308", "E0425", "E0061"), if present.
     pub code: Option<String>,
     /// Primary explanation message.
     pub message: String,
@@ -23,6 +46,31 @@ pub struct Diagnostic {
     pub column_number: Option<usize>,
     /// Suggested replacement or code snippet, if provided by compiler.
     pub suggested_replacement: Option<String>,
+    /// All spans (primary and secondary reference notes) associated with the diagnostic.
+    pub spans: Vec<DiagnosticSpan>,
+    /// Associated note / help messages from compiler children.
+    pub notes: Vec<String>,
+}
+
+/// Cross-crate root cause analysis tracing a downstream error to an upstream definition.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct CrossCrateRootCause {
+    /// File where the diagnostic error manifested (call/usage site).
+    pub call_site_file: PathBuf,
+    /// Line number of the call site.
+    pub call_site_line: usize,
+    /// Upstream file where the referenced item is defined.
+    pub definition_file: PathBuf,
+    /// Line number of the upstream definition.
+    pub definition_line: usize,
+    /// Name of the symbol involved.
+    pub symbol_name: Option<String>,
+    /// Upstream crate name.
+    pub upstream_crate: String,
+    /// Compiler diagnostic error code.
+    pub diagnostic_code: Option<String>,
+    /// Explanation of the cross-crate dependency relation.
+    pub explanation: String,
 }
 
 /// Structured test failure report from a test harness execution.
@@ -58,6 +106,7 @@ pub struct BuildTestReport {
 /// The Code Engine runner that executes builds and parses diagnostics.
 pub struct CodeEngine {
     workspace_root: PathBuf,
+    symbol_graph: Option<WorkspaceSymbolGraph>,
 }
 
 impl CodeEngine {
@@ -65,7 +114,26 @@ impl CodeEngine {
     pub fn new(workspace_root: impl AsRef<Path>) -> Self {
         Self {
             workspace_root: workspace_root.as_ref().to_path_buf(),
+            symbol_graph: None,
         }
+    }
+
+    /// Set an existing symbol graph on the CodeEngine.
+    pub fn with_symbol_graph(mut self, graph: WorkspaceSymbolGraph) -> Self {
+        self.symbol_graph = Some(graph);
+        self
+    }
+
+    /// Build or refresh the workspace symbol graph.
+    pub fn build_symbol_graph(&mut self) -> Result<(), String> {
+        let graph = WorkspaceSymbolGraph::from_workspace(&self.workspace_root)?;
+        self.symbol_graph = Some(graph);
+        Ok(())
+    }
+
+    /// Returns a reference to the symbol graph if initialized.
+    pub fn symbol_graph(&self) -> Option<&WorkspaceSymbolGraph> {
+        self.symbol_graph.as_ref()
     }
 
     /// Returns the workspace root path.
@@ -91,20 +159,49 @@ impl CodeEngine {
                 let message = msg["message"].as_str().unwrap_or("").to_string();
                 let code = msg["code"]["code"].as_str().map(|s| s.to_string());
 
-                let primary_span = msg["spans"].as_array().and_then(|spans| {
-                    spans
-                        .iter()
-                        .find(|s| s["is_primary"].as_bool().unwrap_or(false))
-                });
+                let mut spans = Vec::new();
+                if let Some(raw_spans) = msg["spans"].as_array() {
+                    for s in raw_spans {
+                        let file_path = s["file_name"].as_str().unwrap_or("").to_string();
+                        let line_start = s["line_start"].as_u64().unwrap_or(0) as usize;
+                        let line_end = s["line_end"].as_u64().unwrap_or(0) as usize;
+                        let column_start = s["column_start"].as_u64().unwrap_or(0) as usize;
+                        let column_end = s["column_end"].as_u64().unwrap_or(0) as usize;
+                        let is_primary = s["is_primary"].as_bool().unwrap_or(false);
+                        let label = s["label"].as_str().map(|str| str.to_string());
+                        let suggested_replacement = s["suggested_replacement"]
+                            .as_str()
+                            .map(|str| str.to_string());
 
-                let file_path =
-                    primary_span.and_then(|s| s["file_name"].as_str().map(|str| str.to_string()));
-                let line_number =
-                    primary_span.and_then(|s| s["line_start"].as_u64().map(|n| n as usize));
-                let column_number =
-                    primary_span.and_then(|s| s["column_start"].as_u64().map(|n| n as usize));
-                let suggested_replacement = primary_span
-                    .and_then(|s| s["suggested_replacement"].as_str().map(|s| s.to_string()));
+                        spans.push(DiagnosticSpan {
+                            file_path,
+                            line_start,
+                            line_end,
+                            column_start,
+                            column_end,
+                            is_primary,
+                            label,
+                            suggested_replacement,
+                        });
+                    }
+                }
+
+                let mut notes = Vec::new();
+                if let Some(children) = msg["children"].as_array() {
+                    for c in children {
+                        if let Some(child_msg) = c["message"].as_str() {
+                            notes.push(child_msg.to_string());
+                        }
+                    }
+                }
+
+                let primary_span = spans.iter().find(|s| s.is_primary);
+
+                let file_path = primary_span.map(|s| s.file_path.clone());
+                let line_number = primary_span.map(|s| s.line_start);
+                let column_number = primary_span.map(|s| s.column_start);
+                let suggested_replacement =
+                    primary_span.and_then(|s| s.suggested_replacement.clone());
 
                 diagnostics.push(Diagnostic {
                     level,
@@ -114,6 +211,8 @@ impl CodeEngine {
                     line_number,
                     column_number,
                     suggested_replacement,
+                    spans,
+                    notes,
                 });
             }
         }
@@ -482,6 +581,226 @@ impl CodeEngine {
             plan_history,
         })
     }
+
+    /// Localize the root cause definition across workspace crates for a given diagnostic.
+    pub fn localize_diagnostic_root(&self, diag: &Diagnostic) -> Option<CrossCrateRootCause> {
+        let primary_span = diag.spans.iter().find(|s| s.is_primary)?;
+        let call_site_file = if Path::new(&primary_span.file_path).is_absolute() {
+            PathBuf::from(&primary_span.file_path)
+        } else {
+            self.workspace_root.join(&primary_span.file_path)
+        };
+        let call_site_line = primary_span.line_start;
+
+        // Check if there is a secondary span pointing to an upstream definition (e.g. note: method defined here)
+        let secondary_span = diag.spans.iter().find(|s| !s.is_primary);
+
+        if let Some(sec) = secondary_span {
+            let def_file = if Path::new(&sec.file_path).is_absolute() {
+                PathBuf::from(&sec.file_path)
+            } else {
+                self.workspace_root.join(&sec.file_path)
+            };
+
+            let sym_name = self.symbol_graph.as_ref().and_then(|g| {
+                g.find_in_file(&def_file, sec.line_start)
+                    .map(|s| s.name.clone())
+            });
+
+            let upstream_crate = self
+                .symbol_graph
+                .as_ref()
+                .and_then(|g| {
+                    g.find_in_file(&def_file, sec.line_start)
+                        .map(|s| s.crate_name.clone())
+                })
+                .unwrap_or_else(|| "upstream".to_string());
+
+            return Some(CrossCrateRootCause {
+                call_site_file,
+                call_site_line,
+                definition_file: def_file,
+                definition_line: sec.line_start,
+                symbol_name: sym_name,
+                upstream_crate: upstream_crate.clone(),
+                diagnostic_code: diag.code.clone(),
+                explanation: format!(
+                    "Call site at {}:{} references definition at {}:{} in crate '{}'",
+                    primary_span.file_path,
+                    call_site_line,
+                    sec.file_path,
+                    sec.line_start,
+                    upstream_crate
+                ),
+            });
+        }
+
+        // If no secondary span in diagnostic, attempt symbol lookup via WorkspaceSymbolGraph
+        if let Some(graph) = &self.symbol_graph {
+            for sym in &graph.symbols {
+                if diag.message.contains(&sym.name) {
+                    return Some(CrossCrateRootCause {
+                        call_site_file,
+                        call_site_line,
+                        definition_file: sym.file_path.clone(),
+                        definition_line: sym.line_start,
+                        symbol_name: Some(sym.name.clone()),
+                        upstream_crate: sym.crate_name.clone(),
+                        diagnostic_code: diag.code.clone(),
+                        explanation: format!(
+                            "Diagnostic matches indexed symbol '{}' ({:?}) defined at {}:{} in crate '{}'",
+                            sym.name,
+                            sym.kind,
+                            sym.file_path.display(),
+                            sym.line_start,
+                            sym.crate_name
+                        ),
+                    });
+                }
+            }
+        }
+
+        None
+    }
+
+    /// Synthesize a coordinated multi-crate Plan addressing both call-site and definition-site repairs.
+    pub fn synthesize_cross_crate_plan(
+        &self,
+        diagnostics: &[Diagnostic],
+        db: Option<&rusqlite::Connection>,
+    ) -> Option<crate::plan::Plan> {
+        use crate::plan::{Plan, PlanStatus, PlanStep, RollbackStep};
+        use crate::policy::PolicyEngine;
+        use capability_layer::CapabilityKind;
+
+        let intent = Self::synthesize_remediation_intent(diagnostics)?;
+        let mut steps = Vec::new();
+        let mut rollback_steps = Vec::new();
+        let mut modified_files = std::collections::HashSet::new();
+
+        let mut step_num = 1;
+        for diag in diagnostics {
+            if diag.level != "error" {
+                continue;
+            }
+
+            for span in &diag.spans {
+                if span.file_path.is_empty() {
+                    continue;
+                }
+
+                let target_path = if Path::new(&span.file_path).is_absolute() {
+                    PathBuf::from(&span.file_path)
+                } else {
+                    self.workspace_root.join(&span.file_path)
+                };
+
+                let step_id = format!("step-{}", step_num);
+                let desc = format!(
+                    "Apply cross-crate fix for {} (span {}:{})",
+                    span.file_path, span.line_start, span.column_start
+                );
+
+                let (previous_content, is_new_file) = if target_path.exists() {
+                    match std::fs::read_to_string(&target_path) {
+                        Ok(c) => (Some(c), false),
+                        Err(_) => (None, false),
+                    }
+                } else {
+                    (None, true)
+                };
+
+                let new_content = if let (Some(prev), Some(rep)) =
+                    (&previous_content, &span.suggested_replacement)
+                {
+                    let mut lines: Vec<&str> = prev.lines().collect();
+                    if span.line_start > 0 && span.line_start <= lines.len() {
+                        lines[span.line_start - 1] = rep;
+                        let mut joined = lines.join("\n");
+                        joined.push('\n');
+                        joined
+                    } else {
+                        rep.clone()
+                    }
+                } else if let Some(rep) = &span.suggested_replacement {
+                    rep.clone()
+                } else {
+                    format!("// Cross-crate fix for {}\n", span.file_path)
+                };
+
+                let cap = CapabilityKind::FileWrite {
+                    path: target_path.to_string_lossy().to_string(),
+                    content: new_content,
+                    append: false,
+                };
+
+                let blast_radius = PolicyEngine::evaluate_capability(&cap, db);
+
+                steps.push(PlanStep {
+                    step_id: step_id.clone(),
+                    description: desc,
+                    capability: cap,
+                    blast_radius,
+                    timeout_secs: 30,
+                });
+
+                if is_new_file {
+                    rollback_steps.push(RollbackStep {
+                        step_id: format!("rollback-{}", step_id),
+                        description: format!("Delete newly created file {}", span.file_path),
+                        capability: CapabilityKind::FileDelete {
+                            path: target_path.to_string_lossy().to_string(),
+                        },
+                        triggers: vec![step_id],
+                    });
+                } else if let Some(prev) = previous_content
+                    && modified_files.insert(target_path.clone())
+                {
+                    rollback_steps.push(RollbackStep {
+                        step_id: format!("rollback-{}", step_id),
+                        description: format!("Restore original content of {}", span.file_path),
+                        capability: CapabilityKind::FileWrite {
+                            path: target_path.to_string_lossy().to_string(),
+                            content: prev,
+                            append: false,
+                        },
+                        triggers: vec![step_id],
+                    });
+                }
+
+                step_num += 1;
+            }
+        }
+
+        if steps.is_empty() {
+            return None;
+        }
+
+        let caps: Vec<CapabilityKind> = steps.iter().map(|s| s.capability.clone()).collect();
+        let aggregate_blast_radius = PolicyEngine::evaluate_plan_aggregate(&caps, db);
+
+        let plan_id = format!(
+            "plan-crosscrate-{}",
+            &chrono::Utc::now()
+                .timestamp_nanos_opt()
+                .unwrap_or(0)
+                .to_string()[..8]
+        );
+
+        Some(Plan {
+            id: plan_id,
+            intent,
+            summary: format!(
+                "Coordinated cross-crate remediation plan with {} step(s)",
+                steps.len()
+            ),
+            steps,
+            rollback_steps,
+            aggregate_blast_radius,
+            created_at: chrono::Utc::now().to_rfc3339(),
+            status: PlanStatus::Draft,
+        })
+    }
 }
 
 /// Summary result of an automated remediation loop.
@@ -569,6 +888,17 @@ mod tests {
             line_number: Some(2),
             column_number: Some(5),
             suggested_replacement: Some("    let x = 42;".into()),
+            spans: vec![DiagnosticSpan {
+                file_path: "main.rs".into(),
+                line_start: 2,
+                line_end: 2,
+                column_start: 5,
+                column_end: 15,
+                is_primary: true,
+                label: None,
+                suggested_replacement: Some("    let x = 42;".into()),
+            }],
+            notes: Vec::new(),
         }];
 
         let plan = engine.synthesize_plan_from_diagnostics(&diags, None);
@@ -602,6 +932,17 @@ mod tests {
             line_number: Some(2),
             column_number: Some(1),
             suggested_replacement: Some("let b = 2;".into()),
+            spans: vec![DiagnosticSpan {
+                file_path: "broken.rs".into(),
+                line_start: 2,
+                line_end: 2,
+                column_start: 1,
+                column_end: 15,
+                is_primary: true,
+                label: None,
+                suggested_replacement: Some("let b = 2;".into()),
+            }],
+            notes: Vec::new(),
         }];
 
         let plan = engine
@@ -629,6 +970,153 @@ mod tests {
         } else {
             panic!("Expected FileWrite rollback capability");
         }
+
+        let _ = std::fs::remove_dir_all(&temp_dir);
+    }
+
+    #[test]
+    fn test_cross_crate_diagnostic_localization() {
+        let temp_dir = std::env::temp_dir().join(format!(
+            "cross_crate_diag_test_{}",
+            chrono::Utc::now().timestamp_nanos_opt().unwrap_or(0)
+        ));
+        let crate_a = temp_dir.join("crate-a");
+        let crate_b = temp_dir.join("crate-b");
+        std::fs::create_dir_all(&crate_a).unwrap();
+        std::fs::create_dir_all(&crate_b).unwrap();
+
+        let lib_a = crate_a.join("lib.rs");
+        let main_b = crate_b.join("main.rs");
+        std::fs::write(&lib_a, "pub fn process_order(id: u64) -> bool { id > 0 }\n").unwrap();
+        std::fs::write(&main_b, "fn run() { crate_a::process_order(1, 2); }\n").unwrap();
+
+        let mut graph = WorkspaceSymbolGraph::new();
+        graph.index_file("crate-a", &lib_a).unwrap();
+        graph.index_file("crate-b", &main_b).unwrap();
+
+        let engine = CodeEngine::new(&temp_dir).with_symbol_graph(graph);
+
+        let diag = Diagnostic {
+            level: "error".into(),
+            code: Some("E0061".into()),
+            message: "this function takes 1 argument but 2 arguments were supplied".into(),
+            file_path: Some("crate-b/main.rs".into()),
+            line_number: Some(1),
+            column_number: Some(12),
+            suggested_replacement: Some("crate_a::process_order(1);".into()),
+            spans: vec![
+                DiagnosticSpan {
+                    file_path: "crate-b/main.rs".into(),
+                    line_start: 1,
+                    line_end: 1,
+                    column_start: 12,
+                    column_end: 38,
+                    is_primary: true,
+                    label: Some("supplied 2 arguments".into()),
+                    suggested_replacement: Some("crate_a::process_order(1);".into()),
+                },
+                DiagnosticSpan {
+                    file_path: "crate-a/lib.rs".into(),
+                    line_start: 1,
+                    line_end: 1,
+                    column_start: 1,
+                    column_end: 35,
+                    is_primary: false,
+                    label: Some("function defined here".into()),
+                    suggested_replacement: None,
+                },
+            ],
+            notes: vec!["note: function defined here".into()],
+        };
+
+        let root_cause = engine.localize_diagnostic_root(&diag);
+        assert!(root_cause.is_some());
+        let root = root_cause.unwrap();
+
+        assert_eq!(root.call_site_file, temp_dir.join("crate-b/main.rs"));
+        assert_eq!(root.call_site_line, 1);
+        assert_eq!(root.definition_file, temp_dir.join("crate-a/lib.rs"));
+        assert_eq!(root.definition_line, 1);
+        assert_eq!(root.symbol_name.as_deref(), Some("process_order"));
+        assert_eq!(root.upstream_crate, "crate-a");
+
+        let _ = std::fs::remove_dir_all(&temp_dir);
+    }
+
+    #[test]
+    fn test_synthesize_cross_crate_multistep_plan() {
+        let temp_dir = std::env::temp_dir().join(format!(
+            "cross_crate_plan_test_{}",
+            chrono::Utc::now().timestamp_nanos_opt().unwrap_or(0)
+        ));
+        let crate_a = temp_dir.join("crate-a");
+        let crate_b = temp_dir.join("crate-b");
+        std::fs::create_dir_all(&crate_a).unwrap();
+        std::fs::create_dir_all(&crate_b).unwrap();
+
+        let lib_a = crate_a.join("lib.rs");
+        let main_b = crate_b.join("main.rs");
+        std::fs::write(&lib_a, "pub fn compute() -> i32 { 10 }\n").unwrap();
+        std::fs::write(&main_b, "fn main() { let _ = crate_a::compute(); }\n").unwrap();
+
+        let engine = CodeEngine::new(&temp_dir);
+
+        let diags = vec![Diagnostic {
+            level: "error".into(),
+            code: Some("E0308".into()),
+            message: "mismatched types across crates".into(),
+            file_path: Some("crate-b/main.rs".into()),
+            line_number: Some(1),
+            column_number: Some(1),
+            suggested_replacement: None,
+            spans: vec![
+                DiagnosticSpan {
+                    file_path: "crate-a/lib.rs".into(),
+                    line_start: 1,
+                    line_end: 1,
+                    column_start: 1,
+                    column_end: 30,
+                    is_primary: false,
+                    label: Some("updated signature".into()),
+                    suggested_replacement: Some("pub fn compute() -> i64 { 10 }\n".into()),
+                },
+                DiagnosticSpan {
+                    file_path: "crate-b/main.rs".into(),
+                    line_start: 1,
+                    line_end: 1,
+                    column_start: 1,
+                    column_end: 35,
+                    is_primary: true,
+                    label: Some("consumer site".into()),
+                    suggested_replacement: Some(
+                        "fn main() { let _: i64 = crate_a::compute(); }\n".into(),
+                    ),
+                },
+            ],
+            notes: Vec::new(),
+        }];
+
+        let plan = engine.synthesize_cross_crate_plan(&diags, None);
+        assert!(plan.is_some());
+        let plan = plan.unwrap();
+
+        assert_eq!(plan.steps.len(), 2);
+        assert_eq!(plan.rollback_steps.len(), 2);
+
+        let paths: Vec<String> = plan
+            .steps
+            .iter()
+            .map(|s| {
+                if let capability_layer::CapabilityKind::FileWrite { path, .. } = &s.capability {
+                    path.clone()
+                } else {
+                    String::new()
+                }
+            })
+            .collect();
+
+        assert!(paths.iter().any(|p| p.ends_with("crate-a/lib.rs")));
+        assert!(paths.iter().any(|p| p.ends_with("crate-b/main.rs")));
 
         let _ = std::fs::remove_dir_all(&temp_dir);
     }

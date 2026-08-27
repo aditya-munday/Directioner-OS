@@ -18,6 +18,7 @@ pub mod planner;
 pub mod policy;
 pub mod reviewer;
 pub mod simulation;
+pub mod symbol_graph;
 pub mod verifier;
 
 pub use client::{CapabilityClient, ClientError};
@@ -32,4 +33,5 @@ pub use reviewer::{
     FindingSeverity, ReviewFinding, ReviewReport, ReviewVerdict, Reviewer, ReviewerConfig,
 };
 pub use simulation::{PlanPreview, Simulator, StepPreview};
+pub use symbol_graph::{SymbolDefinition, SymbolKind, WorkspaceSymbolGraph};
 pub use verifier::{VerificationCheck, VerificationReport, Verifier};
