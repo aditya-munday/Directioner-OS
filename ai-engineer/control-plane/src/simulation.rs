@@ -221,7 +221,7 @@ impl Simulator {
             }
             CapabilityKind::PackageInstall { package, approved } => {
                 format!(
-                    "PROJECTION: rpm-ostree install -y {package} (boot-deferred)\nApproval Gate: {}",
+                    "PROJECTION: rpm-ostree install -y {package}\nExecution: Staged to pending ostree deployment (boot-deferred)\nDone When: Takes effect after next system reboot\nApproval Gate: {}",
                     if *approved {
                         "APPROVED"
                     } else {
@@ -231,7 +231,7 @@ impl Simulator {
             }
             CapabilityKind::PackageRemove { package, approved } => {
                 format!(
-                    "PROJECTION: rpm-ostree uninstall -y {package} (boot-deferred)\nApproval Gate: {}",
+                    "PROJECTION: rpm-ostree uninstall -y {package}\nExecution: Staged to pending ostree deployment (boot-deferred)\nDone When: Takes effect after next system reboot\nApproval Gate: {}",
                     if *approved {
                         "APPROVED"
                     } else {

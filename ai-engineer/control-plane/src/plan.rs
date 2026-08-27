@@ -23,6 +23,8 @@ pub enum PlanStatus {
     Completed,
     /// Compensating rollback actions were executed successfully following a failure.
     RolledBack,
+    /// Compensating rollback actions were executed and staged (e.g. rpm-ostree changes), but require a system reboot to become active.
+    RollbackPendingReboot,
     /// One or more compensating rollback actions FAILED, leaving system in partial/dirty state.
     RollbackFailed,
 }

@@ -303,7 +303,9 @@ fn make_file_write_rollback(path_str: &str, trigger_step: &str) -> RollbackStep 
 fn make_package_install_rollback(package: &str, trigger_step: &str) -> RollbackStep {
     RollbackStep {
         step_id: format!("rb-remove-pkg-{}", &uuid_v4()[0..6]),
-        description: format!("Compensating package removal for '{package}'"),
+        description: format!(
+            "Compensating package removal for '{package}' (stages unlayering in ostree deployment; active on next reboot)"
+        ),
         capability: CapabilityKind::PackageRemove {
             package: package.to_string(),
             approved: true,

@@ -50,11 +50,24 @@ impl<'a> Implementer<'a> {
             let total_duration_ms = total_start.elapsed().as_millis() as u64;
 
             let any_rollback_failed = rollback_results.iter().any(|r| !r.success);
+            let has_deferred_rollback = rollback_results.iter().any(|r| {
+                r.details.get("deployment_deferred") == Some(&serde_json::Value::Bool(true))
+                    || r.details.get("status")
+                        == Some(&serde_json::Value::String("staged_pending_reboot".into()))
+            });
+
             let (final_status, message) = if any_rollback_failed {
                 (
                     PlanStatus::RollbackFailed,
                     format!(
                         "CRITICAL: Plan aborted at step '{failed_id}', and one or more compensating rollback steps FAILED. Manual remediation required."
+                    ),
+                )
+            } else if has_deferred_rollback {
+                (
+                    PlanStatus::RollbackPendingReboot,
+                    format!(
+                        "Plan aborted at step '{failed_id}'; compensating rollbacks staged successfully (requires system reboot to take full effect)."
                     ),
                 )
             } else {

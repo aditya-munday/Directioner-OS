@@ -264,11 +264,12 @@ impl Handler {
             } else {
                 format!("dnf5 install -y {package}")
             };
+            let deferred = cmd.starts_with("rpm-ostree");
             return Ok(json!({
                 "dry_run": true,
                 "would_run": cmd,
                 "package": package,
-                "deployment_deferred": ostree.is_some(),
+                "deployment_deferred": deferred,
             }));
         }
 
@@ -343,11 +344,12 @@ impl Handler {
             } else {
                 format!("dnf5 remove -y {package}")
             };
+            let deferred = cmd.starts_with("rpm-ostree");
             return Ok(json!({
                 "dry_run": true,
                 "would_run": cmd,
                 "package": package,
-                "deployment_deferred": ostree.is_some(),
+                "deployment_deferred": deferred,
             }));
         }
 

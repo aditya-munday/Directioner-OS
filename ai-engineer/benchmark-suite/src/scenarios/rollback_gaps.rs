@@ -211,11 +211,11 @@ impl BenchmarkScenario for PackageServiceRollbackScenario {
         let implementer = Implementer::new(&client);
         let report = implementer.execute_plan(&plan);
 
-        if report.final_status != PlanStatus::RolledBack {
+        if report.final_status != PlanStatus::RollbackPendingReboot {
             return (
                 false,
                 format!(
-                    "Expected final status RolledBack, got {:?}",
+                    "Expected final status RollbackPendingReboot, got {:?}",
                     report.final_status
                 ),
             );
