@@ -11,6 +11,7 @@
 //!    matches intent.
 
 pub mod client;
+pub mod cockpit;
 pub mod code_engine;
 pub mod implementer;
 pub mod plan;
@@ -22,6 +23,9 @@ pub mod symbol_graph;
 pub mod verifier;
 
 pub use client::{CapabilityClient, ClientError};
+pub use cockpit::{
+    AuditStreamEntry, CockpitRenderer, CockpitSnapshot, CockpitState, SystemHealthSummary,
+};
 pub use code_engine::{BuildTestReport, CodeEngine, Diagnostic, TestFailure};
 pub use implementer::Implementer;
 pub use plan::{

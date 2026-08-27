@@ -23,5 +23,10 @@ parking_lot = "0.12"
 name = "ai-engineer"
 path = "src/bin/ai-engineer.rs"
 
+[[bin]]
+name = "ai-cockpit"
+path = "src/bin/ai-cockpit.rs"
+
 [lints]
 workspace = true
+
