@@ -284,6 +284,8 @@ impl Handler {
             if out.status.success()
                 || stderr.contains("already in the base")
                 || stdout.contains("already in the base")
+                || stderr.contains("already provided")
+                || stdout.contains("already provided")
             {
                 Ok(json!({
                     "package": package,
