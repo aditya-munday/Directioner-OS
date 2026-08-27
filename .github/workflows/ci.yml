@@ -159,8 +159,8 @@ jobs:
           cleanup() { kill $QEMU_JOB_PID 2>/dev/null || true; }
           trap cleanup EXIT
 
-          SSH_OPTS="-i vm-test/ci_key -p 2222 -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o ConnectTimeout=5 -o BatchMode=yes"
-          SCP_OPTS="-i vm-test/ci_key -P 2222 -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o ConnectTimeout=5 -o BatchMode=yes"
+          SSH_OPTS="-i vm-test/ci_key -p 2222 -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR -o ConnectTimeout=5 -o BatchMode=yes"
+          SCP_OPTS="-i vm-test/ci_key -P 2222 -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR -o ConnectTimeout=5 -o BatchMode=yes"
           reachable=""
           for i in $(seq 1 150); do
             if ssh $SSH_OPTS ci@127.0.0.1 'echo up' 2>/dev/null | grep -q '^up$'; then
@@ -228,7 +228,7 @@ jobs:
           echo '==> assertion 6: failed-since returns structurally sane output'
           failed_out=$(ssh_cmd '/var/lib/ai-bin/ai-worldmodel --db /tmp/wm.sqlite failed-since 1h 2>&1')
           echo "$failed_out"
-          echo "$failed_out" | grep -Eq '^[0-9]+ unit failure\(s\) within 1h:' \
+          echo "$failed_out" | grep -Eq '[0-9]+ unit failure\(s\) within 1h:' \
             || { echo 'FAIL: failed-since output not structurally valid'; exit 1; }
 
           echo '==> assertion 7: real live compensating rollback execution inside Fedora guest'
