@@ -414,11 +414,11 @@ impl CodeEngine {
             .map_err(|e| format!("Failed to invoke pytest: {e}"))?;
 
         let report_file = self.workspace_root.join(".report.json");
-        if report_file.exists() {
-            if let Ok(content) = std::fs::read_to_string(&report_file) {
-                let _ = std::fs::remove_file(&report_file);
-                return Ok(Self::parse_pytest_json(&content));
-            }
+        if report_file.exists()
+            && let Ok(content) = std::fs::read_to_string(&report_file)
+        {
+            let _ = std::fs::remove_file(&report_file);
+            return Ok(Self::parse_pytest_json(&content));
         }
 
         let stdout = String::from_utf8_lossy(&output.stdout);
