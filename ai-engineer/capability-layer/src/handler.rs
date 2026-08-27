@@ -255,34 +255,66 @@ impl Handler {
                 "approval gate not cleared (approved=false) for package.install {package}"
             )));
         }
+        let ostree = which("rpm-ostree");
+        let dnf = which("dnf5").or_else(|| which("dnf"));
+
         if self.config.dry_run {
+            let cmd = if ostree.is_some() || dnf.is_none() {
+                format!("rpm-ostree install -y {package}")
+            } else {
+                format!("dnf5 install -y {package}")
+            };
             return Ok(json!({
                 "dry_run": true,
-                "would_run": format!("dnf5 install -y {package}"),
+                "would_run": cmd,
                 "package": package,
+                "deployment_deferred": ostree.is_some(),
             }));
         }
-        let dnf = which("dnf5").or_else(|| which("dnf"));
-        match dnf {
-            Some(bin) => {
-                let out = std::process::Command::new(&bin)
-                    .arg("install")
-                    .arg("-y")
-                    .arg(package)
-                    .output()
-                    .map_err(|e| CapError::Internal(e.to_string()))?;
-                if out.status.success() {
-                    Ok(json!({ "package": package, "status": "installed" }))
-                } else {
-                    Err(CapError::Internal(format!(
-                        "dnf failed: {}",
-                        String::from_utf8_lossy(&out.stderr)
-                    )))
-                }
+
+        if let Some(bin) = ostree {
+            let out = std::process::Command::new(&bin)
+                .arg("install")
+                .arg("-y")
+                .arg(package)
+                .output()
+                .map_err(|e| CapError::Internal(e.to_string()))?;
+            if out.status.success() {
+                Ok(json!({
+                    "package": package,
+                    "status": "staged_pending_reboot",
+                    "adapter": "rpm-ostree",
+                    "deployment_deferred": true
+                }))
+            } else {
+                Err(CapError::Internal(format!(
+                    "rpm-ostree install failed: {}",
+                    String::from_utf8_lossy(&out.stderr)
+                )))
             }
-            None => Err(CapError::Internal(
-                "package adapter unavailable: dnf5/dnf not found".into(),
-            )),
+        } else if let Some(bin) = dnf {
+            let out = std::process::Command::new(&bin)
+                .arg("install")
+                .arg("-y")
+                .arg(package)
+                .output()
+                .map_err(|e| CapError::Internal(e.to_string()))?;
+            if out.status.success() {
+                Ok(json!({
+                    "package": package,
+                    "status": "installed",
+                    "adapter": "dnf"
+                }))
+            } else {
+                Err(CapError::Internal(format!(
+                    "dnf failed: {}",
+                    String::from_utf8_lossy(&out.stderr)
+                )))
+            }
+        } else {
+            Err(CapError::Internal(
+                "package adapter unavailable: rpm-ostree / dnf5 not found".into(),
+            ))
         }
     }
 
@@ -296,34 +328,66 @@ impl Handler {
                 "approval gate not cleared (approved=false) for package.remove {package}"
             )));
         }
+        let ostree = which("rpm-ostree");
+        let dnf = which("dnf5").or_else(|| which("dnf"));
+
         if self.config.dry_run {
+            let cmd = if ostree.is_some() || dnf.is_none() {
+                format!("rpm-ostree uninstall -y {package}")
+            } else {
+                format!("dnf5 remove -y {package}")
+            };
             return Ok(json!({
                 "dry_run": true,
-                "would_run": format!("dnf5 remove -y {package}"),
+                "would_run": cmd,
                 "package": package,
+                "deployment_deferred": ostree.is_some(),
             }));
         }
-        let dnf = which("dnf5").or_else(|| which("dnf"));
-        match dnf {
-            Some(bin) => {
-                let out = std::process::Command::new(&bin)
-                    .arg("remove")
-                    .arg("-y")
-                    .arg(package)
-                    .output()
-                    .map_err(|e| CapError::Internal(e.to_string()))?;
-                if out.status.success() {
-                    Ok(json!({ "package": package, "status": "removed" }))
-                } else {
-                    Err(CapError::Internal(format!(
-                        "dnf remove failed: {}",
-                        String::from_utf8_lossy(&out.stderr)
-                    )))
-                }
+
+        if let Some(bin) = ostree {
+            let out = std::process::Command::new(&bin)
+                .arg("uninstall")
+                .arg("-y")
+                .arg(package)
+                .output()
+                .map_err(|e| CapError::Internal(e.to_string()))?;
+            if out.status.success() {
+                Ok(json!({
+                    "package": package,
+                    "status": "staged_pending_reboot",
+                    "adapter": "rpm-ostree",
+                    "deployment_deferred": true
+                }))
+            } else {
+                Err(CapError::Internal(format!(
+                    "rpm-ostree uninstall failed: {}",
+                    String::from_utf8_lossy(&out.stderr)
+                )))
             }
-            None => Err(CapError::Internal(
-                "package adapter unavailable: dnf5/dnf not found".into(),
-            )),
+        } else if let Some(bin) = dnf {
+            let out = std::process::Command::new(&bin)
+                .arg("remove")
+                .arg("-y")
+                .arg(package)
+                .output()
+                .map_err(|e| CapError::Internal(e.to_string()))?;
+            if out.status.success() {
+                Ok(json!({
+                    "package": package,
+                    "status": "removed",
+                    "adapter": "dnf"
+                }))
+            } else {
+                Err(CapError::Internal(format!(
+                    "dnf remove failed: {}",
+                    String::from_utf8_lossy(&out.stderr)
+                )))
+            }
+        } else {
+            Err(CapError::Internal(
+                "package adapter unavailable: rpm-ostree / dnf5 not found".into(),
+            ))
         }
     }
 
@@ -709,12 +773,7 @@ mod tests {
         match resp {
             CapabilityResponse::Success { result, .. } => {
                 assert_eq!(result["dry_run"], true);
-                assert!(
-                    result["would_run"]
-                        .as_str()
-                        .unwrap()
-                        .contains("dnf5 remove -y nginx")
-                );
+                assert!(result["would_run"].as_str().unwrap().contains("nginx"));
             }
             other => panic!("unexpected response: {other:?}"),
         }

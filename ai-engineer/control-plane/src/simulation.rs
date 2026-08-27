@@ -221,7 +221,7 @@ impl Simulator {
             }
             CapabilityKind::PackageInstall { package, approved } => {
                 format!(
-                    "PROJECTION: dnf5 install -y {package}\nApproval Gate: {}",
+                    "PROJECTION: rpm-ostree install -y {package} (boot-deferred)\nApproval Gate: {}",
                     if *approved {
                         "APPROVED"
                     } else {
@@ -231,7 +231,7 @@ impl Simulator {
             }
             CapabilityKind::PackageRemove { package, approved } => {
                 format!(
-                    "PROJECTION: dnf5 remove -y {package}\nApproval Gate: {}",
+                    "PROJECTION: rpm-ostree uninstall -y {package} (boot-deferred)\nApproval Gate: {}",
                     if *approved {
                         "APPROVED"
                     } else {
@@ -410,6 +410,6 @@ mod tests {
         let preview = Simulator::simulate_plan(&plan, None);
         let rendered = preview.render_terminal();
         assert!(rendered.contains("DIRECTIONER-OS AI ENGINEER — PLAN PREVIEW"));
-        assert!(rendered.contains("dnf5 install -y nginx"));
+        assert!(rendered.contains("rpm-ostree install -y nginx"));
     }
 }

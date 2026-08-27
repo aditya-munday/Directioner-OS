@@ -296,6 +296,17 @@ jobs:
           print(\"r3 service_stop rb:\", r3)
           if r3.get(\"status\") != \"success\":
               sys.exit(f\"service_stop rb failed: {r3}\")
+
+          # 4) package.install staging & package.remove rollback (rpm-ostree / dnf)
+          r4 = send_cap({\"capability\": \"package_install\", \"package\": \"htop\", \"approved\": True}, is_rb=False)
+          print(\"r4 package_install:\", r4)
+          if r4.get(\"status\") != \"success\":
+              sys.exit(f\"package_install failed: {r4}\")
+
+          r5 = send_cap({\"capability\": \"package_remove\", \"package\": \"htop\", \"approved\": True}, is_rb=True)
+          print(\"r5 package_remove rb:\", r5)
+          if r5.get(\"status\") != \"success\":
+              sys.exit(f\"package_remove rb failed: {r5}\")
           "'
 
           echo '==> assertion 7.1: live systemd inspection confirms canary service was stopped by rollback'
@@ -317,6 +328,8 @@ jobs:
             || { echo 'FAIL: live service.stop not found in work log'; exit 1; }
           echo "$worklog_out" | grep -q 'file.delete' \
             || { echo 'FAIL: live file.delete not found in work log'; exit 1; }
+          echo "$worklog_out" | grep -q 'package.remove' \
+            || { echo 'FAIL: live package.remove not found in work log'; exit 1; }
 
           echo '==> END TO END PASS (motd + systemd + bootc + world-model sync + live in-guest rollback verified)'
       - name: Upload console log on failure

@@ -111,7 +111,9 @@ fn end_to_end_over_unix_socket() {
     match read_resp(&mut stream) {
         CapabilityResponse::Success { result, .. } => {
             assert_eq!(result["dry_run"], true);
-            assert!(result["would_run"].as_str().unwrap().contains("dnf5"));
+            let would_run = result["would_run"].as_str().unwrap();
+            assert!(would_run.contains("rpm-ostree") || would_run.contains("dnf5"));
+            assert!(would_run.contains("nginx"));
         }
         other => panic!("unexpected: {other:?}"),
     }
