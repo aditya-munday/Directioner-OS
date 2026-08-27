@@ -363,6 +363,8 @@ impl Handler {
             if out.status.success()
                 || stderr.contains("is not currently layered")
                 || stdout.contains("is not currently layered")
+                || stderr.contains("is not currently requested")
+                || stdout.contains("is not currently requested")
             {
                 Ok(json!({
                     "package": package,
