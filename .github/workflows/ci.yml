@@ -220,9 +220,13 @@ jobs:
             || { echo 'FAIL: world-model graph is empty (no requires/provides synced)'; exit 1; }
 
           echo '--> testing reverse dependencies on glibc & openssl-libs'
-          ssh_cmd '/var/lib/ai-bin/ai-worldmodel --db /tmp/wm.sqlite depends-on glibc 2>&1' | grep -q 'package(s) depend on glibc:' \
+          dep_g_out=$(ssh_cmd '/var/lib/ai-bin/ai-worldmodel --db /tmp/wm.sqlite depends-on glibc 2>&1')
+          echo "$dep_g_out"
+          echo "$dep_g_out" | grep -q 'package(s) depend on glibc:' \
             || { echo 'FAIL: depends-on glibc returned no packages'; exit 1; }
-          ssh_cmd '/var/lib/ai-bin/ai-worldmodel --db /tmp/wm.sqlite depends-on openssl-libs 2>&1' | grep -q 'package(s) depend on openssl-libs:' \
+          dep_o_out=$(ssh_cmd '/var/lib/ai-bin/ai-worldmodel --db /tmp/wm.sqlite depends-on openssl-libs 2>&1')
+          echo "$dep_o_out"
+          echo "$dep_o_out" | grep -q 'package(s) depend on openssl-libs:' \
             || { echo 'FAIL: depends-on openssl-libs returned no packages'; exit 1; }
 
           echo '==> assertion 6: failed-since returns structurally sane output'
