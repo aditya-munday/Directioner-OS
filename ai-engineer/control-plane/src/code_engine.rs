@@ -187,21 +187,36 @@ impl CodeEngine {
                 }
 
                 let mut notes = Vec::new();
+                let mut child_suggestion = None;
                 if let Some(children) = msg["children"].as_array() {
                     for c in children {
                         if let Some(child_msg) = c["message"].as_str() {
                             notes.push(child_msg.to_string());
                         }
+                        if let Some(child_spans) = c["spans"].as_array() {
+                            for cs in child_spans {
+                                if let Some(rep) = cs["suggested_replacement"].as_str() {
+                                    child_suggestion = Some(rep.to_string());
+                                }
+                            }
+                        }
                     }
                 }
 
-                let primary_span = spans.iter().find(|s| s.is_primary);
+                if let Some(ps) = spans.iter_mut().find(|s| s.is_primary)
+                    && ps.suggested_replacement.is_none()
+                {
+                    ps.suggested_replacement = child_suggestion.clone();
+                }
 
-                let file_path = primary_span.map(|s| s.file_path.clone());
-                let line_number = primary_span.map(|s| s.line_start);
-                let column_number = primary_span.map(|s| s.column_start);
-                let suggested_replacement =
-                    primary_span.and_then(|s| s.suggested_replacement.clone());
+                let primary_span_ref = spans.iter().find(|s| s.is_primary);
+
+                let file_path = primary_span_ref.map(|s| s.file_path.clone());
+                let line_number = primary_span_ref.map(|s| s.line_start);
+                let column_number = primary_span_ref.map(|s| s.column_start);
+                let suggested_replacement = primary_span_ref
+                    .and_then(|s| s.suggested_replacement.clone())
+                    .or(child_suggestion);
 
                 diagnostics.push(Diagnostic {
                     level,
@@ -714,10 +729,23 @@ impl CodeEngine {
 
                 let new_content = match (&previous_content, &span.suggested_replacement) {
                     (Some(prev), Some(rep)) => {
-                        let mut lines: Vec<&str> = prev.lines().collect();
+                        let lines: Vec<&str> = prev.lines().collect();
                         if span.line_start > 0 && span.line_start <= lines.len() {
-                            lines[span.line_start - 1] = rep;
-                            let mut joined = lines.join("\n");
+                            let mut modified_lines: Vec<String> =
+                                lines.iter().map(|l| l.to_string()).collect();
+                            let target_line = &lines[span.line_start - 1];
+                            if span.column_start > 0 && span.column_end >= span.column_start {
+                                let c_start = (span.column_start - 1).min(target_line.len());
+                                let c_end = (span.column_end - 1).min(target_line.len());
+                                let mut mod_line = String::new();
+                                mod_line.push_str(&target_line[..c_start]);
+                                mod_line.push_str(rep);
+                                mod_line.push_str(&target_line[c_end..]);
+                                modified_lines[span.line_start - 1] = mod_line;
+                            } else {
+                                modified_lines[span.line_start - 1] = rep.clone();
+                            }
+                            let mut joined = modified_lines.join("\n");
                             joined.push('\n');
                             joined
                         } else {
