@@ -335,24 +335,26 @@ impl CodeEngine {
                     (None, true)
                 };
 
-                let new_content = if let (Some(prev), Some(rep), Some(line_num)) = (
-                    &previous_content,
-                    &diag.suggested_replacement,
-                    diag.line_number,
-                ) {
-                    let mut lines: Vec<&str> = prev.lines().collect();
-                    if line_num > 0 && line_num <= lines.len() {
-                        lines[line_num - 1] = rep;
-                        let mut joined = lines.join("\n");
-                        joined.push('\n');
-                        joined
-                    } else {
-                        rep.clone()
+                let new_content = match (&previous_content, &diag.suggested_replacement) {
+                    (Some(prev), Some(rep)) => {
+                        let mut lines: Vec<&str> = prev.lines().collect();
+                        if let Some(line_num) = diag.line_number
+                            && line_num > 0
+                            && line_num <= lines.len()
+                        {
+                            lines[line_num - 1] = rep;
+                            let mut joined = lines.join("\n");
+                            joined.push('\n');
+                            joined
+                        } else {
+                            rep.clone()
+                        }
                     }
-                } else if let Some(rep) = &diag.suggested_replacement {
-                    rep.clone()
-                } else {
-                    format!("// TODO: Fix compiler diagnostic in {}\n", file_path)
+                    (None, Some(rep)) => rep.clone(),
+                    _ => {
+                        // Skip diagnostics without machine-applicable suggested replacements
+                        continue;
+                    }
                 };
 
                 let cap = CapabilityKind::FileWrite {
@@ -710,22 +712,23 @@ impl CodeEngine {
                     (None, true)
                 };
 
-                let new_content = if let (Some(prev), Some(rep)) =
-                    (&previous_content, &span.suggested_replacement)
-                {
-                    let mut lines: Vec<&str> = prev.lines().collect();
-                    if span.line_start > 0 && span.line_start <= lines.len() {
-                        lines[span.line_start - 1] = rep;
-                        let mut joined = lines.join("\n");
-                        joined.push('\n');
-                        joined
-                    } else {
-                        rep.clone()
+                let new_content = match (&previous_content, &span.suggested_replacement) {
+                    (Some(prev), Some(rep)) => {
+                        let mut lines: Vec<&str> = prev.lines().collect();
+                        if span.line_start > 0 && span.line_start <= lines.len() {
+                            lines[span.line_start - 1] = rep;
+                            let mut joined = lines.join("\n");
+                            joined.push('\n');
+                            joined
+                        } else {
+                            rep.clone()
+                        }
                     }
-                } else if let Some(rep) = &span.suggested_replacement {
-                    rep.clone()
-                } else {
-                    format!("// Cross-crate fix for {}\n", span.file_path)
+                    (None, Some(rep)) => rep.clone(),
+                    _ => {
+                        // Skip spans without machine-applicable suggested replacements
+                        continue;
+                    }
                 };
 
                 let cap = CapabilityKind::FileWrite {

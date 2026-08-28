@@ -253,7 +253,9 @@ fn main() {
         {
             Some(p) => p,
             None => {
-                eprintln!("Could not synthesize automated remediation plan from diagnostics.");
+                eprintln!(
+                    "Could not synthesize automated remediation plan from diagnostics (no machine-applicable compiler suggestions available)."
+                );
                 exit(1);
             }
         };
