@@ -260,55 +260,9 @@ jobs:
             echo 'FAIL: ai-capabilityd live socket not ready'
             ssh_cmd 'sudo journalctl -u live-capabilityd -n 50 --no-pager || true'
             exit 1
-            sleep 0.2
-          done
-          '
+          fi
 
-          ssh_cmd 'python3 -c "
-          import socket, json, sys
-
-          def send_cap(cap, is_rb=False):
-              s = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
-              s.settimeout(60.0)
-              s.connect(\"/tmp/live-cap.sock\")
-              req = {
-                  \"api_version\": 1,
-                  \"id\": \"live-rb\",
-                  \"requester\": \"vm-smoke\",
-                  \"token\": \"tok-vm\",
-                  \"is_rollback\": is_rb,
-                  \"capability\": cap
-              }
-              s.sendall(json.dumps(req).encode() + b\"\n\")
-              resp_raw = s.makefile(\"r\").readline()
-              s.close()
-              return json.loads(resp_raw)
-
-          r1 = send_cap({\"capability\": \"file_write\", \"path\": \"canary.conf\", \"content\": \"val\n\", \"append\": False})
-          print(\"r1 file_write:\", r1)
-          if r1.get(\"status\") != \"success\":
-              sys.exit(f\"file_write failed: {r1}\")
-
-          r2 = send_cap({\"capability\": \"file_delete\", \"path\": \"canary.conf\"}, is_rb=True)
-          print(\"r2 file_delete rb:\", r2)
-          if r2.get(\"status\") != \"success\":
-              sys.exit(f\"file_delete rb failed: {r2}\")
-
-          r3 = send_cap({\"capability\": \"service_stop\", \"unit\": \"canary-rollback.service\", \"approved\": True}, is_rb=True)
-          print(\"r3 service_stop rb:\", r3)
-          if r3.get(\"status\") != \"success\":
-              sys.exit(f\"service_stop rb failed: {r3}\")
-
-          r4 = send_cap({\"capability\": \"package_install\", \"package\": \"htop\", \"approved\": True}, is_rb=False)
-          print(\"r4 package_install:\", r4)
-          if r4.get(\"status\") != \"success\":
-              sys.exit(f\"package_install failed: {r4}\")
-
-          r5 = send_cap({\"capability\": \"package_remove\", \"package\": \"htop\", \"approved\": True}, is_rb=True)
-          print(\"r5 package_remove rb:\", r5)
-          if r5.get(\"status\") != \"success\":
-              sys.exit(f\"package_remove rb failed: {r5}\")
-          "'
+          ssh $SSH_OPTS ci@127.0.0.1 python3 < vm-test/test_live_caps.py
 
           echo '==> assertion 8: run in-guest benchmark suite asserting RollbackPendingReboot end-to-end'
           bench_out=$(ssh_cmd '/var/lib/ai-bin/ai-benchmark')
@@ -322,28 +276,7 @@ jobs:
           echo '==> assertion 9: Phase 3.0.1 Genuine A/B boot slot mechanics & Tier 1 Automatic Rollback'
 
           # 9.1 Pin the current good deployment (deployment 0) via live capability daemon
-          ssh_cmd 'python3 -c "
-          import socket, json, sys
-
-          s = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
-          s.settimeout(60.0)
-          s.connect(\"/tmp/live-cap.sock\")
-          req = {
-              \"api_version\": 1,
-              \"id\": \"pin-good-slot\",
-              \"requester\": \"vm-smoke\",
-              \"token\": \"tok-vm\",
-              \"is_rollback\": False,
-              \"capability\": {\"capability\": \"boot_slot_pin\", \"slot\": 0, \"approved\": True}
-          }
-          s.sendall(json.dumps(req).encode() + b\"\n\")
-          resp_raw = s.makefile(\"r\").readline()
-          s.close()
-          resp = json.loads(resp_raw)
-          print(\"boot_slot_pin response:\", resp)
-          if resp.get(\"status\") != \"success\":
-              sys.exit(f\"boot_slot_pin failed: {resp}\")
-          "'
+          ssh $SSH_OPTS ci@127.0.0.1 python3 < vm-test/pin_boot_slot.py
 
           echo "verifying deployment 0 is pinned before modification..."
           initial_ostree=$(ssh_cmd 'sudo ostree admin status')
@@ -353,63 +286,7 @@ jobs:
 
           # 9.2 Install directioner-boot-watchdog service in the guest
           echo "installing directioner-boot-watchdog service in guest..."
-          ssh_cmd 'python3 -c "
-          script = \"\"\"#!/bin/bash
-          set -euo pipefail
-          mkdir -p /var/lib/directioner
-          COUNT_FILE=\"/var/lib/directioner/boot_counter\"
-
-          if grep -q \"directioner.milestone=fault_test\" /proc/cmdline; then
-              COUNT=1
-              if [ -f \"\$COUNT_FILE\" ]; then
-                  COUNT=\$((\$(cat \"\$COUNT_FILE\") + 1))
-              fi
-              echo \"\$COUNT\" > \"\$COUNT_FILE\"
-              echo \"[Directioner-OS Watchdog] Boot milestone failure detected on attempt \$COUNT/3\"
-
-              if [ \"\$COUNT\" -lt 3 ]; then
-                  echo \"[Directioner-OS Watchdog] Rebooting for retry (\$COUNT/3)...\"
-                  sleep 2
-                  systemctl reboot
-              else
-                  echo \"[Directioner-OS Watchdog] Retries exhausted (3/3). Triggering Tier 1 autonomous rollback...\"
-                  rm -f \"\$COUNT_FILE\"
-                  bootc rollback || ostree admin switch 1 || true
-                  sleep 2
-                  systemctl reboot
-              fi
-          else
-              rm -f \"\$COUNT_FILE\"
-              echo \"[Directioner-OS Watchdog] Boot milestone verified healthy.\"
-          fi
-          \"\"\"
-
-          unit = \"\"\"[Unit]
-          Description=Directioner-OS Tier 1 Boot Milestone Watchdog
-          After=network.target
-
-          [Service]
-          Type=oneshot
-          ExecStart=/usr/local/bin/directioner-boot-watchdog
-          RemainAfterExit=yes
-
-          [Install]
-          WantedBy=multi-user.target
-          \"\"\"
-
-          lines_s = [l.strip() for l in script.strip().splitlines()]
-          with open(\"/tmp/watchdog.sh\", \"w\") as f:
-              f.write(\"\n\".join(lines_s) + \"\n\")
-
-          lines_u = [l.strip() for l in unit.strip().splitlines()]
-          with open(\"/tmp/watchdog.service\", \"w\") as f:
-              f.write(\"\n\".join(lines_u) + \"\n\")
-          "
-          sudo mv /tmp/watchdog.sh /usr/local/bin/directioner-boot-watchdog
-          sudo chmod 755 /usr/local/bin/directioner-boot-watchdog
-          sudo mv /tmp/watchdog.service /etc/systemd/system/directioner-boot-watchdog.service
-          sudo systemctl daemon-reload
-          sudo systemctl enable directioner-boot-watchdog.service'
+          ssh $SSH_OPTS ci@127.0.0.1 "sudo bash" < vm-test/install_watchdog.sh
 
           # 9.3 Stage a new deployment with broken kernel arguments to trigger milestone failure
           echo "staging new deployment via rpm-ostree kargs..."
@@ -464,28 +341,7 @@ jobs:
 
           # 9.8 Explicit Assertion 9.3: Record post-boot Tier 1 rollback observation to Work Log (Spec §1)
           echo "recording post-boot Tier 1 rollback observation to Work Log..."
-          ssh_cmd 'python3 -c "
-          import json, time
-
-          entry = {
-              \"seq\": 99,
-              \"timestamp\": time.strftime(\"%Y-%m-%dT%H:%M:%SZ\", time.gmtime()),
-              \"request_id\": \"tier1-postboot-observation\",
-              \"capability\": \"boot_watchdog.tier1_rollback_observed\",
-              \"args\": {
-                  \"trigger\": \"watchdog: required milestone health-check failed 3 consecutive attempts\",
-                  \"action\": \"automatic rollback to pinned deployment 0\",
-                  \"mechanism\": \"bootcounter exhaustion + autonomous bootc rollback\"
-              },
-              \"requester\": \"incident-response-agent:tier1-observer\",
-              \"token\": \"tok-tier1-obs\",
-              \"is_rollback\": True,
-              \"outcome\": {\"status\": \"success\", \"result\": {\"active_deployment_restored\": True}},
-              \"duration_ms\": 0
-          }
-          with open(\"/tmp/live-worklog.jsonl\", \"a\") as f:
-              f.write(json.dumps(entry) + \"\n\")
-          "'
+          ssh $SSH_OPTS ci@127.0.0.1 python3 < vm-test/record_rollback_worklog.py
 
           final_log=$(ssh_cmd '/var/lib/ai-bin/ai-worklog --log /tmp/live-worklog.jsonl tail --lines 5')
           echo "$final_log"
