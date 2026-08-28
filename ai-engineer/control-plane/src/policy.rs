@@ -384,6 +384,43 @@ impl PolicyEngine {
             ));
         }
 
+        // Cross-crate dispersion penalty: calculate unique crate roots modified
+        let mut unique_crates = std::collections::HashSet::new();
+        for cap in caps {
+            if (matches!(cap, CapabilityKind::FileWrite { .. })
+                || matches!(cap, CapabilityKind::FileDelete { .. })
+                || matches!(cap, CapabilityKind::FileRead { .. }))
+                && let Some(path) = match cap {
+                    CapabilityKind::FileWrite { path, .. }
+                    | CapabilityKind::FileDelete { path }
+                    | CapabilityKind::FileRead { path } => Some(path),
+                    _ => None,
+                }
+                && let Some(crate_name) = extract_crate_from_path(path)
+            {
+                unique_crates.insert(crate_name);
+            }
+        }
+
+        if unique_crates.len() >= 3 {
+            let mut sorted: Vec<String> = unique_crates.into_iter().collect();
+            sorted.sort();
+            max_score = (max_score + 25).min(100);
+            all_factors.push(format!(
+                "Plan spans {} distinct workspace crates ({}) (+25 cross-crate dispersion factor)",
+                sorted.len(),
+                sorted.join(", ")
+            ));
+        } else if unique_crates.len() == 2 {
+            let mut sorted: Vec<String> = unique_crates.into_iter().collect();
+            sorted.sort();
+            max_score = (max_score + 15).min(100);
+            all_factors.push(format!(
+                "Plan spans 2 distinct workspace crates ({}) (+15 cross-crate dispersion factor)",
+                sorted.join(", ")
+            ));
+        }
+
         let tier = ApprovalTier::from_score(max_score);
         BlastRadiusReport {
             score: max_score,
@@ -391,6 +428,27 @@ impl PolicyEngine {
             factors: all_factors,
         }
     }
+}
+
+/// Helper function to extract the crate name from a source file path.
+pub fn extract_crate_from_path(path: &str) -> Option<String> {
+    let p = std::path::Path::new(path);
+    let comps: Vec<&str> = p
+        .components()
+        .filter_map(|c| c.as_os_str().to_str())
+        .collect();
+
+    for (idx, &comp) in comps.iter().enumerate() {
+        if (comp == "src" || comp == "tests") && idx > 0 {
+            return Some(comps[idx - 1].to_string());
+        }
+    }
+
+    if p.file_name().and_then(|f| f.to_str()) == Some("Cargo.toml") && comps.len() >= 2 {
+        return Some(comps[comps.len() - 2].to_string());
+    }
+
+    None
 }
 
 #[cfg(test)]
@@ -500,5 +558,103 @@ mod tests {
                 .iter()
                 .any(|f| f.contains("World Model database offline/unavailable"))
         );
+    }
+
+    #[test]
+    fn test_cross_crate_dispersion_scoring() {
+        // 1. Single-crate 2-file plan (modifying 2 files in crate-a)
+        let single_crate_caps = vec![
+            CapabilityKind::FileWrite {
+                path: "/workspace/crate-a/src/mod1.rs".into(),
+                content: "a".into(),
+                append: false,
+            },
+            CapabilityKind::FileWrite {
+                path: "/workspace/crate-a/src/lib.rs".into(),
+                content: "b".into(),
+                append: false,
+            },
+        ];
+        let rep1 = PolicyEngine::evaluate_plan_aggregate(&single_crate_caps, None);
+        // Base score 30 (25 user scope + 5 write) + 0 crate penalty = 30 (Notify tier)
+        assert_eq!(rep1.score, 30);
+        assert_eq!(rep1.tier, ApprovalTier::Notify);
+        assert!(!rep1.tier.requires_confirmation());
+
+        // 2. 2-crate plan (modifying crate-a and crate-b)
+        let two_crate_caps = vec![
+            CapabilityKind::FileWrite {
+                path: "/workspace/crate-a/src/lib.rs".into(),
+                content: "a".into(),
+                append: false,
+            },
+            CapabilityKind::FileWrite {
+                path: "/workspace/crate-b/src/main.rs".into(),
+                content: "b".into(),
+                append: false,
+            },
+        ];
+        let rep2 = PolicyEngine::evaluate_plan_aggregate(&two_crate_caps, None);
+        // Base score 30 + 15 (2 crates) = 45 (Escalated to Confirm tier!)
+        assert_eq!(rep2.score, 45);
+        assert_eq!(rep2.tier, ApprovalTier::Confirm);
+        assert!(rep2.tier.requires_confirmation());
+
+        // 3. 3-crate plan (modifying crate-a, crate-b, crate-c)
+        let three_crate_caps = vec![
+            CapabilityKind::FileWrite {
+                path: "/workspace/crate-a/src/lib.rs".into(),
+                content: "a".into(),
+                append: false,
+            },
+            CapabilityKind::FileWrite {
+                path: "/workspace/crate-b/src/lib.rs".into(),
+                content: "b".into(),
+                append: false,
+            },
+            CapabilityKind::FileWrite {
+                path: "/workspace/crate-c/src/lib.rs".into(),
+                content: "c".into(),
+                append: false,
+            },
+        ];
+        let rep3 = PolicyEngine::evaluate_plan_aggregate(&three_crate_caps, None);
+        // Base score 30 + 25 (3 crates) = 55 (Confirm tier)
+        assert_eq!(rep3.score, 55);
+        assert_eq!(rep3.tier, ApprovalTier::Confirm);
+        assert!(rep3.tier.requires_confirmation());
+
+        // 4. 3-crate 5-file plan (modifying 5 files across 3 crates)
+        let three_crate_5_files = vec![
+            CapabilityKind::FileWrite {
+                path: "/workspace/crate-a/src/mod1.rs".into(),
+                content: "a".into(),
+                append: false,
+            },
+            CapabilityKind::FileWrite {
+                path: "/workspace/crate-a/src/lib.rs".into(),
+                content: "b".into(),
+                append: false,
+            },
+            CapabilityKind::FileWrite {
+                path: "/workspace/crate-b/src/lib.rs".into(),
+                content: "c".into(),
+                append: false,
+            },
+            CapabilityKind::FileWrite {
+                path: "/workspace/crate-c/src/mod1.rs".into(),
+                content: "d".into(),
+                append: false,
+            },
+            CapabilityKind::FileWrite {
+                path: "/workspace/crate-c/src/lib.rs".into(),
+                content: "e".into(),
+                append: false,
+            },
+        ];
+        let rep4 = PolicyEngine::evaluate_plan_aggregate(&three_crate_5_files, None);
+        // Base score 30 + 10 (>3 steps) + 25 (3 crates) = 65 (Confirm tier)
+        assert_eq!(rep4.score, 65);
+        assert_eq!(rep4.tier, ApprovalTier::Confirm);
     }
 }

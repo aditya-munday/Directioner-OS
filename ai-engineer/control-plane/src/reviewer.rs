@@ -126,6 +126,38 @@ impl Reviewer {
             });
         }
 
+        // 6. Check Cross-Crate Dispersion (>=3 distinct crates)
+        let mut unique_crates = std::collections::HashSet::new();
+        for step in &plan.steps {
+            if (matches!(step.capability, CapabilityKind::FileWrite { .. })
+                || matches!(step.capability, CapabilityKind::FileDelete { .. })
+                || matches!(step.capability, CapabilityKind::FileRead { .. }))
+                && let Some(path) = match &step.capability {
+                    CapabilityKind::FileWrite { path, .. }
+                    | CapabilityKind::FileDelete { path }
+                    | CapabilityKind::FileRead { path } => Some(path),
+                    _ => None,
+                }
+                && let Some(crate_name) = crate::policy::extract_crate_from_path(path)
+            {
+                unique_crates.insert(crate_name);
+            }
+        }
+        if unique_crates.len() >= 3 {
+            let mut sorted: Vec<String> = unique_crates.into_iter().collect();
+            sorted.sort();
+            findings.push(ReviewFinding {
+                severity: FindingSeverity::Warning,
+                category: "cross_crate_dispersion".into(),
+                message: format!(
+                    "Plan modifies files across {} distinct crates ({}). High dispersion increases integration risk.",
+                    sorted.len(),
+                    sorted.join(", ")
+                ),
+                step_id: None,
+            });
+        }
+
         // Calculate final verdict
         let has_fatal = findings
             .iter()
@@ -554,6 +586,117 @@ mod tests {
                 .findings
                 .iter()
                 .any(|f| f.category == "policy_mismatch")
+        );
+    }
+
+    #[test]
+    fn test_reviewer_warns_on_high_cross_crate_dispersion() {
+        let steps = vec![
+            PlanStep {
+                step_id: "step-1".into(),
+                description: "Patch crate-a".into(),
+                capability: CapabilityKind::FileWrite {
+                    path: "/workspace/crate-a/src/lib.rs".into(),
+                    content: "a".into(),
+                    append: false,
+                },
+                blast_radius: PolicyEngine::evaluate_capability(
+                    &CapabilityKind::FileWrite {
+                        path: "/workspace/crate-a/src/lib.rs".into(),
+                        content: "a".into(),
+                        append: false,
+                    },
+                    None,
+                ),
+                timeout_secs: 5,
+            },
+            PlanStep {
+                step_id: "step-2".into(),
+                description: "Patch crate-b".into(),
+                capability: CapabilityKind::FileWrite {
+                    path: "/workspace/crate-b/src/lib.rs".into(),
+                    content: "b".into(),
+                    append: false,
+                },
+                blast_radius: PolicyEngine::evaluate_capability(
+                    &CapabilityKind::FileWrite {
+                        path: "/workspace/crate-b/src/lib.rs".into(),
+                        content: "b".into(),
+                        append: false,
+                    },
+                    None,
+                ),
+                timeout_secs: 5,
+            },
+            PlanStep {
+                step_id: "step-3".into(),
+                description: "Patch crate-c".into(),
+                capability: CapabilityKind::FileWrite {
+                    path: "/workspace/crate-c/src/lib.rs".into(),
+                    content: "c".into(),
+                    append: false,
+                },
+                blast_radius: PolicyEngine::evaluate_capability(
+                    &CapabilityKind::FileWrite {
+                        path: "/workspace/crate-c/src/lib.rs".into(),
+                        content: "c".into(),
+                        append: false,
+                    },
+                    None,
+                ),
+                timeout_secs: 5,
+            },
+        ];
+
+        let plan = Plan {
+            id: "plan-cross-dispersion".into(),
+            intent: "Cross-crate patch".into(),
+            summary: "Plan touching 3 crates".into(),
+            steps,
+            rollback_steps: vec![],
+            aggregate_blast_radius: PolicyEngine::evaluate_plan_aggregate(
+                &[
+                    CapabilityKind::FileWrite {
+                        path: "/workspace/crate-a/src/lib.rs".into(),
+                        content: "a".into(),
+                        append: false,
+                    },
+                    CapabilityKind::FileWrite {
+                        path: "/workspace/crate-b/src/lib.rs".into(),
+                        content: "b".into(),
+                        append: false,
+                    },
+                    CapabilityKind::FileWrite {
+                        path: "/workspace/crate-c/src/lib.rs".into(),
+                        content: "c".into(),
+                        append: false,
+                    },
+                ],
+                None,
+            ),
+            created_at: "2026-08-28T00:00:00Z".into(),
+            status: crate::plan::PlanStatus::Draft,
+        };
+
+        let reviewer = Reviewer::new(ReviewerConfig::default());
+        let report = reviewer.review_plan(&plan);
+
+        // Warning finding emitted on 3-crate dispersion
+        assert_eq!(report.verdict, ReviewVerdict::ApprovedWithWarnings);
+        let dispersion_finding = report
+            .findings
+            .iter()
+            .find(|f| f.category == "cross_crate_dispersion");
+        assert!(dispersion_finding.is_some());
+        assert_eq!(
+            dispersion_finding.unwrap().severity,
+            FindingSeverity::Warning
+        );
+        assert!(
+            dispersion_finding
+                .unwrap()
+                .message
+                .contains("3 distinct crates")
         );
     }
 }
