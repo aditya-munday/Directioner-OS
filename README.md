@@ -84,14 +84,18 @@ real hardware before it is proven in a disposable VM.
 - [x] Phase 1.4 Work Log UI & 3-Depth Explanations: `ai-engineer explain <intent> --depth 1|2|3`
 - [x] Phase 1.5 Blast-radius scoring & policy engine: 4-tier approval gates (`auto`, `notify`, `confirm`, `expert_review`)
       with World Model reverse dependency scaling and protected system daemons
-- [x] Phase 1.6 AI Engineer Benchmark Suite: 7 real-world system scenarios + 1 tracked capability gap, scored runner `ai-benchmark` (100% passing across implemented scenarios, transparently reporting Phase 2 gaps)
+- [x] Phase 1.6 AI Engineer Benchmark Suite: 12 real-world system scenarios, scored runner `ai-benchmark` (12/12 passing, 100.0%)
+- [x] Phase 2.1 Multi-Agent Reviewer Role: independent safety audit pass, invariant checks (`/etc/sudoers.d`, critical paths, packages, units), rollback completeness validation
+- [x] Phase 2.2 Workspace Symbol Indexing & Cross-Crate Localization: `WorkspaceSymbolGraph` AST indexing, root-cause localization across crate boundaries
+- [x] Phase 2.3 Diagnostic CLI Subcommands: `ai-engineer diagnose` and `ai-engineer fix` with machine suggestion patch generation and clean refusal when suggestions are absent
+- [x] Phase 2.4 Policy Engine Hardening: crate-boundary dispersion risk penalties (+15 for 2 crates, +25 for >= 3 crates) and Reviewer multi-crate warnings
+- [x] Phase 2 Tooling: Operational Cockpit (`ai-cockpit` CLI, `CockpitState`, real-time ANSI terminal dashboard and `--json` telemetry)
 
-### Phase 2 Capability Expansions (Tracked Backlog)
-- [ ] `file.delete`: File removal primitive for clean new file rollback (replaces zero-byte truncation)
-- [ ] `package.remove`: Clean package uninstall for `package.install` rollback
-- [ ] `service.stop`: Daemon state restoration for `service.restart` rollback
+### Explicitly Deferred Phase 2 Items
+- **Autonomous Semantic Code Synthesis**: Generating synthetic code logic for errors lacking `rustc` machine suggestions is deferred for dedicated scoped design.
+- **Incremental Live Symbol Graph Watcher**: Live watcher-based symbol graph caching during background daemons is deferred.
 
-See `docs/phase-0-checklist.md` and `docs/phase-1-checklist.md` for detailed tracking.
+See `docs/phase-0-checklist.md`, `docs/phase-1-checklist.md`, and `docs/phase-2-checklist.md` for detailed tracking.
 
 ## AI Engineer CLI Commands
 
@@ -104,8 +108,21 @@ cargo run -p control-plane --bin ai-engineer -- dry-run "configure nginx on port
 cargo run -p control-plane --bin ai-engineer -- explain "configure nginx on port 8080" --depth 2
 ```
 
-### 2. Execute Benchmark Suite
+### 2. Diagnostics & Automated Remediation
 ```sh
+# Inspect and diagnose compilation errors across workspace
+cargo run -p control-plane --bin ai-engineer -- diagnose <path>
+
+# Synthesize and apply machine-applicable compiler fixes
+cargo run -p control-plane --bin ai-engineer -- fix <path> [--auto-approve]
+```
+
+### 3. Operational Cockpit & Benchmark Suite
+```sh
+# Launch live 1s refresh cockpit dashboard
+cargo run -p control-plane --bin ai-cockpit --watch
+
+# Execute complete 12-scenario benchmark suite
 cargo run -p benchmark-suite --bin ai-benchmark
 ```
 
