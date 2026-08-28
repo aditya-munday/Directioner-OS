@@ -336,7 +336,8 @@ impl PolicyEngine {
             }
             CapabilityKind::BootcRollback => {
                 // Tier 1 emergency recovery
-                factors.push("Tier 1 emergency bootc rollback to last known good deployment".into());
+                factors
+                    .push("Tier 1 emergency bootc rollback to last known good deployment".into());
             }
         }
 

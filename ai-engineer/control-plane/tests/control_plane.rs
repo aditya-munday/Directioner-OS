@@ -554,7 +554,7 @@ fn test_boot_slot_pin_and_tier1_emergency_rollback() {
     let handler = Handler::new(scope, audit, ks, HandlerConfig::default());
     let server = Server::bind(&sock, Arc::new(Mutex::new(handler))).unwrap();
 
-    let server_thread = std::thread::spawn(move || {
+    let _server_thread = std::thread::spawn(move || {
         let _ = server.serve();
     });
 
@@ -602,15 +602,10 @@ fn test_boot_slot_pin_and_tier1_emergency_rollback() {
 
     // 3. Dispatch Tier 1 Emergency BootcRollback capability
     let rb_resp = client
-        .send(
-            CapabilityKind::BootcRollback,
-            "req-tier1-rb",
-            None,
-        )
+        .send(CapabilityKind::BootcRollback, "req-tier1-rb", None)
         .unwrap();
     assert!(matches!(rb_resp, CapabilityResponse::Success { .. }));
 
     drop(client);
     let _ = std::fs::remove_file(&sock);
-    let _ = server_thread.join();
 }
