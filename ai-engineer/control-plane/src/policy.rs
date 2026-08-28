@@ -326,6 +326,18 @@ impl PolicyEngine {
                     factors.push(format!("Stopping systemd service unit '{unit}'"));
                 }
             }
+            CapabilityKind::BootSlotPin { slot, approved } => {
+                // Phase 3 Spec §2 Conservative Floor: All Tier 2 Phase 3 actions have a floor at Notify (score >= 20)
+                let base = if *approved { 25 } else { 55 };
+                score += base;
+                factors.push(format!(
+                    "Pinning OSTree/bootc deployment slot {slot} to prevent garbage collection (Phase 3.0.1)"
+                ));
+            }
+            CapabilityKind::BootcRollback => {
+                // Tier 1 emergency recovery
+                factors.push("Tier 1 emergency bootc rollback to last known good deployment".into());
+            }
         }
 
         // Clamp composite score to 0..=100

@@ -112,6 +112,15 @@ pub enum CapabilityKind {
         /// Whether the human approval gate has cleared this specific plan step.
         approved: bool,
     },
+    /// Pin an OSTree/bootc deployment slot to prevent garbage collection before changes (Phase 3.0.1).
+    BootSlotPin {
+        /// Slot/index to pin (0 is current active deployment).
+        slot: u32,
+        /// Approval gate status.
+        approved: bool,
+    },
+    /// Tier 1 emergency rollback to last known good deployment.
+    BootcRollback,
     /// Liveness probe; always returns OK when the kill-switch is off.
     Ping,
 }

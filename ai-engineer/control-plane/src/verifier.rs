@@ -209,8 +209,10 @@ impl<'a> Verifier<'a> {
                 }
                 CapabilityKind::Ping
                 | CapabilityKind::FileRead { .. }
-                | CapabilityKind::ServiceStatus { .. } => {
-                    // Read-only steps don't require post-verification
+                | CapabilityKind::ServiceStatus { .. }
+                | CapabilityKind::BootSlotPin { .. }
+                | CapabilityKind::BootcRollback => {
+                    // Read-only or boot-level steps don't require post-verification
                 }
             }
         }

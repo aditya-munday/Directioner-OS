@@ -375,7 +375,10 @@ impl Reviewer {
                     });
                 }
             }
-            CapabilityKind::ServiceStatus { .. } | CapabilityKind::Ping => {}
+            CapabilityKind::ServiceStatus { .. }
+            | CapabilityKind::Ping
+            | CapabilityKind::BootSlotPin { .. }
+            | CapabilityKind::BootcRollback => {}
         }
     }
 

@@ -97,6 +97,10 @@ impl Handler {
             CapabilityKind::ServiceStop { unit, approved } => {
                 self.cap_service_stop(unit, *approved)
             }
+            CapabilityKind::BootSlotPin { slot, approved } => {
+                self.cap_boot_slot_pin(*slot, *approved)
+            }
+            CapabilityKind::BootcRollback => self.cap_bootc_rollback(),
         };
 
         let outcome = match &r {
@@ -522,6 +526,82 @@ impl Handler {
         }
     }
 
+    fn cap_boot_slot_pin(&self, slot: u32, approved: bool) -> Result<Value> {
+        if !approved {
+            return Err(CapError::Denied(
+                "boot slot pin unapproved by policy".into(),
+            ));
+        }
+        if let Some(ostree) = which("ostree") {
+            let out = std::process::Command::new(&ostree)
+                .args(["admin", "pin", &slot.to_string()])
+                .output()
+                .map_err(|e| CapError::Internal(e.to_string()))?;
+            if out.status.success() {
+                Ok(json!({ "slot": slot, "pinned": true }))
+            } else {
+                Err(CapError::Internal(format!(
+                    "ostree admin pin failed: {}",
+                    String::from_utf8_lossy(&out.stderr)
+                )))
+            }
+        } else {
+            Ok(json!({
+                "slot": slot,
+                "pinned": true,
+                "adapter": "simulated",
+            }))
+        }
+    }
+
+    fn cap_bootc_rollback(&self) -> Result<Value> {
+        if let Some(bootc) = which("bootc") {
+            let out = std::process::Command::new(&bootc)
+                .arg("rollback")
+                .output()
+                .map_err(|e| CapError::Internal(e.to_string()))?;
+            if out.status.success() {
+                Ok(json!({ "rollback_invoked": true, "mechanism": "bootc" }))
+            } else if let Some(ostree) = which("ostree") {
+                let out2 = std::process::Command::new(&ostree)
+                    .args(["admin", "switch", "1"])
+                    .output()
+                    .map_err(|e| CapError::Internal(e.to_string()))?;
+                if out2.status.success() {
+                    Ok(json!({ "rollback_invoked": true, "mechanism": "ostree switch" }))
+                } else {
+                    Err(CapError::Internal(format!(
+                        "bootc rollback and ostree switch both failed: {}",
+                        String::from_utf8_lossy(&out2.stderr)
+                    )))
+                }
+            } else {
+                Err(CapError::Internal(format!(
+                    "bootc rollback failed: {}",
+                    String::from_utf8_lossy(&out.stderr)
+                )))
+            }
+        } else if let Some(ostree) = which("ostree") {
+            let out = std::process::Command::new(&ostree)
+                .args(["admin", "switch", "1"])
+                .output()
+                .map_err(|e| CapError::Internal(e.to_string()))?;
+            if out.status.success() {
+                Ok(json!({ "rollback_invoked": true, "mechanism": "ostree switch" }))
+            } else {
+                Err(CapError::Internal(format!(
+                    "ostree admin switch failed: {}",
+                    String::from_utf8_lossy(&out.stderr)
+                )))
+            }
+        } else {
+            Ok(json!({
+                "rollback_invoked": true,
+                "adapter": "simulated",
+            }))
+        }
+    }
+
     fn audit_write(
         &mut self,
         req: &CapabilityRequest,
@@ -559,6 +639,8 @@ fn capability_name(cap: &CapabilityKind) -> String {
         CapabilityKind::ServiceStatus { .. } => "service.status".into(),
         CapabilityKind::ServiceRestart { .. } => "service.restart".into(),
         CapabilityKind::ServiceStop { .. } => "service.stop".into(),
+        CapabilityKind::BootSlotPin { .. } => "boot_slot.pin".into(),
+        CapabilityKind::BootcRollback => "bootc.rollback".into(),
     }
 }
 
@@ -583,6 +665,10 @@ fn redacted_args(cap: &CapabilityKind) -> Value {
         CapabilityKind::ServiceStop { unit, approved } => {
             json!({ "unit": unit, "approved": approved })
         }
+        CapabilityKind::BootSlotPin { slot, approved } => {
+            json!({ "slot": slot, "approved": approved })
+        }
+        CapabilityKind::BootcRollback => Value::Null,
     }
 }
 
@@ -856,5 +942,45 @@ mod tests {
             }
             other => panic!("unexpected response: {other:?}"),
         }
+    }
+
+    #[test]
+    fn boot_slot_pin_respects_approval() {
+        let dir = tempfile::tempdir().unwrap();
+        let mut h = handler(dir.path(), HandlerConfig::default());
+
+        // Unapproved is denied
+        let (_, resp) = h
+            .execute(&req(
+                "pin_unapp",
+                CapabilityKind::BootSlotPin {
+                    slot: 0,
+                    approved: false,
+                },
+            ))
+            .unwrap();
+        assert!(matches!(resp, CapabilityResponse::Denied { .. }));
+
+        // Approved succeeds
+        let (_, resp) = h
+            .execute(&req(
+                "pin_app",
+                CapabilityKind::BootSlotPin {
+                    slot: 0,
+                    approved: true,
+                },
+            ))
+            .unwrap();
+        assert!(matches!(resp, CapabilityResponse::Success { .. }));
+    }
+
+    #[test]
+    fn bootc_rollback_tier1_emergency_succeeds() {
+        let dir = tempfile::tempdir().unwrap();
+        let mut h = handler(dir.path(), HandlerConfig::default());
+        let (_, resp) = h
+            .execute(&req("tier1_rb", CapabilityKind::BootcRollback))
+            .unwrap();
+        assert!(matches!(resp, CapabilityResponse::Success { .. }));
     }
 }

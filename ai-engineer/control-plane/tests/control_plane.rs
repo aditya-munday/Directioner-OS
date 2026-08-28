@@ -537,3 +537,80 @@ fn test_cli_fix_reverification_failure_atomic_rollback() {
     assert_eq!(fs::read_to_string(&file_a).unwrap(), "original_a\n");
     assert_eq!(fs::read_to_string(&file_b).unwrap(), "original_b\n");
 }
+
+#[test]
+fn test_boot_slot_pin_and_tier1_emergency_rollback() {
+    use capability_layer::CapabilityResponse;
+    use control_plane::policy::ApprovalTier;
+
+    let tmp = tempfile::tempdir().unwrap();
+    let sock = tmp.path().join("cap.sock");
+    let audit_file = tmp.path().join("audit.jsonl");
+    let lock = tmp.path().join("kill.lock");
+
+    let scope = ScopedPath::new(tmp.path()).unwrap();
+    let audit = AuditLog::open(&audit_file).unwrap();
+    let ks = KillSwitch::new(&lock);
+    let handler = Handler::new(scope, audit, ks, HandlerConfig::default());
+    let server = Server::bind(&sock, Arc::new(Mutex::new(handler))).unwrap();
+
+    let server_thread = std::thread::spawn(move || {
+        let _ = server.serve();
+    });
+
+    for _ in 0..50 {
+        if sock.exists() {
+            break;
+        }
+        std::thread::sleep(std::time::Duration::from_millis(10));
+    }
+
+    let client = CapabilityClient::new(&sock, "test-suite");
+
+    // 1. Evaluate policy for BootSlotPin: Section 2 Conservative Floor (score >= 20, Notify)
+    let br_approved = PolicyEngine::evaluate_capability(
+        &CapabilityKind::BootSlotPin {
+            slot: 0,
+            approved: true,
+        },
+        None,
+    );
+    assert_eq!(br_approved.tier, ApprovalTier::Notify);
+    assert!(br_approved.score >= 20);
+
+    let br_unapproved = PolicyEngine::evaluate_capability(
+        &CapabilityKind::BootSlotPin {
+            slot: 0,
+            approved: false,
+        },
+        None,
+    );
+    assert_eq!(br_unapproved.tier, ApprovalTier::Confirm);
+
+    // 2. Dispatch approved BootSlotPin capability
+    let pin_resp = client
+        .send(
+            CapabilityKind::BootSlotPin {
+                slot: 0,
+                approved: true,
+            },
+            "req-pin-0",
+            None,
+        )
+        .unwrap();
+    assert!(matches!(pin_resp, CapabilityResponse::Success { .. }));
+
+    // 3. Dispatch Tier 1 Emergency BootcRollback capability
+    let rb_resp = client
+        .send(
+            CapabilityKind::BootcRollback,
+            "req-tier1-rb",
+            None,
+        )
+        .unwrap();
+    assert!(matches!(rb_resp, CapabilityResponse::Success { .. }));
+
+    drop(client);
+    let _ = std::fs::remove_file(&sock);
+    let _ = server_thread.join();
+}

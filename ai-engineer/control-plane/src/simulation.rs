@@ -169,6 +169,8 @@ impl Simulator {
             CapabilityKind::ServiceStatus { .. } => "service_status",
             CapabilityKind::ServiceRestart { .. } => "service_restart",
             CapabilityKind::ServiceStop { .. } => "service_stop",
+            CapabilityKind::BootSlotPin { .. } => "boot_slot_pin",
+            CapabilityKind::BootcRollback => "bootc_rollback",
         }
         .to_string();
 
@@ -261,6 +263,19 @@ impl Simulator {
                         "PENDING APPROVAL"
                     }
                 )
+            }
+            CapabilityKind::BootSlotPin { slot, approved } => {
+                format!(
+                    "PROJECTION: ostree admin pin {slot}\nApproval Gate: {}",
+                    if *approved {
+                        "APPROVED"
+                    } else {
+                        "PENDING APPROVAL"
+                    }
+                )
+            }
+            CapabilityKind::BootcRollback => {
+                "PROJECTION: Tier 1 emergency rollback to last known good deployment".to_string()
             }
         };
 
