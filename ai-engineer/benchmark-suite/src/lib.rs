@@ -165,7 +165,7 @@ impl Default for BenchmarkRunner {
 }
 
 impl BenchmarkRunner {
-    /// Create a runner with the standard Phase 1 suite (7 core scenarios + 1 tracked gap).
+    /// Create a runner with the standard benchmark suite (11 core scenarios + 1 tracked gap).
     pub fn standard_suite() -> Self {
         let scenarios: Vec<Box<dyn BenchmarkScenario>> = vec![
             Box::new(scenarios::WebserverScenario),
@@ -176,6 +176,10 @@ impl BenchmarkRunner {
             Box::new(scenarios::BlastRadiusScenario),
             Box::new(scenarios::KillswitchScenario),
             Box::new(scenarios::AuditabilityScenario),
+            Box::new(scenarios::MultiCrateRepairScenario),
+            Box::new(scenarios::MultiCrateRollbackScenario),
+            Box::new(scenarios::AutoApprovePolicyRefusalScenario),
+            Box::new(scenarios::CockpitTelemetryScenario),
         ];
 
         Self { scenarios }

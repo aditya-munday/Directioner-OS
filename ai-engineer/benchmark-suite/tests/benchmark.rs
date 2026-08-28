@@ -15,10 +15,10 @@ fn test_all_benchmark_scenarios_pass() {
         );
     }
 
-    assert_eq!(scorecard.total_scenarios, 8);
-    assert_eq!(scorecard.passed_scenarios, 8);
+    assert_eq!(scorecard.total_scenarios, 12);
+    assert_eq!(scorecard.passed_scenarios, 12);
     assert_eq!(scorecard.known_gap_scenarios, 0);
     assert_eq!(scorecard.pass_rate_pct, 100.0);
-    assert_eq!(scorecard.score, 8);
-    assert_eq!(scorecard.max_score, 8);
+    assert_eq!(scorecard.score, 12);
+    assert_eq!(scorecard.max_score, 12);
 }
