@@ -116,6 +116,8 @@ jobs:
           cp ai-engineer/target/release/ai-capabilityd dist_bin/
           cp ai-engineer/target/release/ai-worklog dist_bin/
           cp ai-engineer/target/release/ai-engineer dist_bin/
+          cp ai-engineer/target/release/ai-health dist_bin/
+          cp ai-engineer/target/release/ai-cockpit dist_bin/
           ls -la dist_bin/
       - name: Upload release binaries artifact
         uses: actions/upload-artifact@v4
@@ -226,7 +228,7 @@ jobs:
 
           echo '==> assertion 4: deploy release binaries to /var/lib/ai-bin in the booted VM'
           ssh_cmd "sudo mkdir -p /var/lib/ai-bin"
-          for b in ai-worldmodel ai-benchmark ai-capabilityd ai-worklog ai-engineer; do
+          for b in ai-worldmodel ai-benchmark ai-capabilityd ai-worklog ai-engineer ai-health ai-cockpit; do
             BIN_PATH=$(find vm -name "$b" -type f | head -1)
             echo "deploying binary: $BIN_PATH -> /var/lib/ai-bin/$b"
             scp $SCP_OPTS "$BIN_PATH" ci@127.0.0.1:/tmp/$b
@@ -260,6 +262,38 @@ jobs:
           echo "$failed_out"
           echo "$failed_out" | grep -q 'unit failure(s) within 1h:' \
             || { echo 'FAIL: failed-since output not structurally valid'; exit 1; }
+
+          echo '==> assertion 6.5: Phase 3.0.2 Health Model v1 query and crashloop detection'
+          # Baseline healthy evaluation
+          echo "evaluating baseline healthy state..."
+          health_healthy=$(ssh_cmd '/var/lib/ai-bin/ai-health --db /tmp/wm.sqlite status')
+          echo "$health_healthy"
+          echo "$health_healthy" | grep -q 'HEALTHY' \
+            || { echo 'FAIL: baseline health status is not HEALTHY'; exit 1; }
+
+          # Inject a real crash-looping service in the guest
+          echo "injecting real crash-looping service into guest..."
+          ssh_cmd 'sudo bash -c "printf \"[Unit]\nDescription=Canary Crashloop Service\n[Service]\nType=simple\nRestart=always\nRestartSec=100ms\nExecStart=/usr/bin/false\n\" > /etc/systemd/system/canary-crashloop.service && systemctl daemon-reload && systemctl start canary-crashloop.service || true"'
+          sleep 1
+
+          # Sync world model to ingest the failure state transitions
+          ssh_cmd '/var/lib/ai-bin/ai-worldmodel --db /tmp/wm.sqlite sync'
+
+          # Evaluate degraded health with traceable evidence
+          echo "evaluating health status with real crash-looping service..."
+          health_degraded=$(ssh_cmd '/var/lib/ai-bin/ai-health --db /tmp/wm.sqlite status')
+          echo "$health_degraded"
+          health_json=$(ssh_cmd '/var/lib/ai-bin/ai-health --db /tmp/wm.sqlite status --json')
+          echo "$health_json"
+
+          echo "$health_degraded" | grep -q 'canary-crashloop.service' \
+            || { echo 'FAIL: ai-health status failed to trace canary-crashloop.service in evidence'; exit 1; }
+          echo "$health_json" | grep -q '"canary-crashloop.service"' \
+            || { echo 'FAIL: ai-health status --json failed to include canary-crashloop.service'; exit 1; }
+
+          # Clean up canary crashloop service
+          ssh_cmd 'sudo systemctl stop canary-crashloop.service 2>/dev/null || true && sudo rm -f /etc/systemd/system/canary-crashloop.service && sudo systemctl daemon-reload'
+          ssh_cmd '/var/lib/ai-bin/ai-worldmodel --db /tmp/wm.sqlite sync'
 
           echo '==> assertion 7: real live compensating rollback execution inside Fedora guest'
           # Create and start a real live systemd service in the guest

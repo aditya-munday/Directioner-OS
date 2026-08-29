@@ -13,6 +13,7 @@
 pub mod client;
 pub mod cockpit;
 pub mod code_engine;
+pub mod health_model;
 pub mod implementer;
 pub mod plan;
 pub mod planner;
@@ -27,6 +28,10 @@ pub use cockpit::{
     AuditStreamEntry, CockpitRenderer, CockpitSnapshot, CockpitState, SystemHealthSummary,
 };
 pub use code_engine::{BuildTestReport, CodeEngine, Diagnostic, TestFailure};
+pub use health_model::{
+    HealthEvidence, HealthModel, HealthModelConfig, HealthStatus, SubsystemHealth,
+    SystemHealthReport,
+};
 pub use implementer::Implementer;
 pub use plan::{
     Plan, PlanExecutionReport, PlanStatus, PlanStep, RollbackStep, StepExecutionResult,
