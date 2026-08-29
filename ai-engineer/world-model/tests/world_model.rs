@@ -11,10 +11,13 @@ fn fixtures_dir() -> PathBuf {
 }
 
 fn write_script(path: &Path, body: &str) {
-    let mut f = std::fs::File::create(path).unwrap();
-    f.write_all(body.as_bytes()).unwrap();
-    let mut perms = std::fs::metadata(path).unwrap().permissions();
+    {
+        let mut f = std::fs::File::create(path).unwrap();
+        f.write_all(body.as_bytes()).unwrap();
+        f.sync_all().unwrap();
+    }
     use std::os::unix::fs::PermissionsExt;
+    let mut perms = std::fs::metadata(path).unwrap().permissions();
     perms.set_mode(0o755);
     std::fs::set_permissions(path, perms).unwrap();
 }
