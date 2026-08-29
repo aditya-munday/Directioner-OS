@@ -2,8 +2,19 @@
 set -euo pipefail
 
 echo "[Greenboot] Evaluating Directioner-OS milestone required services..."
-if ! systemctl is-active --quiet directioner-milestone.service; then
-    echo "[Greenboot] CRITICAL: directioner-milestone.service is NOT active" >&2
+
+# Bounded poll: up to 10 seconds defense-in-depth safety net
+active=0
+for i in $(seq 1 10); do
+    if systemctl is-active --quiet directioner-milestone.service; then
+        active=1
+        break
+    fi
+    sleep 1
+done
+
+if [ "$active" -ne 1 ]; then
+    echo "[Greenboot] CRITICAL: directioner-milestone.service is NOT active after 10s bounded timeout" >&2
     systemctl status directioner-milestone.service --no-pager || true
 
     # Manage GRUB boot_counter retry cycles (3 -> 2 -> 1 -> rollback)

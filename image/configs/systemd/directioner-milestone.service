@@ -2,6 +2,7 @@
 Description=Directioner-OS Core Milestone Service
 After=network.target
 Wants=network.target
+Before=multi-user.target
 
 [Service]
 Type=oneshot
