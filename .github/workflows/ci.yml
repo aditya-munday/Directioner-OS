@@ -270,12 +270,12 @@ jobs:
 
           # Start ai-capabilityd in LIVE mode (dry_run: false) inside the VM using systemd-run
           ssh_cmd 'sudo mkdir -p /tmp/live-scope'
-          ssh_cmd 'sudo systemd-run --unit=live-capabilityd /var/lib/ai-bin/ai-capabilityd --socket /tmp/live-cap.sock --audit-log /tmp/live-worklog.jsonl --lock-file /tmp/live-killswitch.lock --work-root /tmp/live-scope --exec'
+          ssh_cmd 'sudo systemd-run --unit=live-capabilityd /var/lib/ai-bin/ai-capabilityd --socket /tmp/live-cap.sock --audit-log /var/log/live-worklog.jsonl --lock-file /tmp/live-killswitch.lock --work-root /tmp/live-scope --exec'
 
           # Wait up to 10 seconds for socket to become ready
           ready=""
           for i in $(seq 1 20); do
-            if ssh_cmd 'sudo chmod 666 /tmp/live-cap.sock /tmp/live-worklog.jsonl 2>/dev/null && test -S /tmp/live-cap.sock'; then
+            if ssh_cmd 'sudo chmod 666 /tmp/live-cap.sock /var/log/live-worklog.jsonl 2>/dev/null && test -S /tmp/live-cap.sock'; then
               ready=yes
               echo "ai-capabilityd live socket ready"
               break
@@ -358,7 +358,7 @@ jobs:
 
           # 9.7 Explicit Assertion 9.2: Assert NO test script or control plane called bootc_rollback capability
           echo "asserting that NO manual bootc.rollback capability call was invoked by any script..."
-          worklog_audit=$(ssh_cmd '/var/lib/ai-bin/ai-worklog --log /tmp/live-worklog.jsonl tail --lines 50')
+          worklog_audit=$(ssh_cmd '/var/lib/ai-bin/ai-worklog --log /var/log/live-worklog.jsonl tail --lines 50')
           echo "$worklog_audit"
           if echo "$worklog_audit" | grep -q 'bootc.rollback'; then
             echo 'FAIL: bootc.rollback was invoked via capability daemon! Rollback must happen at the boot-watchdog layer below user-space.'
@@ -371,7 +371,7 @@ jobs:
           echo "recording post-boot Tier 1 rollback observation to Work Log..."
           ssh $SSH_OPTS ci@127.0.0.1 python3 < vm-test/record_rollback_worklog.py
 
-          final_log=$(ssh_cmd '/var/lib/ai-bin/ai-worklog --log /tmp/live-worklog.jsonl tail --lines 5')
+          final_log=$(ssh_cmd '/var/lib/ai-bin/ai-worklog --log /var/log/live-worklog.jsonl tail --lines 5')
           echo "$final_log"
           echo "$final_log" | grep -q 'boot_watchdog.tier1_rollback_observed' \
             || { echo 'FAIL: post-boot Tier 1 rollback observation missing from Work Log'; exit 1; }

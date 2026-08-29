@@ -20,5 +20,5 @@ entry = {
     },
     "duration_ms": 0,
 }
-with open("/tmp/live-worklog.jsonl", "a") as f:
+with open("/var/log/live-worklog.jsonl", "a") as f:
     f.write(json.dumps(entry) + "\n")
