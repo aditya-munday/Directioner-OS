@@ -342,7 +342,8 @@ impl HealthModel {
 
     /// Evaluate boot subsystem from Work Log audit stream and boot recovery observations.
     fn evaluate_boot(&self) -> SubsystemHealth {
-        let worklog_path = match &self.config.worklog_path {
+        let resolved_path = self.resolve_worklog_path();
+        let worklog_path = match &resolved_path {
             Some(p) if p.exists() => p,
             _ => {
                 return SubsystemHealth {
@@ -513,19 +514,46 @@ impl HealthModel {
         }
     }
 
+    fn resolve_db_path(&self) -> PathBuf {
+        if self.config.db_path.exists() {
+            return self.config.db_path.clone();
+        }
+        let var_lib = PathBuf::from("/var/lib/ai-worldmodel/world_model.sqlite");
+        if var_lib.exists() {
+            return var_lib;
+        }
+        let var_dir = PathBuf::from("/var/lib/directioner/world_model.sqlite");
+        if var_dir.exists() {
+            return var_dir;
+        }
+        self.config.db_path.clone()
+    }
+
+    fn resolve_worklog_path(&self) -> Option<PathBuf> {
+        if let Some(ref p) = self.config.worklog_path
+            && p.exists()
+        {
+            return Some(p.clone());
+        }
+        let var_log = PathBuf::from("/var/log/live-worklog.jsonl");
+        if var_log.exists() {
+            return Some(var_log);
+        }
+        let var_lib = PathBuf::from("/var/lib/directioner/worklog.jsonl");
+        if var_lib.exists() {
+            return Some(var_lib);
+        }
+        self.config.worklog_path.clone()
+    }
+
     fn open_db(&self) -> Result<Connection, String> {
-        if !self.config.db_path.exists() {
-            return Err(format!(
-                "Database file not found: {}",
-                self.config.db_path.display()
-            ));
+        let db_path = self.resolve_db_path();
+        if !db_path.exists() {
+            return Err(format!("Database file not found: {}", db_path.display()));
         }
 
-        Connection::open_with_flags(
-            &self.config.db_path,
-            rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY,
-        )
-        .map_err(|e| format!("Failed to open DB: {e}"))
+        Connection::open_with_flags(&db_path, rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY)
+            .map_err(|e| format!("Failed to open DB: {e}"))
     }
 }
 

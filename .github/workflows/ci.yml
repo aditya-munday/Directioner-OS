@@ -411,6 +411,9 @@ jobs:
             || { echo 'FAIL: post-boot Tier 1 rollback observation missing from Work Log'; exit 1; }
 
           # 9.9 Explicit Assertion 9.4: Assert Health Model evaluates post-boot Tier 1 rollback observation as DEGRADED with traceable evidence
+          echo "syncing world model on recovered deployment..."
+          ssh_cmd 'sudo /var/lib/ai-bin/ai-worldmodel --db /tmp/wm.sqlite sync'
+
           echo "evaluating Health Model status on recovered deployment after Tier 1 rollback..."
           postboot_health=$(ssh_cmd '/var/lib/ai-bin/ai-health --db /tmp/wm.sqlite --worklog /var/log/live-worklog.jsonl status')
           echo "$postboot_health"
@@ -420,6 +423,8 @@ jobs:
             || { echo 'FAIL: Health Model did not detect Tier 1 rollback observation in boot subsystem'; exit 1; }
           echo "$postboot_json" | grep -q '"name": "boot"' \
             || { echo 'FAIL: Health Model json missing boot subsystem'; exit 1; }
+          echo "$postboot_json" | grep -q '"name": "services"' \
+            || { echo 'FAIL: Health Model json missing services subsystem'; exit 1; }
 
           # Also test Operational Cockpit query in the live VM
           echo "testing ai-cockpit snapshot on recovered deployment..."
