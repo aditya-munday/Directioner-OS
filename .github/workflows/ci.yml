@@ -64,9 +64,6 @@ jobs:
           mkdir -p output
           PUBKEY="$(tr -d '\n' < ../vm-test/ci_key.pub)"
           cat > config.toml <<EOF
-          [customizations.kernel]
-          arguments = ["selinux=0", "enforcing=0"]
-
           [[customizations.user]]
           name = "ci"
           key = "${PUBKEY}"
