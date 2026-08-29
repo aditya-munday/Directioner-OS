@@ -117,20 +117,34 @@ fn render_terminal(report: &SystemHealthReport) {
         None => "N/A".to_string(),
     };
 
-    println!("╔══════════════════════════════════════════════════════════════════════════════════════════╗");
-    println!("║                    DIRECTIONER-OS HEALTH MODEL EVALUATOR (PHASE 3.0.2)                   ║");
-    println!("╠══════════════════════════════════════════════════════════════════════════════════════════╣");
+    println!(
+        "╔══════════════════════════════════════════════════════════════════════════════════════════╗"
+    );
+    println!(
+        "║                    DIRECTIONER-OS HEALTH MODEL EVALUATOR (PHASE 3.0.2)                   ║"
+    );
+    println!(
+        "╠══════════════════════════════════════════════════════════════════════════════════════════╣"
+    );
     println!(
         "║  Overall Status: {status_color}{:<10}{reset} │  Composite Score: {:<7} │  Timestamp: {:<20} ║",
         format!("{}", report.overall_status),
         score_str,
         &report.evaluated_at[..19]
     );
-    println!("╠══════════════════════════════════════════════════════════════════════════════════════════╣");
+    println!(
+        "╠══════════════════════════════════════════════════════════════════════════════════════════╣"
+    );
     println!("║  Summary: {:<78} ║", truncate_str(&report.summary, 78));
-    println!("╠══════════════════════════════════════════════════════════════════════════════════════════╣");
-    println!("║  #  │ Subsystem   │ Status     │ Score │ Summary                                        ║");
-    println!("╟─────┼─────────────┼────────────┼───────┼────────────────────────────────────────────────╢");
+    println!(
+        "╠══════════════════════════════════════════════════════════════════════════════════════════╣"
+    );
+    println!(
+        "║  #  │ Subsystem   │ Status     │ Score │ Summary                                        ║"
+    );
+    println!(
+        "╟─────┼─────────────┼────────────┼───────┼────────────────────────────────────────────────╢"
+    );
 
     for (idx, sub) in report.subsystems.iter().enumerate() {
         let sub_color = match sub.status {
@@ -156,8 +170,12 @@ fn render_terminal(report: &SystemHealthReport) {
         );
     }
 
-    println!("╠══════════════════════════════════════════════════════════════════════════════════════════╣");
-    println!("║ Traceable Underlying Evidence:                                                           ║");
+    println!(
+        "╠══════════════════════════════════════════════════════════════════════════════════════════╣"
+    );
+    println!(
+        "║ Traceable Underlying Evidence:                                                           ║"
+    );
 
     let mut evidence_count = 0;
     for sub in &report.subsystems {
@@ -169,19 +187,19 @@ fn render_terminal(report: &SystemHealthReport) {
                 _ => "\x1b[36m[INFO]\x1b[0m",
             };
             let desc = format!("{} {}: {}", ev.source, ev.entity, ev.description);
-            println!(
-                "║  • {} {:<77} ║",
-                sev_color,
-                truncate_str(&desc, 77)
-            );
+            println!("║  • {} {:<77} ║", sev_color, truncate_str(&desc, 77));
         }
     }
 
     if evidence_count == 0 {
-        println!("║  (No specific evidence items recorded for current state)                                ║");
+        println!(
+            "║  (No specific evidence items recorded for current state)                                ║"
+        );
     }
 
-    println!("╚══════════════════════════════════════════════════════════════════════════════════════════╝");
+    println!(
+        "╚══════════════════════════════════════════════════════════════════════════════════════════╝"
+    );
 }
 
 fn truncate_str(s: &str, max: usize) -> String {

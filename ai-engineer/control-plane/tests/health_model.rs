@@ -108,11 +108,19 @@ fn test_health_model_healthy_state_and_cli() {
     assert_eq!(boot.status, HealthStatus::Healthy);
     assert_eq!(boot.score, Some(100));
 
-    let services = report.subsystems.iter().find(|s| s.name == "services").unwrap();
+    let services = report
+        .subsystems
+        .iter()
+        .find(|s| s.name == "services")
+        .unwrap();
     assert_eq!(services.status, HealthStatus::Healthy);
     assert_eq!(services.score, Some(100));
 
-    let packages = report.subsystems.iter().find(|s| s.name == "packages").unwrap();
+    let packages = report
+        .subsystems
+        .iter()
+        .find(|s| s.name == "packages")
+        .unwrap();
     assert_eq!(packages.status, HealthStatus::Healthy);
     assert_eq!(packages.score, Some(100));
 
@@ -182,9 +190,17 @@ fn test_health_model_degraded_crashloop_and_rollback() {
     let boot = report.subsystems.iter().find(|s| s.name == "boot").unwrap();
     assert_eq!(boot.status, HealthStatus::Degraded);
     assert_eq!(boot.score, Some(65));
-    assert!(boot.evidence[0].description.contains("Tier 1 autonomous rollback"));
+    assert!(
+        boot.evidence[0]
+            .description
+            .contains("Tier 1 autonomous rollback")
+    );
 
-    let services = report.subsystems.iter().find(|s| s.name == "services").unwrap();
+    let services = report
+        .subsystems
+        .iter()
+        .find(|s| s.name == "services")
+        .unwrap();
     assert_eq!(services.status, HealthStatus::Critical);
     assert_eq!(services.score, Some(60));
     assert_eq!(services.evidence[0].entity, "faulty-daemon.service");

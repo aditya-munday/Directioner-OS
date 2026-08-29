@@ -119,16 +119,11 @@ impl HealthModel {
     /// Evaluate current system health across all observable subsystems.
     pub fn evaluate(&self) -> SystemHealthReport {
         let evaluated_at = Utc::now().to_rfc3339();
-        let mut subsystems = Vec::new();
-
-        // 1. Services subsystem (from World Model units & unit_events)
-        subsystems.push(self.evaluate_services());
-
-        // 2. Boot subsystem (from Work Log boot watchdog & slot pinning events)
-        subsystems.push(self.evaluate_boot());
-
-        // 3. Packages subsystem (from World Model package dependency graph)
-        subsystems.push(self.evaluate_packages());
+        let subsystems = vec![
+            self.evaluate_services(),
+            self.evaluate_boot(),
+            self.evaluate_packages(),
+        ];
 
         // Compute weighted composite score across valid subsystems
         let mut total_weight = 0.0;
@@ -162,7 +157,9 @@ impl HealthModel {
 
             let degraded_names: Vec<&str> = subsystems
                 .iter()
-                .filter(|s| s.status == HealthStatus::Degraded || s.status == HealthStatus::Critical)
+                .filter(|s| {
+                    s.status == HealthStatus::Degraded || s.status == HealthStatus::Critical
+                })
                 .map(|s| s.name.as_str())
                 .collect();
 
@@ -228,11 +225,11 @@ impl HealthModel {
         let mut failed_units: Vec<(String, String)> = Vec::new();
         if let Ok(mut stmt) = conn.prepare(
             "SELECT name, since_ts FROM units WHERE active_state = 'failed' OR sub_state = 'failed'",
-        ) {
-            if let Ok(rows) = stmt.query_map([], |r| Ok((r.get(0)?, r.get(1)?))) {
-                for item in rows.flatten() {
-                    failed_units.push(item);
-                }
+        )
+            && let Ok(rows) = stmt.query_map([], |r| Ok((r.get(0)?, r.get(1)?)))
+        {
+            for item in rows.flatten() {
+                failed_units.push(item);
             }
         }
 
@@ -244,13 +241,13 @@ impl HealthModel {
             "SELECT id, ts, unit, old_value, new_value FROM unit_events \
              WHERE (kind = 'active' AND new_value = 'failed') OR (kind = 'sub' AND new_value = 'failed') \
              AND ts >= ?1 ORDER BY id DESC LIMIT 100",
-        ) {
-            if let Ok(rows) = stmt.query_map([&cutoff], |r| {
+        )
+            && let Ok(rows) = stmt.query_map([&cutoff], |r| {
                 Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?, r.get(4)?))
-            }) {
-                for item in rows.flatten() {
-                    recent_failure_events.push(item);
-                }
+            })
+        {
+            for item in rows.flatten() {
+                recent_failure_events.push(item);
             }
         }
 
@@ -269,7 +266,9 @@ impl HealthModel {
                 timestamp: Utc::now().to_rfc3339(),
                 source: "world_model.units".to_string(),
                 entity: "systemd".to_string(),
-                description: format!("{total_units} total systemd units loaded with 0 active failures"),
+                description: format!(
+                    "{total_units} total systemd units loaded with 0 active failures"
+                ),
                 severity: "info".to_string(),
             });
 
@@ -373,7 +372,7 @@ impl HealthModel {
         let mut rollback_observed: Option<serde_json::Value> = None;
         let mut pin_observed: Option<serde_json::Value> = None;
 
-        for line in reader.lines().flatten() {
+        for line in reader.lines().map_while(Result::ok) {
             if let Ok(v) = serde_json::from_str::<serde_json::Value>(&line) {
                 let cap = v.get("capability").and_then(|c| c.as_str()).unwrap_or("");
                 if cap == "boot_watchdog.tier1_rollback_observed" {
@@ -387,7 +386,11 @@ impl HealthModel {
         let mut evidence = Vec::new();
 
         if let Some(rb) = rollback_observed {
-            let ts = rb.get("timestamp").and_then(|t| t.as_str()).unwrap_or("").to_string();
+            let ts = rb
+                .get("timestamp")
+                .and_then(|t| t.as_str())
+                .unwrap_or("")
+                .to_string();
             let seq = rb.get("seq").and_then(|s| s.as_u64()).unwrap_or(0);
             let trigger = rb
                 .get("args")
@@ -417,7 +420,11 @@ impl HealthModel {
                 evidence,
             }
         } else if let Some(pin) = pin_observed {
-            let ts = pin.get("timestamp").and_then(|t| t.as_str()).unwrap_or("").to_string();
+            let ts = pin
+                .get("timestamp")
+                .and_then(|t| t.as_str())
+                .unwrap_or("")
+                .to_string();
             let slot = pin
                 .get("args")
                 .and_then(|a| a.get("slot"))
@@ -428,7 +435,9 @@ impl HealthModel {
                 timestamp: ts,
                 source: "worklog.audit".to_string(),
                 entity: format!("slot={slot}"),
-                description: format!("Deployment slot {slot} pinned; 0 watchdog rollbacks observed"),
+                description: format!(
+                    "Deployment slot {slot} pinned; 0 watchdog rollbacks observed"
+                ),
                 severity: "info".to_string(),
             });
 
@@ -589,7 +598,8 @@ mod tests {
         conn.execute(
             "INSERT INTO pkg_provides (pkg, provide) VALUES ('systemd', 'systemd')",
             [],
-        ).unwrap();
+        )
+        .unwrap();
 
         // Insert healthy unit
         conn.execute(
@@ -607,11 +617,19 @@ mod tests {
         assert_eq!(report.overall_status, HealthStatus::Healthy);
         assert!(report.composite_score.unwrap() >= 90);
 
-        let services_sub = report.subsystems.iter().find(|s| s.name == "services").unwrap();
+        let services_sub = report
+            .subsystems
+            .iter()
+            .find(|s| s.name == "services")
+            .unwrap();
         assert_eq!(services_sub.status, HealthStatus::Healthy);
         assert_eq!(services_sub.score, Some(100));
 
-        let pkgs_sub = report.subsystems.iter().find(|s| s.name == "packages").unwrap();
+        let pkgs_sub = report
+            .subsystems
+            .iter()
+            .find(|s| s.name == "packages")
+            .unwrap();
         assert_eq!(pkgs_sub.status, HealthStatus::Healthy);
         assert_eq!(pkgs_sub.score, Some(100));
 
@@ -661,7 +679,11 @@ mod tests {
         assert_eq!(report.overall_status, HealthStatus::Degraded);
         assert!(report.composite_score.unwrap() < 85);
 
-        let services_sub = report.subsystems.iter().find(|s| s.name == "services").unwrap();
+        let services_sub = report
+            .subsystems
+            .iter()
+            .find(|s| s.name == "services")
+            .unwrap();
         assert_eq!(services_sub.status, HealthStatus::Critical);
         assert_eq!(services_sub.score, Some(60)); // 100 - 25 - 15 = 60
         assert_eq!(services_sub.evidence.len(), 1);
