@@ -180,6 +180,12 @@ jobs:
             ssh $SSH_OPTS ci@127.0.0.1 "$@"
           }
 
+          echo '==> assertion 0: SELinux is active and enforcing in guest'
+          SELINUX_MODE=$(ssh_cmd 'getenforce')
+          echo "getenforce -> $SELINUX_MODE"
+          [ "$SELINUX_MODE" = "Enforcing" ] || { echo "FAIL: SELinux must be Enforcing, got: $SELINUX_MODE"; exit 1; }
+          ssh_cmd 'sudo dmesg | grep -i selinux | head -n 10' || true
+
           echo '==> assertion 1: custom motd is present'
           MOTD=$(ssh_cmd 'cat /etc/motd')
           echo "$MOTD"
