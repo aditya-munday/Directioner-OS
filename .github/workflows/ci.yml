@@ -318,9 +318,10 @@ jobs:
           sleep 20
           recovered=""
           for i in $(seq 1 180); do
-            top_status=$(ssh $SSH_OPTS ci@127.0.0.1 'sudo ostree admin status 2>/dev/null | head -n 2' 2>/dev/null || true)
+            top_status=$(ssh $SSH_OPTS ci@127.0.0.1 'sudo ostree admin status 2>/dev/null' 2>/dev/null || true)
             if [ -n "$top_status" ]; then
-              if echo "$top_status" | grep -q 'Pinned: yes'; then
+              active_pinned=$(echo "$top_status" | awk '/^\*/ {p=1; next} /^  / && p {if ($0 ~ /Pinned: yes/) print "yes"; p=0}' || true)
+              if [ "$active_pinned" = "yes" ]; then
                 recovered=yes
                 echo "==> VM successfully completed greenboot retry cycles and recovered into pinned deployment 0 after ~$((i*5 + 20))s"
                 break
@@ -342,7 +343,7 @@ jobs:
           echo "asserting active booted deployment after automatic rollback..."
           recovered_ostree=$(ssh_cmd 'sudo ostree admin status')
           echo "$recovered_ostree"
-          echo "$recovered_ostree" | head -n 2 | grep -q 'Pinned: yes' \
+          echo "$recovered_ostree" | awk '/^\*/ {p=1; next} /^  / && p {if ($0 ~ /Pinned: yes/) print "yes"; p=0}' | grep -q 'yes' \
             || { echo 'FAIL: active booted deployment after recovery is not the pinned deployment 0'; exit 1; }
 
           # 9.7 Explicit Assertion 9.2: Assert NO test script or control plane called bootc_rollback capability
