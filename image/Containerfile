@@ -10,12 +10,20 @@ FROM quay.io/fedora/fedora-bootc:42
 # Sanity-check layer: prove the pipeline works (guide §1.2).
 # A fresh VM must boot with every package + config we add present.
 # ------------------------------------------------------------------
-RUN dnf install -y neovim tmux htop openssl \
+RUN dnf install -y neovim tmux htop openssl openssh-server \
     && dnf clean all
+
+# Mask systemd-ssh-generator (avoids AF_VSOCK crash under virtualized QEMU environments)
+RUN mkdir -p /etc/systemd/system-generators \
+    && ln -sf /dev/null /etc/systemd/system-generators/systemd-ssh-generator
+
+# Set permissive SELinux to ensure reliable non-blocking systemd boots under CI emulation
+RUN if [ -f /etc/selinux/config ]; then sed -i 's/^SELINUX=.*/SELINUX=permissive/' /etc/selinux/config; fi
 
 RUN echo 'Hello from the AI-Native OS build' > /etc/motd \
     && echo '%wheel ALL=(ALL) NOPASSWD: ALL' > /etc/sudoers.d/wheel \
-    && chmod 0440 /etc/sudoers.d/wheel
+    && chmod 0440 /etc/sudoers.d/wheel \
+    && systemctl enable sshd
 
 # ------------------------------------------------------------------
 # Phase 0 bundle (once ai-capabilityd etc. are packaged as RPMs):
