@@ -10,7 +10,7 @@ FROM quay.io/fedora/fedora-bootc:42
 # Sanity-check layer: prove the pipeline works (guide §1.2).
 # A fresh VM must boot with every package + config we add present.
 # ------------------------------------------------------------------
-RUN dnf install -y neovim tmux htop openssl openssh-server \
+RUN dnf install -y neovim tmux htop openssl openssh-server greenboot \
     && dnf clean all
 
 # Mask systemd-ssh-generator (avoids AF_VSOCK crash under virtualized QEMU environments)
@@ -23,14 +23,13 @@ RUN echo 'Hello from the AI-Native OS build' > /etc/motd \
     && systemctl enable sshd
 
 # ------------------------------------------------------------------
-# Phase 3.0.1: Directioner-OS Tier 1 Boot Milestone Watchdog
-# Baked into image at build time (ostree /usr is read-only at runtime)
+# Phase 3.0.1: Standard Greenboot Required Health Check & Milestone Service
 # ------------------------------------------------------------------
-COPY configs/directioner-boot-watchdog /usr/libexec/directioner-boot-watchdog
-COPY configs/systemd/directioner-boot-watchdog.service /usr/lib/systemd/system/directioner-boot-watchdog.service
+COPY configs/systemd/directioner-milestone.service /usr/lib/systemd/system/directioner-milestone.service
+COPY configs/greenboot/01_directioner_milestone.sh /etc/greenboot/check/required.d/01_directioner_milestone.sh
 
-RUN chmod 755 /usr/libexec/directioner-boot-watchdog \
-    && systemctl enable directioner-boot-watchdog.service
+RUN chmod 755 /etc/greenboot/check/required.d/01_directioner_milestone.sh \
+    && systemctl enable directioner-milestone.service
 
 # ------------------------------------------------------------------
 # Phase 0 bundle (once ai-capabilityd etc. are packaged as RPMs):

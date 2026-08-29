@@ -1,11 +1,11 @@
 [Unit]
-Description=Directioner-OS Tier 1 Boot Milestone Watchdog
+Description=Directioner-OS Core Milestone Service
 After=network.target
 Wants=network.target
 
 [Service]
 Type=oneshot
-ExecStart=/usr/libexec/directioner-boot-watchdog
+ExecStart=/usr/bin/true
 RemainAfterExit=yes
 
 [Install]

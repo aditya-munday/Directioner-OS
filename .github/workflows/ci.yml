@@ -290,21 +290,21 @@ jobs:
           echo "$initial_ostree" | grep -q 'Pinned: yes' \
             || { echo 'FAIL: deployment 0 was not pinned'; exit 1; }
 
-          # 9.2 Verify directioner-boot-watchdog service is baked into the image and active
-          echo "verifying baked directioner-boot-watchdog service in guest..."
-          ssh_cmd 'systemctl is-enabled directioner-boot-watchdog.service' | grep -q 'enabled' \
-            || { echo 'FAIL: directioner-boot-watchdog.service is not enabled in guest image'; exit 1; }
+          # 9.2 Verify greenboot required health check and directioner-milestone service in the guest
+          echo "verifying baked greenboot health check and milestone service in guest..."
+          ssh_cmd 'test -x /etc/greenboot/check/required.d/01_directioner_milestone.sh && systemctl is-active directioner-milestone.service' \
+            || { echo 'FAIL: greenboot required milestone check or service is not active in guest'; exit 1; }
 
-          # 9.3 Stage a new deployment with broken kernel arguments to trigger milestone failure
-          echo "staging new deployment via rpm-ostree kargs..."
-          ssh_cmd 'sudo rpm-ostree kargs --append-if-missing="directioner.milestone=fault_test"'
+          # 9.3 Stage a new deployment with a real broken required service drop-in override
+          echo "staging broken service drop-in override causing real service failure on reboot..."
+          ssh_cmd 'sudo mkdir -p /etc/systemd/system/directioner-milestone.service.d && printf "[Service]\nExecStart=\nExecStart=/usr/bin/false\n" | sudo tee /etc/systemd/system/directioner-milestone.service.d/fault.conf && sudo rpm-ostree kargs --append-if-missing="directioner.stage=corrupted_deployment"'
 
           # 9.4 Initiate reboot into the staged broken deployment
-          echo "rebooting VM into broken deployment; watchdog will exhaust 3 retry cycles and trigger Tier 1 automatic rollback..."
+          echo "rebooting VM into broken deployment; greenboot health check will fail on real service non-zero exit and trigger Tier 1 automatic rollback..."
           ssh_cmd 'sudo systemctl reboot' || true
 
-          # 9.5 Wait for the VM to reboot through failure cycles until it recovers into pinned deployment 0
-          echo "waiting for Tier 1 boot watchdog to exhaust 3 retry cycles and recover into pinned deployment 0..."
+          # 9.5 Wait for the VM to reboot through greenboot failure cycles until it recovers into pinned deployment 0
+          echo "waiting for Tier 1 greenboot to exhaust retry cycles and recover into pinned deployment 0..."
           sleep 20
           recovered=""
           for i in $(seq 1 180); do
@@ -312,11 +312,11 @@ jobs:
             if [ -n "$top_status" ]; then
               if echo "$top_status" | grep -q 'Pinned: yes'; then
                 recovered=yes
-                echo "==> VM successfully completed watchdog retry cycles and recovered into pinned deployment 0 after ~$((i*5 + 20))s"
+                echo "==> VM successfully completed greenboot retry cycles and recovered into pinned deployment 0 after ~$((i*5 + 20))s"
                 break
               else
                 if [ $((i % 6)) -eq 0 ]; then
-                  echo "poll #$i (~$((i*5 + 20))s): early boot watchdog failure retry in progress..."
+                  echo "poll #$i (~$((i*5 + 20))s): early boot greenboot failure retry in progress..."
                 fi
               fi
             fi
