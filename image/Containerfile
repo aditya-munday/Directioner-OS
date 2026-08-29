@@ -23,6 +23,16 @@ RUN echo 'Hello from the AI-Native OS build' > /etc/motd \
     && systemctl enable sshd
 
 # ------------------------------------------------------------------
+# Phase 3.0.1: Directioner-OS Tier 1 Boot Milestone Watchdog
+# Baked into image at build time (ostree /usr is read-only at runtime)
+# ------------------------------------------------------------------
+COPY configs/directioner-boot-watchdog /usr/libexec/directioner-boot-watchdog
+COPY configs/systemd/directioner-boot-watchdog.service /usr/lib/systemd/system/directioner-boot-watchdog.service
+
+RUN chmod 755 /usr/libexec/directioner-boot-watchdog \
+    && systemctl enable directioner-boot-watchdog.service
+
+# ------------------------------------------------------------------
 # Phase 0 bundle (once ai-capabilityd etc. are packaged as RPMs):
 #   COPY configs/systemd/ /usr/lib/systemd/system/  (or ship an RPM)
 #   RUN dnf install -y ai-capabilityd ai-worklog \

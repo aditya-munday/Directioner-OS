@@ -290,9 +290,10 @@ jobs:
           echo "$initial_ostree" | grep -q 'Pinned: yes' \
             || { echo 'FAIL: deployment 0 was not pinned'; exit 1; }
 
-          # 9.2 Install directioner-boot-watchdog service in the guest
-          echo "installing directioner-boot-watchdog service in guest..."
-          ssh $SSH_OPTS ci@127.0.0.1 "sudo bash" < vm-test/install_watchdog.sh
+          # 9.2 Verify directioner-boot-watchdog service is baked into the image and active
+          echo "verifying baked directioner-boot-watchdog service in guest..."
+          ssh_cmd 'systemctl is-enabled directioner-boot-watchdog.service' | grep -q 'enabled' \
+            || { echo 'FAIL: directioner-boot-watchdog.service is not enabled in guest image'; exit 1; }
 
           # 9.3 Stage a new deployment with broken kernel arguments to trigger milestone failure
           echo "staging new deployment via rpm-ostree kargs..."

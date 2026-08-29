@@ -1,9 +1,5 @@
 #!/bin/bash
 set -euo pipefail
-
-cat > /usr/local/bin/directioner-boot-watchdog << 'EOS'
-#!/bin/bash
-set -euo pipefail
 mkdir -p /var/lib/directioner
 COUNT_FILE="/var/lib/directioner/boot_counter"
 
@@ -30,22 +26,3 @@ else
     rm -f "$COUNT_FILE"
     echo "[Directioner-OS Watchdog] Boot milestone verified healthy."
 fi
-EOS
-chmod 755 /usr/local/bin/directioner-boot-watchdog
-
-cat > /etc/systemd/system/directioner-boot-watchdog.service << 'EOS'
-[Unit]
-Description=Directioner-OS Tier 1 Boot Milestone Watchdog
-After=network.target
-
-[Service]
-Type=oneshot
-ExecStart=/usr/local/bin/directioner-boot-watchdog
-RemainAfterExit=yes
-
-[Install]
-WantedBy=multi-user.target
-EOS
-
-systemctl daemon-reload
-systemctl enable directioner-boot-watchdog.service
