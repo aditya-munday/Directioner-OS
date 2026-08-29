@@ -56,7 +56,17 @@ jobs:
       - name: Build OS image (rootful so the builder sees the same storage)
         working-directory: image
         run: |
-          sudo podman build -t "${{ env.IMAGE_TAG }}" -f Containerfile .
+          for attempt in 1 2 3; do
+            echo "==> Podman build attempt $attempt of 3..."
+            if sudo podman build --retry 3 --retry-delay 5s -t "${{ env.IMAGE_TAG }}" -f Containerfile .; then
+              break
+            fi
+            if [ "$attempt" -eq 3 ]; then
+              echo "==> Podman build failed after 3 attempts"
+              exit 1
+            fi
+            sleep 10
+          done
           sudo podman images | grep ai-os
       - name: Emit qcow2 via bootc-image-builder (with CI user for SSH smoke test)
         working-directory: image
