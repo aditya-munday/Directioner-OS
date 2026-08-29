@@ -10,7 +10,7 @@ FROM quay.io/fedora/fedora-bootc:42
 # Sanity-check layer: prove the pipeline works (guide §1.2).
 # A fresh VM must boot with every package + config we add present.
 # ------------------------------------------------------------------
-RUN dnf install -y neovim tmux htop openssl openssh-server greenboot \
+RUN dnf install -y neovim tmux htop openssl openssh-server greenboot greenboot-grub2 \
     && dnf clean all
 
 # Mask systemd-ssh-generator (avoids AF_VSOCK crash under virtualized QEMU environments)
@@ -29,7 +29,7 @@ COPY configs/systemd/directioner-milestone.service /usr/lib/systemd/system/direc
 COPY configs/greenboot/01_directioner_milestone.sh /etc/greenboot/check/required.d/01_directioner_milestone.sh
 
 RUN chmod 755 /etc/greenboot/check/required.d/01_directioner_milestone.sh \
-    && systemctl enable directioner-milestone.service
+    && systemctl enable greenboot-healthcheck.service directioner-milestone.service
 
 # ------------------------------------------------------------------
 # Phase 0 bundle (once ai-capabilityd etc. are packaged as RPMs):

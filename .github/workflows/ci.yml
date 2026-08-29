@@ -307,7 +307,7 @@ jobs:
 
           # 9.3 Stage a new deployment with a real broken required service drop-in override
           echo "staging broken service drop-in override causing real service failure on reboot..."
-          ssh_cmd 'sudo mkdir -p /etc/systemd/system/directioner-milestone.service.d && printf "[Service]\nExecStart=\nExecStart=/usr/bin/false\n" | sudo tee /etc/systemd/system/directioner-milestone.service.d/fault.conf && sudo rpm-ostree kargs --append-if-missing="directioner.stage=corrupted_deployment"'
+          ssh_cmd 'sudo mkdir -p /etc/systemd/system/directioner-milestone.service.d && printf "[Service]\nExecStart=\nExecStart=/usr/bin/false\n" | sudo tee /etc/systemd/system/directioner-milestone.service.d/fault.conf && sudo grub2-editenv /boot/grub2/grubenv set boot_counter=3 2>/dev/null || true && sudo rpm-ostree kargs --append-if-missing="directioner.stage=corrupted_deployment"'
 
           # 9.4 Initiate reboot into the staged broken deployment
           echo "rebooting VM into broken deployment; greenboot health check will fail on real service non-zero exit and trigger Tier 1 automatic rollback..."
