@@ -185,9 +185,19 @@ jobs:
             tail -120 vm/console.log || true
             exit 1
           fi
+          sleep 3
 
           ssh_cmd() {
-            ssh $SSH_OPTS ci@127.0.0.1 "$@"
+            local max_attempts=5
+            for attempt in $(seq 1 $max_attempts); do
+              if ssh $SSH_OPTS ci@127.0.0.1 "$@"; then
+                return 0
+              fi
+              if [ "$attempt" -lt "$max_attempts" ]; then
+                sleep 2
+              fi
+            done
+            return 1
           }
 
           echo '==> assertion 0: SELinux is active and enforcing in guest'
