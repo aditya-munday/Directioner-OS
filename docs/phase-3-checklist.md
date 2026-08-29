@@ -22,9 +22,24 @@ Legend: `[x]` done and verified · `[~]` scaffolded, needs CI/VM to verify · `[
 ---
 
 ## 3.0.2 Health Model v1 (`control-plane::health_model`)
-- [ ] System health scoring engine aggregating kernel, systemd, and service telemetry
-- [ ] Multi-signal health state evaluation
-- [ ] Integration with Operational Cockpit and Diagnostic CLI
+- [x] Multi-signal health scoring engine aggregating real event streams from World Model (`units`, `unit_events`, `packages`, `pkg_requires`, `pkg_provides`) and Work Log audit history
+- [x] Subsystem score evaluations:
+  - `services`: Active state inspections, failure penalties, and rapid crash-loop transition detection ($\ge 2$ failures in window)
+  - `boot`: Pinned deployment verification and Tier 1 autonomous rollback observation detection
+  - `packages`: Dependency graph completeness and reverse dependency edge verification
+- [x] Traceability guarantee: every deduction and score is strictly linked to underlying system events (unit names, timestamps, transition IDs, audit seqs)
+- [x] Strict veracity invariant: unobserved subsystems evaluate to `Unknown` / `None`, never fabricated defaults
+- [x] Scoring-only invariant: zero automated mutation or remediation capability calls dispatched by health model
+- [x] `ai-health status` and `ai-health status --json` CLI query surface
+- [x] Operational Cockpit (`ai-cockpit`) integration displaying composite health score and subsystem breakdowns
+- [x] Tested in-guest with real crash-looping systemd service and real post-rollback boot observation
+- **What this actually verifies**: Real multi-signal telemetry ingestion from SQLite World Model and JSONL Work Log detecting actual systemd service crashloops and boot watchdog recovery events without synthetic markers. ✔ (verified in CI run `33263794703`)
+
+---
+
+## 3.0.3 Health Model Integration & Tier 1 Gating (`control-plane::health_gate`)
+- [ ] Policy engine health score gating before high-blast actions
+- [ ] Evaluation triggers and degraded health alerts
 
 ---
 

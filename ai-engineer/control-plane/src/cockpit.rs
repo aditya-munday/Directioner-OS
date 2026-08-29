@@ -12,6 +12,7 @@ use capability_layer::killswitch::KillSwitch;
 use rusqlite::Connection;
 use serde::{Deserialize, Serialize};
 
+use crate::health_model::{HealthModel, HealthModelConfig, SystemHealthReport};
 use crate::plan::Plan;
 
 /// System health and systemd unit summary.
@@ -53,6 +54,8 @@ pub struct CockpitSnapshot {
     pub killswitch_engaged: bool,
     /// System health and unit status metrics.
     pub health: SystemHealthSummary,
+    /// Multi-signal health model evaluation report.
+    pub health_report: Option<SystemHealthReport>,
     /// Recent capability dispatch audit entries (newest first).
     pub recent_audit: Vec<AuditStreamEntry>,
     /// Currently inspected or active remediation plan.
@@ -88,10 +91,17 @@ impl CockpitState {
         let health = self.poll_health();
         let recent_audit = self.poll_audit_stream(10);
 
+        let health_model = HealthModel::new(HealthModelConfig {
+            db_path: self.db_path.clone(),
+            worklog_path: Some(self.audit_log_path.clone()),
+        });
+        let health_report = Some(health_model.evaluate());
+
         CockpitSnapshot {
             timestamp: chrono::Utc::now().to_rfc3339(),
             killswitch_engaged,
             health,
+            health_report,
             recent_audit,
             active_plan,
         }
@@ -242,6 +252,26 @@ impl CockpitRenderer {
 
         // Health Panel
         out.push_str("  SYSTEM HEALTH & TELEMETRY:\n");
+        if let Some(ref report) = snapshot.health_report {
+            let score_str = report
+                .composite_score
+                .map(|s| format!("{s}/100"))
+                .unwrap_or_else(|| "N/A".to_string());
+            out.push_str(&format!(
+                "    • Health Score:     {} ({})\n",
+                score_str, report.overall_status
+            ));
+            for sub in &report.subsystems {
+                let sub_score = sub
+                    .score
+                    .map(|s| format!("{s}/100"))
+                    .unwrap_or_else(|| "N/A".to_string());
+                out.push_str(&format!(
+                    "      - {:<9}: {:<7} [{}]\n",
+                    sub.name, sub_score, sub.status
+                ));
+            }
+        }
         out.push_str(&format!(
             "    • Packages Tracked: {}\n",
             snapshot.health.total_packages
