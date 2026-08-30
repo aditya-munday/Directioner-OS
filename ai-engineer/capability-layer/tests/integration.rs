@@ -250,3 +250,65 @@ fn json_shape_matches_documented_contract() {
     assert_eq!(req["capability"]["package"], json!("nginx"));
     assert_eq!(req["capability"]["approved"], json!(true));
 }
+
+#[test]
+fn test_file_read_write_append_and_scope_confinement() {
+    let dir = tempfile::tempdir().unwrap();
+    let (_handler, _thread, socket) = spawn_server(dir.path());
+    let mut stream = UnixStream::connect(&socket).unwrap();
+
+    // 1. Write file in scope
+    let write_req = req(
+        "file-w1",
+        CapabilityKind::FileWrite {
+            path: "test.txt".into(),
+            content: "line 1\n".into(),
+            append: false,
+        },
+    );
+    write_req_stream(&mut stream, &write_req);
+    let resp = read_resp(&mut stream);
+    assert!(matches!(resp, CapabilityResponse::Success { .. }));
+
+    // 2. Read file back
+    let read_req = req(
+        "file-r1",
+        CapabilityKind::FileRead {
+            path: "test.txt".into(),
+        },
+    );
+    write_req_stream(&mut stream, &read_req);
+    let resp_r = read_resp(&mut stream);
+    assert!(matches!(resp_r, CapabilityResponse::Success { .. }));
+
+    // 3. Append to file
+    let append_req = req(
+        "file-w2",
+        CapabilityKind::FileWrite {
+            path: "test.txt".into(),
+            content: "line 2\n".into(),
+            append: true,
+        },
+    );
+    write_req_stream(&mut stream, &append_req);
+    let resp_a = read_resp(&mut stream);
+    assert!(matches!(resp_a, CapabilityResponse::Success { .. }));
+
+    // 4. Path traversal outside scope is rejected
+    let traversal_req = req(
+        "file-bad",
+        CapabilityKind::FileRead {
+            path: "../../../etc/shadow".into(),
+        },
+    );
+    write_req_stream(&mut stream, &traversal_req);
+    let resp_bad = read_resp(&mut stream);
+    assert!(matches!(resp_bad, CapabilityResponse::Denied { .. }));
+}
+
+fn write_req_stream(stream: &mut UnixStream, req: &CapabilityRequest) {
+    let mut line = serde_json::to_vec(req).unwrap();
+    line.push(b'\n');
+    stream.write_all(&line).unwrap();
+    stream.flush().unwrap();
+}

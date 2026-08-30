@@ -6,7 +6,7 @@
 use serde::{Deserialize, Serialize};
 use std::path::{Path, PathBuf};
 
-use crate::symbol_graph::WorkspaceSymbolGraph;
+use crate::symbol_graph::{IncrementalSymbolGraph, WorkspaceSymbolGraph};
 
 /// A span reference in a compiler diagnostic.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -106,14 +106,18 @@ pub struct BuildTestReport {
 /// The Code Engine runner that executes builds and parses diagnostics.
 pub struct CodeEngine {
     workspace_root: PathBuf,
+    incremental_graph: IncrementalSymbolGraph,
     symbol_graph: Option<WorkspaceSymbolGraph>,
 }
 
 impl CodeEngine {
     /// Create a new CodeEngine for the given workspace root.
     pub fn new(workspace_root: impl AsRef<Path>) -> Self {
+        let root = workspace_root.as_ref().to_path_buf();
+        let incremental_graph = IncrementalSymbolGraph::new(&root);
         Self {
-            workspace_root: workspace_root.as_ref().to_path_buf(),
+            workspace_root: root,
+            incremental_graph,
             symbol_graph: None,
         }
     }
@@ -124,16 +128,26 @@ impl CodeEngine {
         self
     }
 
-    /// Build or refresh the workspace symbol graph.
+    /// Build or refresh the workspace symbol graph incrementally.
     pub fn build_symbol_graph(&mut self) -> Result<(), String> {
-        let graph = WorkspaceSymbolGraph::from_workspace(&self.workspace_root)?;
-        self.symbol_graph = Some(graph);
+        self.incremental_graph.sync_incremental()?;
+        self.symbol_graph = Some(self.incremental_graph.build_graph());
         Ok(())
     }
 
     /// Returns a reference to the symbol graph if initialized.
     pub fn symbol_graph(&self) -> Option<&WorkspaceSymbolGraph> {
         self.symbol_graph.as_ref()
+    }
+
+    /// Returns a reference to the underlying incremental symbol graph cache.
+    pub fn incremental_symbol_graph(&self) -> &IncrementalSymbolGraph {
+        &self.incremental_graph
+    }
+
+    /// Returns a mutable reference to the underlying incremental symbol graph cache.
+    pub fn incremental_symbol_graph_mut(&mut self) -> &mut IncrementalSymbolGraph {
+        &mut self.incremental_graph
     }
 
     /// Returns the workspace root path.

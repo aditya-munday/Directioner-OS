@@ -351,6 +351,187 @@ impl WorkspaceSymbolGraph {
     }
 }
 
+/// Cache entry for a tracked source file in the incremental symbol graph.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct FileCacheEntry {
+    /// Crate name the file belongs to.
+    pub crate_name: String,
+    /// Last modified system time in epoch milliseconds.
+    pub mtime_ms: u64,
+    /// File size in bytes.
+    pub file_size: u64,
+    /// Symbols extracted from this file.
+    pub symbols: Vec<SymbolDefinition>,
+}
+
+/// Incremental file-cached symbol graph for workspace intelligence.
+///
+/// Avoids full workspace re-scanning by caching parsed AST symbols per-file
+/// and only re-indexing files whose modification timestamps or sizes have changed.
+#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq)]
+pub struct IncrementalSymbolGraph {
+    /// Workspace root directory.
+    pub workspace_root: PathBuf,
+    /// Per-file symbol and metadata cache.
+    pub file_cache: HashMap<PathBuf, FileCacheEntry>,
+    /// Map of crate name to its root directory.
+    pub crates: HashMap<String, PathBuf>,
+}
+
+impl IncrementalSymbolGraph {
+    /// Create a new incremental symbol graph for the given workspace root.
+    pub fn new(workspace_root: impl Into<PathBuf>) -> Self {
+        Self {
+            workspace_root: workspace_root.into(),
+            file_cache: HashMap::new(),
+            crates: HashMap::new(),
+        }
+    }
+
+    /// Perform an incremental synchronization across the workspace.
+    ///
+    /// Discovers all `.rs` files and crates in the workspace root, detects
+    /// removed files, and re-indexes only files whose modification timestamps
+    /// or file sizes have changed since the last synchronization.
+    /// Returns the number of files that were re-indexed.
+    pub fn sync_incremental(&mut self) -> Result<usize, String> {
+        let root = self.workspace_root.clone();
+        if !root.exists() {
+            return Err(format!("Workspace root does not exist: {}", root.display()));
+        }
+
+        // 1. Discover crates and files
+        let mut graph_temp = WorkspaceSymbolGraph::new();
+        let mut discovered_files = Vec::new();
+        graph_temp.collect_source_files(&root, &root, &mut discovered_files)?;
+        self.crates = graph_temp.crates;
+
+        // 2. Remove files that no longer exist
+        let discovered_set: std::collections::HashSet<PathBuf> =
+            discovered_files.iter().map(|(_, p)| p.clone()).collect();
+        self.file_cache.retain(|p, _| discovered_set.contains(p));
+
+        // 3. Incrementally update modified/new files
+        let mut reindexed_count = 0;
+        for (crate_name, file_path) in discovered_files {
+            let metadata = fs::metadata(&file_path)
+                .map_err(|e| format!("Failed to read metadata for {}: {e}", file_path.display()))?;
+            let mtime_ms = metadata
+                .modified()
+                .ok()
+                .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
+                .map(|d| d.as_millis() as u64)
+                .unwrap_or(0);
+            let file_size = metadata.len();
+
+            let needs_reindex = match self.file_cache.get(&file_path) {
+                Some(entry) => {
+                    entry.mtime_ms != mtime_ms
+                        || entry.file_size != file_size
+                        || entry.crate_name != crate_name
+                }
+                None => true,
+            };
+
+            if needs_reindex {
+                let mut temp_graph = WorkspaceSymbolGraph::new();
+                temp_graph.index_file(&crate_name, &file_path)?;
+                let symbols = temp_graph.symbols;
+
+                self.file_cache.insert(
+                    file_path,
+                    FileCacheEntry {
+                        crate_name,
+                        mtime_ms,
+                        file_size,
+                        symbols,
+                    },
+                );
+                reindexed_count += 1;
+            }
+        }
+
+        Ok(reindexed_count)
+    }
+
+    /// Explicitly re-index a single file in $O(1)$ time.
+    pub fn update_file(&mut self, file_path: &Path) -> Result<bool, String> {
+        if !file_path.exists() {
+            self.file_cache.remove(file_path);
+            return Ok(true);
+        }
+
+        let mut temp_graph = WorkspaceSymbolGraph::new();
+        temp_graph.crates = self.crates.clone();
+        let crate_name = temp_graph.infer_crate_name(file_path, &self.workspace_root);
+
+        let metadata = fs::metadata(file_path)
+            .map_err(|e| format!("Failed to read metadata for {}: {e}", file_path.display()))?;
+        let mtime_ms = metadata
+            .modified()
+            .ok()
+            .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
+            .map(|d| d.as_millis() as u64)
+            .unwrap_or(0);
+        let file_size = metadata.len();
+
+        temp_graph.index_file(&crate_name, file_path)?;
+        let symbols = temp_graph.symbols;
+
+        self.file_cache.insert(
+            file_path.to_path_buf(),
+            FileCacheEntry {
+                crate_name,
+                mtime_ms,
+                file_size,
+                symbols,
+            },
+        );
+
+        Ok(true)
+    }
+
+    /// Remove a file from the incremental cache upon deletion.
+    pub fn remove_file(&mut self, file_path: &Path) {
+        self.file_cache.remove(file_path);
+    }
+
+    /// Construct a consolidated `WorkspaceSymbolGraph` from the cached symbols.
+    pub fn build_graph(&self) -> WorkspaceSymbolGraph {
+        let mut symbols = Vec::new();
+        for entry in self.file_cache.values() {
+            symbols.extend(entry.symbols.clone());
+        }
+        WorkspaceSymbolGraph {
+            symbols,
+            crates: self.crates.clone(),
+        }
+    }
+
+    /// Query symbols by name directly from the cache.
+    pub fn find_by_name(&self, name: &str) -> Vec<&SymbolDefinition> {
+        self.file_cache
+            .values()
+            .flat_map(|e| &e.symbols)
+            .filter(|s| s.name == name)
+            .collect()
+    }
+
+    /// Query symbols by qualified path directly from the cache.
+    pub fn find_by_qualified_path(&self, path: &str) -> Option<&SymbolDefinition> {
+        self.file_cache
+            .values()
+            .flat_map(|e| &e.symbols)
+            .find(|s| s.module_path == path || s.module_path.ends_with(path))
+    }
+
+    /// Return count of (tracked_files, total_symbols).
+    pub fn stats(&self) -> (usize, usize) {
+        let total_symbols = self.file_cache.values().map(|e| e.symbols.len()).sum();
+        (self.file_cache.len(), total_symbols)
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -413,6 +594,78 @@ impl UserConfig {
         let methods = graph.find_by_name("validate");
         assert_eq!(methods.len(), 1);
         assert_eq!(methods[0].kind, SymbolKind::Method);
+
+        let _ = fs::remove_dir_all(&temp_dir);
+    }
+
+    #[test]
+    fn test_incremental_symbol_graph_sync_and_file_updates() {
+        let temp_dir = std::env::temp_dir().join(format!(
+            "inc_symbol_graph_test_{}",
+            chrono::Utc::now().timestamp_nanos_opt().unwrap_or(0)
+        ));
+        fs::create_dir_all(&temp_dir).unwrap();
+
+        // Create crate Cargo.toml and src/lib.rs
+        fs::write(
+            temp_dir.join("Cargo.toml"),
+            "[package]\nname = \"demo-crate\"\nversion = \"0.1.0\"\n",
+        )
+        .unwrap();
+        let src_dir = temp_dir.join("src");
+        fs::create_dir_all(&src_dir).unwrap();
+        let lib_file = src_dir.join("lib.rs");
+        fs::write(&lib_file, "pub struct InitialSymbol;\n").unwrap();
+
+        let mut inc_graph = IncrementalSymbolGraph::new(&temp_dir);
+
+        // 1. Initial sync scans and indexes 1 file
+        let reindexed = inc_graph.sync_incremental().unwrap();
+        assert_eq!(reindexed, 1);
+        let (files, syms) = inc_graph.stats();
+        assert_eq!(files, 1);
+        assert_eq!(syms, 1);
+        assert_eq!(inc_graph.find_by_name("InitialSymbol").len(), 1);
+
+        // 2. Second sync on unmodified workspace re-indexes 0 files (instant cache hit)
+        let reindexed_2 = inc_graph.sync_incremental().unwrap();
+        assert_eq!(reindexed_2, 0);
+
+        // 3. Add a second source file
+        let helper_file = src_dir.join("helper.rs");
+        fs::write(
+            &helper_file,
+            "pub fn compute_value() -> u64 { 42 }\npub enum Mode { Fast }\n",
+        )
+        .unwrap();
+
+        let reindexed_3 = inc_graph.sync_incremental().unwrap();
+        assert_eq!(reindexed_3, 1);
+        let (files_3, syms_3) = inc_graph.stats();
+        assert_eq!(files_3, 2);
+        assert_eq!(syms_3, 3);
+        assert_eq!(inc_graph.find_by_name("compute_value").len(), 1);
+        assert_eq!(inc_graph.find_by_name("Mode").len(), 1);
+
+        // 4. Update single file in-place
+        fs::write(&helper_file, "pub fn compute_value() -> u64 { 100 }\n").unwrap();
+        inc_graph.update_file(&helper_file).unwrap();
+        assert_eq!(inc_graph.find_by_name("Mode").len(), 0);
+        assert_eq!(inc_graph.find_by_name("compute_value").len(), 1);
+
+        // 5. Delete file
+        fs::remove_file(&helper_file).unwrap();
+        let reindexed_4 = inc_graph.sync_incremental().unwrap();
+        assert_eq!(reindexed_4, 0);
+        let (files_4, syms_4) = inc_graph.stats();
+        assert_eq!(files_4, 1);
+        assert_eq!(syms_4, 1);
+        assert_eq!(inc_graph.find_by_name("compute_value").len(), 0);
+
+        // 6. Test build_graph() export
+        let consolidated = inc_graph.build_graph();
+        assert_eq!(consolidated.symbols.len(), 1);
+        assert_eq!(consolidated.symbols[0].name, "InitialSymbol");
 
         let _ = fs::remove_dir_all(&temp_dir);
     }

@@ -5,11 +5,10 @@ Status tracking against the build guide (`AI_Native_Linux_OS_HowTo_Build_Guide.d
 Legend: `[x]` done and verified · `[~]` scaffolded, needs CI/VM to verify · `[ ]` not started
 
 ## 0.1 Bootable custom image
-- [~] `image/Containerfile` — FROM `quay.io/fedora/fedora-bootc:42`, adds neovim/tmux/htop + custom motd
-- [~] `image/build.sh` — wraps podman/docker build + bootc-image-builder → qcow2
-- [~] `.github/workflows/build-test.yml` — build image, emit qcow2, headless VM smoke test (checks motd on serial console)
-- **Done when**: fresh VM boots and every added package/config is present.
-- **Status**: image build runs in CI (needs podman/KVM — not runnable on this WSL2 dev box without sudo).
+- [x] `image/Containerfile` — FROM `quay.io/fedora/fedora-bootc:42`, adds neovim/tmux/htop + custom motd
+- [x] `image/build.sh` — wraps podman/docker build + bootc-image-builder → qcow2
+- [x] `.github/workflows/ci.yml` — build image, emit qcow2, headless VM smoke test (checks motd, systemd, SELinux Enforcing on serial console)
+- **Done when**: fresh VM boots and every added package/config is present. ✔ (verified live in CI)
 
 ## 0.2 Capability Layer skeleton (Rust `ai-capabilityd`)
 - [x] Unix-socket API, JSON-lines framing, `api_version` check
@@ -36,10 +35,12 @@ Legend: `[x]` done and verified · `[~]` scaffolded, needs CI/VM to verify · `[
 - [x] `image/configs/systemd/ai-killswitch.service` — oneshot unit + CLI, bindable to key combo / recovery menu
 - **Done when**: engaging mid-flight stops all AI activity within one second. ✔ (verified live: engaged → next request denied)
 
-## Also scaffolding (Phases 1+)
-- [~] `image/configs/systemd/ai-capabilityd.service` (noexec hardening, RuntimeDirectory, ProtectSystem)
-- [~] SELinux + polkit policy placeholders (`image/configs/`)
-- [ ] Phase 1.1 world-model, 1.2 planner/implementer, 1.3 dry-run UI, 1.4 worklog widget, 1.5 blast-radius rules, 1.6 benchmark suite
+## System Scaffolding & Packaging
+- [x] `image/configs/systemd/ai-capabilityd.service` (noexec hardening, RuntimeDirectory, ProtectSystem)
+- [x] SELinux Enforcing verified live in booted guest VM
+- [x] Native RPM spec file (`packaging/rpm/directioner-ai-engineer.spec`) and build automation
+
+See [`docs/deferred-items.md`](file:///home/aditya_munday/projects/Directioner-OS/docs/deferred-items.md) for the project-wide consolidated register of deferred items.
 
 ## Verification commands (dev mode, no root)
 ```sh
