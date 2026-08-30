@@ -13,26 +13,27 @@
 use std::collections::HashMap;
 use std::fs::OpenOptions;
 use std::io::Write;
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 use std::time::{Duration, Instant};
 
 use chrono::{DateTime, Utc};
-use rusqlite::Connection;
 use serde::{Deserialize, Serialize};
 
+use capability_layer::killswitch::KillSwitch;
 use crate::client::CapabilityClient;
-use crate::health_model::{HealthModel, HealthStatus, SystemHealthReport};
+use crate::health_model::{HealthModel, HealthModelConfig, HealthStatus, SystemHealthReport};
 use crate::implementer::Implementer;
-use crate::plan::{Plan, PlanStatus};
+use crate::plan::PlanStatus;
 use crate::policy::ApprovalTier;
-use crate::remediation::{RemediationAgent, RemediationConfig};
+use crate::remediation::RemediationAgent;
 use crate::simulation::Simulator;
 use crate::verifier::Verifier;
-use capability_layer::killswitch::KillSwitch;
 
 /// Configuration for the SelfHealingEngine.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SelfHealingConfig {
+    /// Path to World Model SQLite database.
+    pub db_path: PathBuf,
     /// Maximum remediation attempts allowed per entity within window (default: 3).
     pub max_entity_attempts: u32,
     /// Sliding window in seconds for per-entity attempt budget (default: 3600s / 1hr).
@@ -50,6 +51,7 @@ pub struct SelfHealingConfig {
 impl Default for SelfHealingConfig {
     fn default() -> Self {
         Self {
+            db_path: PathBuf::from("/tmp/wm.sqlite"),
             max_entity_attempts: 3,
             entity_window_secs: 3600,
             global_action_cap: 5,
@@ -89,12 +91,9 @@ impl EntityIncidentState {
 
     /// Clean up expired attempt timestamps outside the window.
     pub fn clean_attempts(&mut self, window: Duration) {
-        let cutoff =
-            Utc::now() - chrono::Duration::from_std(window).unwrap_or(chrono::Duration::hours(1));
+        let cutoff = Utc::now()
+            - chrono::Duration::from_std(window).unwrap_or_else(|_| chrono::Duration::hours(1));
         self.attempt_timestamps.retain(|&ts| ts >= cutoff);
-        if self.attempt_timestamps.len() < 3 && self.locked_out {
-            // Lockout remains until explicitly cleared by operator or window resets
-        }
     }
 }
 
@@ -105,46 +104,72 @@ pub enum SelfHealingOutcome {
     /// Silenced immediately because killswitch is engaged.
     DisabledByKillswitch,
     /// System is healthy or unobserved; no self-healing required.
-    HealthyOrUnobserved { score: Option<u32> },
+    HealthyOrUnobserved {
+        /// Composite health score if available.
+        score: Option<u32>,
+    },
     /// Transient failure suppressed by anti-flap duration filter.
     AntiFlapSuppressed {
+        /// Degraded entity name.
         entity: String,
+        /// Current observed consecutive cycles.
         consecutive_cycles: u32,
+        /// Required consecutive cycles before triggering.
         required_cycles: u32,
     },
     /// Entity has exceeded attempt budget and is hard locked out.
     EntityLockedOut {
+        /// Locked-out entity name.
         entity: String,
+        /// Attempt count within sliding window.
         attempts: u32,
+        /// Human-readable explanation.
         message: String,
     },
     /// Global velocity circuit breaker engaged (max actions in window hit).
     GlobalThrottleEngaged {
+        /// Actions recorded in sliding window.
         actions_in_window: u32,
+        /// Maximum allowed global action cap.
         cap: u32,
+        /// Human-readable explanation.
         message: String,
     },
     /// Remediation requires Confirm/ExpertReview tier; proposal synthesized, awaiting confirmation.
     AwaitingConfirmation {
+        /// Incident entity name.
         entity: String,
+        /// Synthesized plan ID.
         plan_id: String,
+        /// Evaluated approval tier.
         tier: ApprovalTier,
+        /// Human-readable plan summary.
         summary: String,
+        /// Unified diff preview of proposed changes.
         preview_diff: String,
     },
     /// Notify-tier action executed autonomously and verified clean.
     ExecutedNotifyTier {
+        /// Remediated entity name.
         entity: String,
+        /// Executed plan ID.
         plan_id: String,
+        /// Description of executed action.
         action: String,
+        /// Total execution duration in milliseconds.
         duration_ms: u64,
+        /// Whether post-execution verification passed.
         verified: bool,
     },
     /// Execution failed; compensating rollback was executed.
     ExecutionFailedRolledBack {
+        /// Degraded entity name.
         entity: String,
+        /// Executed plan ID.
         plan_id: String,
+        /// Failed attempt number.
         attempt: u32,
+        /// Error message.
         error: String,
     },
 }
@@ -190,6 +215,16 @@ impl SelfHealingEngine {
         }
     }
 
+    /// Explicitly get mutable access to incident states (for testing/inspection).
+    pub fn incident_states_mut(&mut self) -> &mut HashMap<String, EntityIncidentState> {
+        &mut self.incident_states
+    }
+
+    /// Explicitly get mutable access to global action history (for testing/inspection).
+    pub fn global_actions_history_mut(&mut self) -> &mut Vec<DateTime<Utc>> {
+        &mut self.global_actions_history
+    }
+
     /// Explicitly clear lockout on an entity (operator action).
     pub fn clear_entity_lockout(&mut self, entity: &str) {
         if let Some(state) = self.incident_states.get_mut(entity) {
@@ -206,15 +241,15 @@ impl SelfHealingEngine {
     }
 
     /// Record structured audit line to worklog if path configured.
-    fn append_worklog_audit(
-        &self,
+    fn write_worklog_audit(
+        path: Option<&std::path::Path>,
         capability: &str,
         requester: &str,
         args: serde_json::Value,
         result: serde_json::Value,
         status: &str,
     ) {
-        if let Some(path) = &self.config.worklog_path {
+        if let Some(p) = path {
             let entry = serde_json::json!({
                 "timestamp": Utc::now().to_rfc3339(),
                 "request_id": format!("self-heal-{}", Utc::now().timestamp_millis()),
@@ -226,7 +261,7 @@ impl SelfHealingEngine {
                     "result": result,
                 }
             });
-            if let Ok(mut file) = OpenOptions::new().create(true).append(true).open(path) {
+            if let Ok(mut file) = OpenOptions::new().create(true).append(true).open(p) {
                 let _ = writeln!(file, "{}", entry);
             }
         }
@@ -236,12 +271,12 @@ impl SelfHealingEngine {
     fn clean_global_history(&mut self) {
         let cutoff = Utc::now()
             - chrono::Duration::from_std(Duration::from_secs(self.config.global_window_secs))
-                .unwrap_or(chrono::Duration::minutes(10));
+                .unwrap_or_else(|_| chrono::Duration::minutes(10));
         self.global_actions_history.retain(|&ts| ts >= cutoff);
     }
 
     /// Run one complete self-healing evaluation cycle.
-    pub fn evaluate_and_heal(&mut self, conn: Option<&Connection>) -> SelfHealingReport {
+    pub fn evaluate_and_heal(&mut self) -> SelfHealingReport {
         let now_str = Utc::now().to_rfc3339();
 
         // 1. INVARIANT 1: KillSwitch check BEFORE any plan synthesis or evaluation
@@ -251,10 +286,9 @@ impl SelfHealingEngine {
                 health_report: SystemHealthReport {
                     evaluated_at: Utc::now().to_rfc3339(),
                     composite_score: None,
-                    status: HealthStatus::Unknown,
+                    overall_status: HealthStatus::Unknown,
                     summary: "Evaluation bypassed: KillSwitch engaged".into(),
                     subsystems: Vec::new(),
-                    evidence: Vec::new(),
                 },
                 killswitch_engaged: true,
                 outcomes: vec![SelfHealingOutcome::DisabledByKillswitch],
@@ -262,10 +296,16 @@ impl SelfHealingEngine {
         }
 
         // 2. Health Model evaluation (pure read-only scoring)
-        let health = HealthModel::evaluate_system(conn, self.config.worklog_path.as_ref());
+        let health_model = HealthModel::new(HealthModelConfig {
+            db_path: self.config.db_path.clone(),
+            worklog_path: self.config.worklog_path.clone(),
+        });
+        let health = health_model.evaluate();
         let mut outcomes = Vec::new();
 
-        if health.status == HealthStatus::Healthy || health.status == HealthStatus::Unknown {
+        if health.overall_status == HealthStatus::Healthy
+            || health.overall_status == HealthStatus::Unknown
+        {
             // Reset consecutive failure counters for recovered entities
             for state in self.incident_states.values_mut() {
                 if !state.locked_out {
@@ -286,16 +326,18 @@ impl SelfHealingEngine {
         // Clean global actions history
         self.clean_global_history();
 
-        // 3. Extract degraded entities from health evidence
-        let mut degraded_entities: Vec<(String, String, String)> = Vec::new(); // (entity, subsystem, reason)
-        for ev in &health.evidence {
-            if ev.severity == "critical" || ev.severity == "warning" {
-                if !ev.entity.is_empty() {
-                    degraded_entities.push((
-                        ev.entity.clone(),
-                        ev.source.clone(),
-                        ev.description.clone(),
-                    ));
+        // 3. Extract degraded entities from health subsystem evidence
+        let mut degraded_entities: Vec<(String, String, String)> = Vec::new(); // (entity, source, reason)
+        for sub in &health.subsystems {
+            for ev in &sub.evidence {
+                if ev.severity == "critical" || ev.severity == "warning" {
+                    if !ev.entity.is_empty() {
+                        degraded_entities.push((
+                            ev.entity.clone(),
+                            ev.source.clone(),
+                            ev.description.clone(),
+                        ));
+                    }
                 }
             }
         }
@@ -314,43 +356,52 @@ impl SelfHealingEngine {
 
         // Track seen entities in this cycle
         let mut seen_entities = std::collections::HashSet::new();
+        let worklog_p = self.config.worklog_path.as_deref();
 
-        for (entity, source, reason) in degraded_entities {
+        for (entity, _source, reason) in degraded_entities {
             if seen_entities.contains(&entity) {
                 continue;
             }
             seen_entities.insert(entity.clone());
 
-            let state = self
-                .incident_states
-                .entry(entity.clone())
-                .or_insert_with(|| EntityIncidentState::new(&entity));
-            state.consecutive_degraded_cycles += 1;
-            state.clean_attempts(Duration::from_secs(self.config.entity_window_secs));
+            let (consecutive_cycles, attempt_count, is_locked_out) = {
+                let state = self
+                    .incident_states
+                    .entry(entity.clone())
+                    .or_insert_with(|| EntityIncidentState::new(&entity));
+                state.consecutive_degraded_cycles += 1;
+                state.clean_attempts(Duration::from_secs(self.config.entity_window_secs));
+                (
+                    state.consecutive_degraded_cycles,
+                    state.attempt_timestamps.len(),
+                    state.locked_out,
+                )
+            };
 
             // 4. INVARIANT 2: Anti-Flap Duration Filter
-            if state.consecutive_degraded_cycles < self.config.anti_flap_consecutive_cycles {
+            if consecutive_cycles < self.config.anti_flap_consecutive_cycles {
                 outcomes.push(SelfHealingOutcome::AntiFlapSuppressed {
                     entity: entity.clone(),
-                    consecutive_cycles: state.consecutive_degraded_cycles,
+                    consecutive_cycles,
                     required_cycles: self.config.anti_flap_consecutive_cycles,
                 });
                 continue;
             }
 
             // 5. INVARIANT 3: Per-Entity 3-Attempt Budget & Hard Lockout
-            if state.locked_out
-                || state.attempt_timestamps.len() >= self.config.max_entity_attempts as usize
-            {
-                if !state.locked_out {
-                    state.locked_out = true;
-                    state.locked_out_at = Some(Utc::now());
-                    self.append_worklog_audit(
+            if is_locked_out || attempt_count >= self.config.max_entity_attempts as usize {
+                if !is_locked_out {
+                    if let Some(state) = self.incident_states.get_mut(&entity) {
+                        state.locked_out = true;
+                        state.locked_out_at = Some(Utc::now());
+                    }
+                    Self::write_worklog_audit(
+                        worklog_p,
                         "remediation.entity_locked_out",
                         "self-healing-engine",
                         serde_json::json!({
                             "entity": entity,
-                            "attempts": state.attempt_timestamps.len(),
+                            "attempts": attempt_count,
                             "reason": "Remediation budget exhausted (3 failed attempts). Autonomous healing suspended for this entity. Operator intervention required.",
                         }),
                         serde_json::json!({ "locked_out": true }),
@@ -359,15 +410,18 @@ impl SelfHealingEngine {
                 }
                 outcomes.push(SelfHealingOutcome::EntityLockedOut {
                     entity: entity.clone(),
-                    attempts: state.attempt_timestamps.len() as u32,
-                    message: format!("Entity '{entity}' exceeded attempt budget (3 attempts). Locked out until manual clearance."),
+                    attempts: attempt_count as u32,
+                    message: format!(
+                        "Entity '{entity}' exceeded attempt budget (3 attempts). Locked out until manual clearance."
+                    ),
                 });
                 continue;
             }
 
             // 6. INVARIANT 4: Global Throttle & Cascading Failure Circuit Breaker
             if self.global_actions_history.len() >= self.config.global_action_cap as usize {
-                self.append_worklog_audit(
+                Self::write_worklog_audit(
+                    worklog_p,
                     "remediation.global_throttle_engaged",
                     "self-healing-engine",
                     serde_json::json!({
@@ -391,8 +445,7 @@ impl SelfHealingEngine {
                 self.remediation_agent.plan_service_restart(&entity)
             } else if entity.starts_with("module:") {
                 let mod_name = entity.trim_start_matches("module:");
-                self.remediation_agent
-                    .plan_module_load(mod_name, Vec::new())
+                self.remediation_agent.plan_module_load(mod_name, Vec::new())
             } else if entity.starts_with("sysctl:") || entity.contains('.') {
                 let key = entity.trim_start_matches("sysctl:");
                 self.remediation_agent
@@ -407,7 +460,7 @@ impl SelfHealingEngine {
                     outcomes.push(SelfHealingOutcome::ExecutionFailedRolledBack {
                         entity: entity.clone(),
                         plan_id: "synthesis_failed".into(),
-                        attempt: state.attempt_timestamps.len() as u32 + 1,
+                        attempt: attempt_count as u32 + 1,
                         error: e.to_string(),
                     });
                     continue;
@@ -418,7 +471,8 @@ impl SelfHealingEngine {
             if plan.aggregate_blast_radius.tier.requires_confirmation() {
                 // Confirm or ExpertReview tier: Proposal only!
                 let preview = Simulator::simulate_plan(&plan, None);
-                self.append_worklog_audit(
+                Self::write_worklog_audit(
+                    worklog_p,
                     "remediation.proposal_awaiting_confirmation",
                     "self-healing-engine",
                     serde_json::json!({
@@ -442,7 +496,8 @@ impl SelfHealingEngine {
 
             // Safe Notify Tier: Execute with 3-Stage Audit Ordering
             // STAGE 1: Pre-Dispatch Audit Record
-            self.append_worklog_audit(
+            Self::write_worklog_audit(
+                worklog_p,
                 "remediation.intent_dispatched",
                 "self-healing-engine",
                 serde_json::json!({
@@ -470,7 +525,8 @@ impl SelfHealingEngine {
                 exec_report.final_status == PlanStatus::Completed && verify_report.all_passed;
 
             if success {
-                self.append_worklog_audit(
+                Self::write_worklog_audit(
+                    worklog_p,
                     "remediation.completed_verified",
                     "self-healing-engine",
                     serde_json::json!({
@@ -482,7 +538,9 @@ impl SelfHealingEngine {
                     "success",
                 );
                 self.global_actions_history.push(Utc::now());
-                state.consecutive_degraded_cycles = 0;
+                if let Some(st) = self.incident_states.get_mut(&entity) {
+                    st.consecutive_degraded_cycles = 0;
+                }
                 outcomes.push(SelfHealingOutcome::ExecutedNotifyTier {
                     entity: entity.clone(),
                     plan_id: plan.id.clone(),
@@ -497,10 +555,15 @@ impl SelfHealingEngine {
             } else {
                 // Trigger atomic compensating rollback
                 let rb_report = implementer.rollback_all(&plan);
-                state.attempt_timestamps.push(Utc::now());
-                let attempt_num = state.attempt_timestamps.len() as u32;
+                let attempt_num = if let Some(st) = self.incident_states.get_mut(&entity) {
+                    st.attempt_timestamps.push(Utc::now());
+                    st.attempt_timestamps.len() as u32
+                } else {
+                    1
+                };
 
-                self.append_worklog_audit(
+                Self::write_worklog_audit(
+                    worklog_p,
                     "remediation.failed_rolled_back",
                     "self-healing-engine",
                     serde_json::json!({
@@ -515,9 +578,12 @@ impl SelfHealingEngine {
                 );
 
                 if attempt_num >= self.config.max_entity_attempts {
-                    state.locked_out = true;
-                    state.locked_out_at = Some(Utc::now());
-                    self.append_worklog_audit(
+                    if let Some(st) = self.incident_states.get_mut(&entity) {
+                        st.locked_out = true;
+                        st.locked_out_at = Some(Utc::now());
+                    }
+                    Self::write_worklog_audit(
+                        worklog_p,
                         "remediation.entity_locked_out",
                         "self-healing-engine",
                         serde_json::json!({
