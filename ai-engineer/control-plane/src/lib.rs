@@ -13,6 +13,7 @@
 pub mod client;
 pub mod cockpit;
 pub mod code_engine;
+pub mod conversational;
 pub mod draft_validator;
 pub mod health_model;
 pub mod implementer;
@@ -32,6 +33,10 @@ pub use cockpit::{
     AuditStreamEntry, CockpitRenderer, CockpitSnapshot, CockpitState, SystemHealthSummary,
 };
 pub use code_engine::{BuildTestReport, CodeEngine, Diagnostic, TestFailure};
+pub use conversational::{
+    ChatMessage, ChatRole, CloudAnthropicBackend, ConversationSession, ConversationalConfig,
+    ConversationalError, IntentParser, LlmBackend, LocalSocketBackend, MockBackend,
+};
 pub use draft_validator::{
     CandidateCapabilityDraft, CandidatePlanDraft, CandidateRollbackDraft, CandidateStepDraft,
     DriftError, MAX_DRAFT_PAYLOAD_BYTES, PlanDraftValidator, ValidationError,

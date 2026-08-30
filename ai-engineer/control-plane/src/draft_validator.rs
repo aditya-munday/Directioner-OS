@@ -374,13 +374,11 @@ impl PlanDraftValidator {
                     idx + 1
                 )));
             }
-            if let Some(timeout) = step.timeout_secs {
-                if timeout == 0 || timeout > 300 {
-                    return Err(ValidationError::SemanticConstraintViolation(format!(
-                        "Step '{}' timeout ({}s) must be between 1 and 300 seconds",
-                        step.step_id, timeout
-                    )));
-                }
+            if let Some(timeout) = step.timeout_secs.filter(|&t| !(1..=300).contains(&t)) {
+                return Err(ValidationError::SemanticConstraintViolation(format!(
+                    "Step '{}' timeout ({}s) must be between 1 and 300 seconds",
+                    step.step_id, timeout
+                )));
             }
             Self::validate_capability_semantics(&step.capability, &step.step_id)?;
         }
