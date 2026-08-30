@@ -208,6 +208,59 @@ impl RemediationAgent {
 
         Ok(plan)
     }
+
+    /// Synthesize an auditable remediation plan for restarting a failed or crashlooping systemd service.
+    pub fn plan_service_restart(&self, unit: &str) -> Result<Plan, RemediationError> {
+        let step_id = format!("restart_{}", unit.replace('.', "_"));
+        let cap_forward = CapabilityKind::ServiceRestart {
+            unit: unit.to_string(),
+            approved: false,
+        };
+        let cap_rollback = CapabilityKind::ServiceStatus {
+            unit: unit.to_string(),
+        };
+
+        let blast = PolicyEngine::evaluate_capability(&cap_forward, None);
+
+        let forward_step = PlanStep {
+            step_id: step_id.clone(),
+            description: format!("Restart systemd service '{unit}' to recover from failed state"),
+            capability: cap_forward.clone(),
+            blast_radius: blast.clone(),
+            timeout_secs: 30,
+        };
+
+        let rollback_step = RollbackStep {
+            step_id: format!("rollback_{step_id}"),
+            description: format!("Query service status for '{unit}' if restart fails"),
+            capability: cap_rollback,
+            triggers: vec![step_id.clone()],
+        };
+
+        let plan = Plan {
+            id: format!("plan_restart_{}", unit.replace('.', "_")),
+            intent: format!("Tier 2 service self-healing for {unit}"),
+            summary: format!("Restart service {unit} to recover from crashloop or failure"),
+            steps: vec![forward_step],
+            rollback_steps: vec![rollback_step],
+            aggregate_blast_radius: blast,
+            created_at: chrono::Utc::now().to_rfc3339(),
+            status: crate::plan::PlanStatus::Draft,
+        };
+
+        let review = self.reviewer.review_plan(&plan);
+        if review.verdict == ReviewVerdict::Rejected {
+            let fatal_messages: Vec<String> = review
+                .findings
+                .iter()
+                .filter(|f| f.severity == FindingSeverity::Fatal)
+                .map(|f| f.message.clone())
+                .collect();
+            return Err(RemediationError::ReviewRejected(fatal_messages.join("; ")));
+        }
+
+        Ok(plan)
+    }
 }
 
 #[cfg(test)]

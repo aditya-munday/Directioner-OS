@@ -21,6 +21,7 @@ pub mod planner;
 pub mod policy;
 pub mod remediation;
 pub mod reviewer;
+pub mod self_healing;
 pub mod simulation;
 pub mod symbol_graph;
 pub mod verifier;
@@ -46,6 +47,10 @@ pub use policy::{ApprovalTier, BlastRadiusReport, PolicyEngine};
 pub use remediation::{RemediationAgent, RemediationConfig, RemediationError};
 pub use reviewer::{
     FindingSeverity, ReviewFinding, ReviewReport, ReviewVerdict, Reviewer, ReviewerConfig,
+};
+pub use self_healing::{
+    EntityIncidentState, SelfHealingConfig, SelfHealingEngine, SelfHealingOutcome,
+    SelfHealingReport,
 };
 pub use simulation::{PlanPreview, Simulator, StepPreview};
 pub use symbol_graph::{SymbolDefinition, SymbolKind, WorkspaceSymbolGraph};

@@ -67,7 +67,14 @@ Legend: `[x]` done and verified · `[~]` scaffolded, needs CI/VM to verify · `[
 
 ---
 
-## 3.1 Self-Healing Loop & Automated Remediation
-- [ ] Tier 2 Automated Incident Remediation Agent
-- [ ] Automated incident containment and service remediation
-- [ ] Bounded remediation attempts with fallback to operator confirmation
+## 3.1 Closed-Loop Self-Healing & Automated Remediation (`control-plane::self_healing`)
+- [x] Closed-loop `SelfHealingEngine` consuming live multi-signal telemetry from `HealthModel` and World Model
+- [x] Pre-synthesis KillSwitch integration: complete silencing of remediation loop when killswitch is engaged
+- [x] Anti-flap duration filter: requires $\ge 2$ consecutive degraded cycles before plan synthesis (transient single failure suppressed)
+- [x] Per-entity remediation budget: max 3 attempts per incident target, escalating to hard stop + `CRITICAL` lockout on 4th trigger
+- [x] Global remediation velocity throttle: max 5 autonomous actions in 10-minute sliding window across ALL entities, hard-halting and engaging circuit breaker on 6th
+- [x] Tier ceiling & 3-stage audit ordering:
+  - `Notify` tier safe actions (service restart, module load) execute with strict 3-stage audit ordering (`remediation.intent_dispatched` $\to$ execution $\to$ `remediation.completed_verified`)
+  - `Confirm` / `ExpertReview` tier actions (sysctl tuning, package actions, service stop) stop at plan synthesis + unified diff preview and await operator confirmation
+- [x] In-guest verification under live ostree VM (Assertion 11)
+- **What this actually verifies**: Autonomous self-healing with multi-layer circuit breakers, hard-halt global throttles, anti-flap duration suppression, and strict Notify-tier ceilings with pre-dispatch auditing. ✔

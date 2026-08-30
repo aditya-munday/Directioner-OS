@@ -443,7 +443,13 @@ jobs:
 
           ssh $SSH_OPTS ci@127.0.0.1 python3 < vm-test/test_phase3_tier2_caps.py
 
-          echo '==> END TO END PASS (Phase 3.0.1, 3.0.2, 3.0.3, 3.0.4 Boot Mechanics + Health Model + Tier 2 Remediation Verified)'
+          # ------------------------------------------------------------------------------------------------
+          # Phase 3.1: Closed-Loop Self-Healing & Automated Remediation In-Guest Verification (Spec §4)
+          # ------------------------------------------------------------------------------------------------
+          echo '==> assertion 11: Phase 3.1 Closed-loop Self-Healing & Automated Remediation'
+          ssh $SSH_OPTS ci@127.0.0.1 python3 < vm-test/test_phase3_self_healing.py
+
+          echo '==> END TO END PASS (Phase 3.0.1, 3.0.2, 3.0.3, 3.0.4, 3.1 Boot Mechanics + Health Model + Self-Healing Verified)'
       - name: Upload console log on failure
         if: failure()
         uses: actions/upload-artifact@v4
