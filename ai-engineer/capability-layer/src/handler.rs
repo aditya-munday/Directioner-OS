@@ -100,6 +100,20 @@ impl Handler {
             CapabilityKind::BootSlotPin { slot, approved } => {
                 self.cap_boot_slot_pin(*slot, *approved)
             }
+            CapabilityKind::KernelParamSet {
+                key,
+                value,
+                persistent,
+                approved,
+            } => self.cap_kernel_param_set(key, value, *persistent, *approved),
+            CapabilityKind::KernelModuleLoad {
+                module,
+                args,
+                approved,
+            } => self.cap_kernel_module_load(module, args, *approved),
+            CapabilityKind::KernelModuleUnload { module, approved } => {
+                self.cap_kernel_module_unload(module, *approved)
+            }
             CapabilityKind::BootcRollback => self.cap_bootc_rollback(),
         };
 
@@ -602,6 +616,229 @@ impl Handler {
         }
     }
 
+    fn cap_kernel_param_set(
+        &self,
+        key: &str,
+        value: &str,
+        persistent: bool,
+        approved: bool,
+    ) -> Result<Value> {
+        if self.config.approval_required && !approved {
+            return Err(CapError::Denied(format!(
+                "approval gate not cleared (approved=false) for kernel.param_set {key}"
+            )));
+        }
+
+        // Validate key syntax
+        let is_valid_key = !key.is_empty()
+            && key
+                .chars()
+                .all(|c| c.is_ascii_alphanumeric() || c == '.' || c == '_')
+            && key.contains('.')
+            && !key.starts_with('.')
+            && !key.ends_with('.');
+        if !is_valid_key {
+            return Err(CapError::Denied(format!(
+                "invalid kernel parameter key format: '{key}'"
+            )));
+        }
+
+        // Check prohibited security keys
+        if crate::PROHIBITED_KERNEL_PARAMS
+            .iter()
+            .any(|p| key == *p || key.starts_with(&format!("{p}.")))
+        {
+            return Err(CapError::Denied(format!(
+                "kernel parameter '{key}' is on the prohibited security-critical denylist (cannot be modified)"
+            )));
+        }
+
+        // Specific defense against core_pattern pipes
+        if key == "kernel.core_pattern" && (value.starts_with('|') || value.contains('/')) {
+            return Err(CapError::Denied(
+                "kernel.core_pattern pipe or binary path redirect is prohibited".into(),
+            ));
+        }
+
+        if self.config.dry_run {
+            return Ok(json!({
+                "dry_run": true,
+                "key": key,
+                "value": value,
+                "persistent": persistent,
+                "would_run": format!("sysctl -w {key}={value}"),
+            }));
+        }
+
+        // Apply runtime sysctl
+        if let Some(sysctl) = which("sysctl") {
+            let out = std::process::Command::new(&sysctl)
+                .arg("-w")
+                .arg(format!("{key}={value}"))
+                .output()
+                .map_err(|e| CapError::Internal(e.to_string()))?;
+            if !out.status.success() {
+                return Err(CapError::Internal(format!(
+                    "sysctl -w {key}={value} failed: {}",
+                    String::from_utf8_lossy(&out.stderr)
+                )));
+            }
+        } else {
+            // Direct /proc/sys write fallback if sysctl binary not in PATH
+            let proc_path = std::path::PathBuf::from("/proc/sys").join(key.replace('.', "/"));
+            if proc_path.exists() {
+                std::fs::write(&proc_path, value).map_err(|e| {
+                    CapError::Internal(format!(
+                        "failed writing to /proc/sys/{}: {e}",
+                        key.replace('.', "/")
+                    ))
+                })?;
+            }
+        }
+
+        // Handle persistence
+        if persistent {
+            let sysctl_dir = std::path::Path::new("/etc/sysctl.d");
+            if sysctl_dir.exists() {
+                let conf_path = sysctl_dir.join("99-directioner-tuning.conf");
+                let line = format!("{key} = {value}\n");
+                use std::io::Write;
+                let mut f = std::fs::OpenOptions::new()
+                    .create(true)
+                    .append(true)
+                    .open(&conf_path)
+                    .map_err(|e| CapError::Internal(e.to_string()))?;
+                f.write_all(line.as_bytes())
+                    .map_err(|e| CapError::Internal(e.to_string()))?;
+            }
+        }
+
+        Ok(json!({
+            "key": key,
+            "value": value,
+            "applied": true,
+            "persistent": persistent
+        }))
+    }
+
+    fn cap_kernel_module_load(
+        &self,
+        module: &str,
+        args: &[String],
+        approved: bool,
+    ) -> Result<Value> {
+        if self.config.approval_required && !approved {
+            return Err(CapError::Denied(format!(
+                "approval gate not cleared (approved=false) for module.load {module}"
+            )));
+        }
+
+        if !crate::ALLOWED_KERNEL_MODULES.contains(&module) {
+            return Err(CapError::Denied(format!(
+                "module '{module}' is not in the approved kernel module allowlist"
+            )));
+        }
+
+        if self.config.dry_run {
+            return Ok(json!({
+                "dry_run": true,
+                "module": module,
+                "args": args,
+                "would_run": format!("modprobe {} {}", module, args.join(" ")),
+            }));
+        }
+
+        if let Some(modprobe) = which("modprobe") {
+            let mut cmd = std::process::Command::new(&modprobe);
+            cmd.arg(module);
+            for a in args {
+                cmd.arg(a);
+            }
+            let out = cmd
+                .output()
+                .map_err(|e| CapError::Internal(e.to_string()))?;
+            if out.status.success() {
+                Ok(json!({ "module": module, "loaded": true }))
+            } else {
+                Err(CapError::Internal(format!(
+                    "modprobe {module} failed: {}",
+                    String::from_utf8_lossy(&out.stderr)
+                )))
+            }
+        } else {
+            Ok(json!({
+                "module": module,
+                "loaded": true,
+                "adapter": "simulated"
+            }))
+        }
+    }
+
+    fn cap_kernel_module_unload(&self, module: &str, approved: bool) -> Result<Value> {
+        if self.config.approval_required && !approved {
+            return Err(CapError::Denied(format!(
+                "approval gate not cleared (approved=false) for module.unload {module}"
+            )));
+        }
+
+        if !crate::ALLOWED_KERNEL_MODULES.contains(&module) {
+            return Err(CapError::Denied(format!(
+                "module '{module}' is not in the approved kernel module allowlist"
+            )));
+        }
+
+        if self.config.dry_run {
+            return Ok(json!({
+                "dry_run": true,
+                "module": module,
+                "action": "unload",
+                "would_run": format!("modprobe -r {module}"),
+            }));
+        }
+
+        // Refcount check via /proc/modules
+        if let Ok(proc_modules) = std::fs::read_to_string("/proc/modules") {
+            for line in proc_modules.lines() {
+                let parts: Vec<&str> = line.split_whitespace().collect();
+                if let Some(name) = parts.first()
+                    && *name == module
+                {
+                    if let Some(refcount_str) = parts.get(2)
+                        && let Ok(refcount) = refcount_str.parse::<u32>()
+                        && refcount > 0
+                    {
+                        return Err(CapError::Denied(format!(
+                            "module '{module}' is in use (refcount={refcount})"
+                        )));
+                    }
+                    break;
+                }
+            }
+        }
+
+        if let Some(modprobe) = which("modprobe") {
+            let out = std::process::Command::new(&modprobe)
+                .arg("-r")
+                .arg(module)
+                .output()
+                .map_err(|e| CapError::Internal(e.to_string()))?;
+            if out.status.success() {
+                Ok(json!({ "module": module, "unloaded": true }))
+            } else {
+                Err(CapError::Internal(format!(
+                    "modprobe -r {module} failed: {}",
+                    String::from_utf8_lossy(&out.stderr)
+                )))
+            }
+        } else {
+            Ok(json!({
+                "module": module,
+                "unloaded": true,
+                "adapter": "simulated"
+            }))
+        }
+    }
+
     fn audit_write(
         &mut self,
         req: &CapabilityRequest,
@@ -640,6 +877,9 @@ fn capability_name(cap: &CapabilityKind) -> String {
         CapabilityKind::ServiceRestart { .. } => "service.restart".into(),
         CapabilityKind::ServiceStop { .. } => "service.stop".into(),
         CapabilityKind::BootSlotPin { .. } => "boot_slot.pin".into(),
+        CapabilityKind::KernelParamSet { .. } => "kernel.param_set".into(),
+        CapabilityKind::KernelModuleLoad { .. } => "module.load".into(),
+        CapabilityKind::KernelModuleUnload { .. } => "module.unload".into(),
         CapabilityKind::BootcRollback => "bootc.rollback".into(),
     }
 }
@@ -667,6 +907,29 @@ fn redacted_args(cap: &CapabilityKind) -> Value {
         }
         CapabilityKind::BootSlotPin { slot, approved } => {
             json!({ "slot": slot, "approved": approved })
+        }
+        CapabilityKind::KernelParamSet {
+            key,
+            value,
+            persistent,
+            approved,
+        } => json!({
+            "key": key,
+            "value": value,
+            "persistent": persistent,
+            "approved": approved
+        }),
+        CapabilityKind::KernelModuleLoad {
+            module,
+            args,
+            approved,
+        } => json!({
+            "module": module,
+            "args": args,
+            "approved": approved
+        }),
+        CapabilityKind::KernelModuleUnload { module, approved } => {
+            json!({ "module": module, "approved": approved })
         }
         CapabilityKind::BootcRollback => Value::Null,
     }
@@ -980,6 +1243,111 @@ mod tests {
         let mut h = handler(dir.path(), HandlerConfig::default());
         let (_, resp) = h
             .execute(&req("tier1_rb", CapabilityKind::BootcRollback))
+            .unwrap();
+        assert!(matches!(resp, CapabilityResponse::Success { .. }));
+    }
+
+    #[test]
+    fn kernel_param_set_approval_and_security_denylist() {
+        let dir = tempfile::tempdir().unwrap();
+        let mut h = handler(dir.path(), HandlerConfig::default());
+
+        // Unapproved is denied
+        let (_, resp) = h
+            .execute(&req(
+                "kp1",
+                CapabilityKind::KernelParamSet {
+                    key: "net.ipv4.ip_forward".into(),
+                    value: "1".into(),
+                    persistent: false,
+                    approved: false,
+                },
+            ))
+            .unwrap();
+        assert!(matches!(resp, CapabilityResponse::Denied { .. }));
+
+        // Prohibited parameter is denied even if approved=true
+        let (_, resp) = h
+            .execute(&req(
+                "kp2",
+                CapabilityKind::KernelParamSet {
+                    key: "kernel.core_pattern".into(),
+                    value: "|/tmp/exploit".into(),
+                    persistent: false,
+                    approved: true,
+                },
+            ))
+            .unwrap();
+        assert!(matches!(resp, CapabilityResponse::Denied { .. }));
+
+        // Valid approved param succeeds in dry_run
+        let (_, resp) = h
+            .execute(&req(
+                "kp3",
+                CapabilityKind::KernelParamSet {
+                    key: "net.ipv4.ip_forward".into(),
+                    value: "1".into(),
+                    persistent: false,
+                    approved: true,
+                },
+            ))
+            .unwrap();
+        assert!(matches!(resp, CapabilityResponse::Success { .. }));
+    }
+
+    #[test]
+    fn kernel_module_load_and_unload_allowlist_enforcement() {
+        let dir = tempfile::tempdir().unwrap();
+        let mut h = handler(dir.path(), HandlerConfig::default());
+
+        // Unallowed module is denied even if approved=true
+        let (_, resp) = h
+            .execute(&req(
+                "mod1",
+                CapabilityKind::KernelModuleLoad {
+                    module: "untrusted_rootkit".into(),
+                    args: vec![],
+                    approved: true,
+                },
+            ))
+            .unwrap();
+        assert!(matches!(resp, CapabilityResponse::Denied { .. }));
+
+        // Allowed module unapproved is denied
+        let (_, resp) = h
+            .execute(&req(
+                "mod2",
+                CapabilityKind::KernelModuleLoad {
+                    module: "dummy".into(),
+                    args: vec![],
+                    approved: false,
+                },
+            ))
+            .unwrap();
+        assert!(matches!(resp, CapabilityResponse::Denied { .. }));
+
+        // Allowed module approved succeeds in dry_run
+        let (_, resp) = h
+            .execute(&req(
+                "mod3",
+                CapabilityKind::KernelModuleLoad {
+                    module: "dummy".into(),
+                    args: vec!["numdummies=2".into()],
+                    approved: true,
+                },
+            ))
+            .unwrap();
+        assert!(matches!(resp, CapabilityResponse::Success { .. }));
+
+        // Unload allowed module approved succeeds in dry_run
+        let (_, resp) = h
+            .execute(&req(
+                "mod4",
+                CapabilityKind::KernelModuleUnload {
+                    module: "dummy".into(),
+                    approved: true,
+                },
+            ))
             .unwrap();
         assert!(matches!(resp, CapabilityResponse::Success { .. }));
     }

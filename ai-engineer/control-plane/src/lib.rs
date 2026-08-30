@@ -19,6 +19,7 @@ pub mod incident_response;
 pub mod plan;
 pub mod planner;
 pub mod policy;
+pub mod remediation;
 pub mod reviewer;
 pub mod simulation;
 pub mod symbol_graph;
@@ -42,6 +43,7 @@ pub use plan::{
 };
 pub use planner::{Planner, PlannerConfig};
 pub use policy::{ApprovalTier, BlastRadiusReport, PolicyEngine};
+pub use remediation::{RemediationAgent, RemediationConfig, RemediationError};
 pub use reviewer::{
     FindingSeverity, ReviewFinding, ReviewReport, ReviewVerdict, Reviewer, ReviewerConfig,
 };

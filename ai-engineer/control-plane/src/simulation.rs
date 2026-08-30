@@ -170,6 +170,9 @@ impl Simulator {
             CapabilityKind::ServiceRestart { .. } => "service_restart",
             CapabilityKind::ServiceStop { .. } => "service_stop",
             CapabilityKind::BootSlotPin { .. } => "boot_slot_pin",
+            CapabilityKind::KernelParamSet { .. } => "kernel_param_set",
+            CapabilityKind::KernelModuleLoad { .. } => "kernel_module_load",
+            CapabilityKind::KernelModuleUnload { .. } => "kernel_module_unload",
             CapabilityKind::BootcRollback => "bootc_rollback",
         }
         .to_string();
@@ -267,6 +270,51 @@ impl Simulator {
             CapabilityKind::BootSlotPin { slot, approved } => {
                 format!(
                     "PROJECTION: ostree admin pin {slot}\nApproval Gate: {}",
+                    if *approved {
+                        "APPROVED"
+                    } else {
+                        "PENDING APPROVAL"
+                    }
+                )
+            }
+            CapabilityKind::KernelParamSet {
+                key,
+                value,
+                persistent,
+                approved,
+            } => {
+                format!(
+                    "PROJECTION: sysctl -w {key}={value}\nPersistence: {}\nApproval Gate: {}",
+                    if *persistent {
+                        "Staged to /etc/sysctl.d/99-directioner-tuning.conf (persistent)"
+                    } else {
+                        "Runtime-only (ephemeral)"
+                    },
+                    if *approved {
+                        "APPROVED"
+                    } else {
+                        "PENDING APPROVAL"
+                    }
+                )
+            }
+            CapabilityKind::KernelModuleLoad {
+                module,
+                args,
+                approved,
+            } => {
+                format!(
+                    "PROJECTION: modprobe {module} {}\nApproval Gate: {}",
+                    args.join(" "),
+                    if *approved {
+                        "APPROVED"
+                    } else {
+                        "PENDING APPROVAL"
+                    }
+                )
+            }
+            CapabilityKind::KernelModuleUnload { module, approved } => {
+                format!(
+                    "PROJECTION: modprobe -r {module}\nApproval Gate: {}",
                     if *approved {
                         "APPROVED"
                     } else {

@@ -46,7 +46,28 @@ Legend: `[x]` done and verified · `[~]` scaffolded, needs CI/VM to verify · `[
 
 ---
 
-## 3.0.4 Tier 2 Self-Healing & Remediation Loop (`control-plane::remediation`)
-- [ ] Tier 2 kernel/module and service remediation through existing PolicyEngine/Reviewer with conservative blast radius floor
+## 3.0.4 Tier 2 Self-Healing & Remediation Loop (`control-plane::remediation`, `capability_layer`)
+- [x] Typed capability primitives:
+  - `KernelParamSet`: runtime `sysctl -w` and persistent drop-ins with direct `/proc/sys/` rollback value capture
+  - `KernelModuleLoad`: dynamically load allowlisted modules (`br_netfilter`, `overlay`, `dummy`, `veth`, etc.)
+  - `KernelModuleUnload`: dynamic `modprobe -r` protected by in-use refcount inspection (`/proc/modules`)
+- [x] Structural conservative floor: all Tier 2 Phase 3 actions have a strict floor at `Notify` (score $\ge 20$, never `Auto`)
+- [x] Independent Reviewer domain rules:
+  - Closed module allowlist (`ALLOWED_KERNEL_MODULES`)
+  - Prohibited security parameter denylist (`PROHIBITED_KERNEL_PARAMS` fatal refusal)
+  - Arbitrary executable / pipe block on `kernel.core_pattern`
+  - Reversible forward/compensating rollback step pair verification
+- [x] In-guest verification under live ostree VM:
+  - Real `KernelParamSet` forward + rollback on `net.ipv4.ip_forward`
+  - Real `KernelModuleLoad` of `dummy` module with `args: ["numdummies=2"]`
+  - Real Refcount-Guard denial when attempting to unload active in-use interface (`ip link set dummy0 up`)
+  - Clean unload upon releasing interface (`ip link set dummy0 down`)
+  - Strict refusal of prohibited parameters and unlisted modules
+- **What this actually verifies**: Controlled Tier 2 kernel/module remediation with double-enforced conservative floor, deterministic rollback capture, and real kernel-enforced refcount safety guards. ✔
+
+---
+
+## 3.1 Self-Healing Loop & Automated Remediation
+- [ ] Tier 2 Automated Incident Remediation Agent
 - [ ] Automated incident containment and service remediation
 - [ ] Bounded remediation attempts with fallback to operator confirmation

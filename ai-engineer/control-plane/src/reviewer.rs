@@ -4,7 +4,11 @@
 //! before implementation. The Reviewer enforces architectural invariants, verifies
 //! rollback completeness, inspects blast-radius calibration, and flags safety anti-patterns.
 
-use capability_layer::CapabilityKind;
+use capability_layer::{ALLOWED_KERNEL_MODULES, CapabilityKind, PROHIBITED_KERNEL_PARAMS};
+pub use capability_layer::{
+    ALLOWED_KERNEL_MODULES as REVIEWER_ALLOWED_MODULES,
+    PROHIBITED_KERNEL_PARAMS as REVIEWER_PROHIBITED_PARAMS,
+};
 use serde::{Deserialize, Serialize};
 
 use crate::plan::{Plan, PlanStep};
@@ -375,6 +379,88 @@ impl Reviewer {
                     });
                 }
             }
+            CapabilityKind::KernelParamSet { key, value, .. } => {
+                // Key syntax check
+                let is_valid_key = !key.is_empty()
+                    && key
+                        .chars()
+                        .all(|c| c.is_ascii_alphanumeric() || c == '.' || c == '_')
+                    && key.contains('.')
+                    && !key.starts_with('.')
+                    && !key.ends_with('.');
+                if !is_valid_key {
+                    findings.push(ReviewFinding {
+                        severity: FindingSeverity::Fatal,
+                        category: "syntax_validation".into(),
+                        message: format!("Malformed kernel parameter key format '{key}'"),
+                        step_id: Some(step.step_id.clone()),
+                    });
+                }
+
+                // Prohibited security-critical keys
+                if PROHIBITED_KERNEL_PARAMS
+                    .iter()
+                    .any(|p| key == *p || key.starts_with(&format!("{p}.")))
+                {
+                    findings.push(ReviewFinding {
+                        severity: FindingSeverity::Fatal,
+                        category: "prohibited_security_parameter".into(),
+                        message: format!(
+                            "Kernel parameter '{key}' is on the prohibited security-critical denylist"
+                        ),
+                        step_id: Some(step.step_id.clone()),
+                    });
+                }
+
+                // Arbitrary executable / pipe redirection in core_pattern
+                if key == "kernel.core_pattern" && (value.starts_with('|') || value.contains('/')) {
+                    findings.push(ReviewFinding {
+                        severity: FindingSeverity::Fatal,
+                        category: "privilege_escalation_risk".into(),
+                        message: "Redirecting kernel.core_pattern to executable pipe or path is strictly forbidden".into(),
+                        step_id: Some(step.step_id.clone()),
+                    });
+                }
+
+                // Sanity check for swappiness
+                if key == "vm.swappiness"
+                    && let Ok(swap_val) = value.parse::<u32>()
+                    && swap_val > 200
+                {
+                    findings.push(ReviewFinding {
+                        severity: FindingSeverity::Warning,
+                        category: "sanity_check".into(),
+                        message: format!(
+                            "vm.swappiness value '{value}' exceeds standard maximum (200)"
+                        ),
+                        step_id: Some(step.step_id.clone()),
+                    });
+                }
+            }
+            CapabilityKind::KernelModuleLoad { module, .. } => {
+                if !ALLOWED_KERNEL_MODULES.contains(&module.as_str()) {
+                    findings.push(ReviewFinding {
+                        severity: FindingSeverity::Fatal,
+                        category: "unauthorized_kernel_module".into(),
+                        message: format!(
+                            "Module '{module}' is not in the approved kernel module allowlist"
+                        ),
+                        step_id: Some(step.step_id.clone()),
+                    });
+                }
+            }
+            CapabilityKind::KernelModuleUnload { module, .. } => {
+                if !ALLOWED_KERNEL_MODULES.contains(&module.as_str()) {
+                    findings.push(ReviewFinding {
+                        severity: FindingSeverity::Fatal,
+                        category: "unauthorized_kernel_module".into(),
+                        message: format!(
+                            "Unloading unapproved kernel module '{module}' is disallowed"
+                        ),
+                        step_id: Some(step.step_id.clone()),
+                    });
+                }
+            }
             CapabilityKind::ServiceStatus { .. }
             | CapabilityKind::Ping
             | CapabilityKind::BootSlotPin { .. }
@@ -392,6 +478,9 @@ impl Reviewer {
                     | CapabilityKind::PackageRemove { .. }
                     | CapabilityKind::ServiceRestart { .. }
                     | CapabilityKind::ServiceStop { .. }
+                    | CapabilityKind::KernelParamSet { .. }
+                    | CapabilityKind::KernelModuleLoad { .. }
+                    | CapabilityKind::KernelModuleUnload { .. }
             );
 
             if is_mutating {

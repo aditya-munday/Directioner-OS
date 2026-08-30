@@ -119,11 +119,77 @@ pub enum CapabilityKind {
         /// Approval gate status.
         approved: bool,
     },
+    /// Set a runtime and/or persistent sysctl kernel parameter (Phase 3.0.4).
+    KernelParamSet {
+        /// Parameter key in sysctl dotted format (e.g. "net.ipv4.ip_forward", "vm.swappiness", "fs.file-max").
+        key: String,
+        /// Parameter value to apply.
+        value: String,
+        /// If true, also writes to `/etc/sysctl.d/99-directioner-tuning.conf` to persist across reboots.
+        persistent: bool,
+        /// Approval gate status.
+        approved: bool,
+    },
+    /// Load a kernel module dynamically into the running kernel (Phase 3.0.4).
+    KernelModuleLoad {
+        /// Module name (e.g. "br_netfilter", "overlay", "dummy", "wireguard").
+        module: String,
+        /// Optional module arguments passed to `modprobe`.
+        args: Vec<String>,
+        /// Approval gate status.
+        approved: bool,
+    },
+    /// Unload a dynamically loaded kernel module (Phase 3.0.4).
+    KernelModuleUnload {
+        /// Module name to unload via `modprobe -r` (refused if in-use by kernel subsystems).
+        module: String,
+        /// Approval gate status.
+        approved: bool,
+    },
     /// Tier 1 emergency rollback to last known good deployment.
     BootcRollback,
     /// Liveness probe; always returns OK when the kill-switch is off.
     Ping,
 }
+
+/// Curated, closed allowlist of authorized kernel modules for Phase 3.0.4 Tier 2 remediation.
+pub const ALLOWED_KERNEL_MODULES: &[&str] = &[
+    // Container networking, bridging, and packet filtering
+    "br_netfilter",
+    "overlay",
+    "dummy",
+    "veth",
+    "wireguard",
+    "ip_tables",
+    "iptable_filter",
+    "nf_conntrack",
+    "xt_nat",
+    "ip6_tables",
+    "ip6table_filter",
+    "tcp_bbr",
+    // Userspace I/O & virtualization primitives
+    "tun",
+    "tap",
+    "loop",
+    "fuse",
+];
+
+/// Prohibited security-critical kernel parameters (Fatal Reviewer rejection, non-approvable).
+pub const PROHIBITED_KERNEL_PARAMS: &[&str] = &[
+    "kernel.core_pattern",
+    "kernel.modprobe",
+    "kernel.hotplug",
+    "vm.mmap_min_addr",
+    "kernel.kptr_restrict",
+    "kernel.dmesg_restrict",
+    "kernel.unprivileged_bpf_disabled",
+    "fs.protected_symlinks",
+    "fs.protected_hardlinks",
+    "fs.protected_fifos",
+    "fs.protected_regular",
+    "kernel.kexec_load_disabled",
+    "kernel.modules_disabled",
+];
 
 /// The typed response envelope for every capability call.
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize, PartialEq)]

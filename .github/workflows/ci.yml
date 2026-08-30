@@ -428,7 +428,13 @@ jobs:
           echo "$cockpit_out" | grep -q '"health_report"' \
             || { echo 'FAIL: ai-cockpit snapshot missing health_report'; exit 1; }
 
-          echo '==> END TO END PASS (Phase 3.0.1 & 3.0.2 Boot Mechanics + Health Model + Live Telemetry Verified)'
+          # ------------------------------------------------------------------------------------------------
+          # Phase 3.0.4: Tier 2 Kernel Parameter Tuning & Module Loading In-Guest Verification (Spec §4)
+          # ------------------------------------------------------------------------------------------------
+          echo '==> assertion 10: Phase 3.0.4 Tier 2 kernel sysctl tuning + module remediation + refcount guard'
+          ssh $SSH_OPTS ci@127.0.0.1 python3 < vm-test/test_phase3_tier2_caps.py
+
+          echo '==> END TO END PASS (Phase 3.0.1, 3.0.2, 3.0.3, 3.0.4 Boot Mechanics + Health Model + Tier 2 Remediation Verified)'
       - name: Upload console log on failure
         if: failure()
         uses: actions/upload-artifact@v4

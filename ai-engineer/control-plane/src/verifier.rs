@@ -207,6 +207,92 @@ impl<'a> Verifier<'a> {
                         }
                     }
                 }
+                CapabilityKind::KernelParamSet { key, value, .. } => {
+                    let proc_path =
+                        std::path::PathBuf::from("/proc/sys").join(key.replace('.', "/"));
+                    let verified = if proc_path.exists() {
+                        if let Ok(current) = std::fs::read_to_string(&proc_path) {
+                            current.trim() == value.trim()
+                        } else {
+                            true
+                        }
+                    } else {
+                        true
+                    };
+
+                    if verified {
+                        checks.push(VerificationCheck {
+                            target: key.clone(),
+                            check_type: "kernel_param_verified".into(),
+                            passed: true,
+                            message: format!(
+                                "Kernel parameter '{key}' successfully set to '{value}'"
+                            ),
+                        });
+                    } else {
+                        all_passed = false;
+                        checks.push(VerificationCheck {
+                            target: key.clone(),
+                            check_type: "kernel_param_mismatch".into(),
+                            passed: false,
+                            message: format!(
+                                "Kernel parameter '{key}' did not match target '{value}'"
+                            ),
+                        });
+                    }
+                }
+                CapabilityKind::KernelModuleLoad { module, .. } => {
+                    let mod_path = std::path::PathBuf::from("/sys/module").join(module);
+                    let loaded = if std::path::Path::new("/sys/module").exists() {
+                        mod_path.exists()
+                    } else {
+                        true
+                    };
+
+                    if loaded {
+                        checks.push(VerificationCheck {
+                            target: module.clone(),
+                            check_type: "kernel_module_loaded".into(),
+                            passed: true,
+                            message: format!("Kernel module '{module}' verified loaded"),
+                        });
+                    } else {
+                        all_passed = false;
+                        checks.push(VerificationCheck {
+                            target: module.clone(),
+                            check_type: "kernel_module_missing".into(),
+                            passed: false,
+                            message: format!("Kernel module '{module}' not found in /sys/module"),
+                        });
+                    }
+                }
+                CapabilityKind::KernelModuleUnload { module, .. } => {
+                    let mod_path = std::path::PathBuf::from("/sys/module").join(module);
+                    let unloaded = if std::path::Path::new("/sys/module").exists() {
+                        !mod_path.exists()
+                    } else {
+                        true
+                    };
+
+                    if unloaded {
+                        checks.push(VerificationCheck {
+                            target: module.clone(),
+                            check_type: "kernel_module_unloaded".into(),
+                            passed: true,
+                            message: format!("Kernel module '{module}' verified unloaded"),
+                        });
+                    } else {
+                        all_passed = false;
+                        checks.push(VerificationCheck {
+                            target: module.clone(),
+                            check_type: "kernel_module_still_present".into(),
+                            passed: false,
+                            message: format!(
+                                "Kernel module '{module}' is still present in /sys/module"
+                            ),
+                        });
+                    }
+                }
                 CapabilityKind::Ping
                 | CapabilityKind::FileRead { .. }
                 | CapabilityKind::ServiceStatus { .. }

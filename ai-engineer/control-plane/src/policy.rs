@@ -10,7 +10,11 @@
 //! - [`ApprovalTier::ExpertReview`]: High/destructive risk (core packages like `glibc`,
 //!   protected system units like `ssh`/`systemd-udevd`, critical files like `/etc/sudoers`).
 
-use capability_layer::CapabilityKind;
+use capability_layer::{ALLOWED_KERNEL_MODULES, CapabilityKind, PROHIBITED_KERNEL_PARAMS};
+pub use capability_layer::{
+    ALLOWED_KERNEL_MODULES as POLICY_ALLOWED_MODULES,
+    PROHIBITED_KERNEL_PARAMS as POLICY_PROHIBITED_PARAMS,
+};
 use rusqlite::Connection;
 use serde::{Deserialize, Serialize};
 
@@ -334,6 +338,79 @@ impl PolicyEngine {
                     "Pinning OSTree/bootc deployment slot {slot} to prevent garbage collection (Phase 3.0.1)"
                 ));
             }
+            CapabilityKind::KernelParamSet {
+                key,
+                value,
+                persistent,
+                approved,
+            } => {
+                let is_prohibited = PROHIBITED_KERNEL_PARAMS
+                    .iter()
+                    .any(|p| key == *p || key.starts_with(&format!("{p}.")));
+
+                if is_prohibited {
+                    score += 95;
+                    factors.push(format!(
+                        "Kernel parameter '{key}' is on the prohibited security-critical denylist (destructive/escalation risk)"
+                    ));
+                } else if key.starts_with("net.")
+                    || key.starts_with("fs.")
+                    || key.starts_with("vm.")
+                {
+                    let base = if *approved { 30 } else { 50 };
+                    score += base;
+                    factors.push(format!(
+                        "Tuning runtime kernel parameter '{key}={value}' (subsystem tuning)"
+                    ));
+                } else {
+                    let base = if *approved { 40 } else { 60 };
+                    score += base;
+                    factors.push(format!("Setting kernel parameter '{key}={value}'"));
+                }
+
+                if *persistent {
+                    score += 10;
+                    factors.push(
+                        "Parameter change will persist across reboots in /etc/sysctl.d/99-directioner-tuning.conf"
+                            .into(),
+                    );
+                }
+            }
+            CapabilityKind::KernelModuleLoad {
+                module,
+                args,
+                approved,
+            } => {
+                let is_allowed = ALLOWED_KERNEL_MODULES.contains(&module.as_str());
+                if !is_allowed {
+                    score += 95;
+                    factors.push(format!(
+                        "Kernel module '{module}' is not in the approved kernel module allowlist (unauthorized module load)"
+                    ));
+                } else {
+                    let base = if *approved { 25 } else { 50 };
+                    score += base;
+                    factors.push(format!(
+                        "Loading approved kernel module '{module}' (args: {:?})",
+                        args
+                    ));
+                }
+            }
+            CapabilityKind::KernelModuleUnload { module, approved } => {
+                let is_allowed = ALLOWED_KERNEL_MODULES.contains(&module.as_str());
+                if !is_allowed {
+                    score += 95;
+                    factors.push(format!(
+                        "Unloading unlisted kernel module '{module}' carries high stability risk"
+                    ));
+                } else {
+                    let base = if *approved { 45 } else { 75 };
+                    score += base;
+                    factors.push(format!(
+                        "Unloading kernel module '{module}' dynamically from running kernel"
+                    ));
+                }
+            }
             CapabilityKind::BootcRollback => {
                 // Tier 1 emergency recovery
                 factors
@@ -341,9 +418,26 @@ impl PolicyEngine {
             }
         }
 
+        let is_phase3_system_action = matches!(
+            cap,
+            CapabilityKind::BootSlotPin { .. }
+                | CapabilityKind::KernelParamSet { .. }
+                | CapabilityKind::KernelModuleLoad { .. }
+                | CapabilityKind::KernelModuleUnload { .. }
+        );
+
+        // Phase 3 Spec §2 Conservative Floor Rule:
+        // No Phase 3 action ever reaches Auto tier, regardless of computed score.
+        if is_phase3_system_action {
+            score = score.max(20);
+        }
+
         // Clamp composite score to 0..=100
         let final_score = score.min(100);
-        let tier = ApprovalTier::from_score(final_score);
+        let mut tier = ApprovalTier::from_score(final_score);
+        if is_phase3_system_action && tier == ApprovalTier::Auto {
+            tier = ApprovalTier::Notify;
+        }
 
         BlastRadiusReport {
             score: final_score,
