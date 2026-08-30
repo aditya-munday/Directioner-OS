@@ -4,8 +4,9 @@ Consolidated register of explicitly deferred, scoped-out, or known-incomplete it
 
 ---
 
-## 1. Native Layered RPM Packaging (Phase 0 / Phase 3) [COMPLETED]
-- **Resolution**: Created Fedora 42 RPM spec file `packaging/rpm/directioner-ai-engineer.spec` and build automation `packaging/build-rpm.sh`, packaging all 7 control plane binaries, systemd units, and configuration for native `dnf5` deployment.
+## 1. Native Layered RPM Packaging (Phase 0 / Phase 3) [SPEC WRITTEN, UNVERIFIED - rpmbuild not available in dev environment]
+- **Current State**: Created Fedora 42 RPM spec file `packaging/rpm/directioner-ai-engineer.spec` and build automation `packaging/build-rpm.sh` defining package layout for all 7 control plane binaries, systemd units, and configuration.
+- **Unverified Status**: Generating and testing the final `.rpm` binary via `rpmbuild -ba` remains unproven until executed inside an environment with `rpm-build` tooling installed. Control plane binaries currently continue to be staged directly in `/var/lib/ai-bin/`.
 
 ## 2. Autonomous Semantic Code Synthesis Without Compiler Suggestions (Phase 2) [DEFERRED]
 - **Current State**: `CodeEngine` applies structured machine suggestions provided by `rustc` JSON output (`cargo check --message-format=json`). If compiler diagnostics lack machine suggestions (e.g. non-trivial lifetime mismatches, complex algorithmic defects), the CLI cleanly refuses (`exit 1`) with `"Could not synthesize automated remediation plan from diagnostics (no machine-applicable compiler suggestions available)"`.
