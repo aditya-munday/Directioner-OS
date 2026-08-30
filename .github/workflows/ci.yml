@@ -402,8 +402,8 @@ jobs:
           fi
 
           # 9.8 Explicit Assertion 9.3: Record post-boot Tier 1 rollback observation to Work Log (Spec §1)
-          echo "recording post-boot Tier 1 rollback observation to Work Log..."
-          ssh $SSH_OPTS ci@127.0.0.1 python3 < vm-test/record_rollback_worklog.py
+          scp $SCP_OPTS vm-test/record_rollback_worklog.py ci@127.0.0.1:/tmp/record_rollback_worklog.py
+          ssh_cmd 'python3 /tmp/record_rollback_worklog.py'
 
           final_log=$(ssh_cmd '/var/lib/ai-bin/ai-worklog --log /var/log/live-worklog.jsonl tail --lines 5')
           echo "$final_log"
@@ -441,14 +441,16 @@ jobs:
             sleep 0.5
           done
 
-          ssh $SSH_OPTS ci@127.0.0.1 python3 < vm-test/test_phase3_tier2_caps.py
+          scp $SCP_OPTS vm-test/test_phase3_tier2_caps.py ci@127.0.0.1:/tmp/test_phase3_tier2_caps.py
+          ssh_cmd 'python3 /tmp/test_phase3_tier2_caps.py'
 
           # ------------------------------------------------------------------------------------------------
           # Phase 3.1: Closed-Loop Self-Healing & Automated Remediation In-Guest Verification (Spec §4)
           # ------------------------------------------------------------------------------------------------
           echo '==> assertion 11: Phase 3.1 Closed-loop Self-Healing & Automated Remediation'
           ssh_cmd 'sudo chmod 666 /tmp/live-cap.sock /var/log/live-worklog.jsonl /tmp/live-killswitch.lock 2>/dev/null || true'
-          ssh $SSH_OPTS ci@127.0.0.1 python3 < vm-test/test_phase3_self_healing.py
+          scp $SCP_OPTS vm-test/test_phase3_self_healing.py ci@127.0.0.1:/tmp/test_phase3_self_healing.py
+          ssh_cmd 'python3 /tmp/test_phase3_self_healing.py'
 
           echo '==> END TO END PASS (Phase 3.0.1, 3.0.2, 3.0.3, 3.0.4, 3.1 Boot Mechanics + Health Model + Self-Healing Verified)'
       - name: Upload console log on failure
