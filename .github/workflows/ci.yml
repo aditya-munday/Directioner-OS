@@ -447,6 +447,7 @@ jobs:
           # Phase 3.1: Closed-Loop Self-Healing & Automated Remediation In-Guest Verification (Spec §4)
           # ------------------------------------------------------------------------------------------------
           echo '==> assertion 11: Phase 3.1 Closed-loop Self-Healing & Automated Remediation'
+          ssh_cmd 'sudo chmod 666 /tmp/live-cap.sock /var/log/live-worklog.jsonl /tmp/live-killswitch.lock 2>/dev/null || true'
           ssh $SSH_OPTS ci@127.0.0.1 python3 < vm-test/test_phase3_self_healing.py
 
           echo '==> END TO END PASS (Phase 3.0.1, 3.0.2, 3.0.3, 3.0.4, 3.1 Boot Mechanics + Health Model + Self-Healing Verified)'

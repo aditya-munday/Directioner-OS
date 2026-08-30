@@ -1,48 +1,81 @@
 import json
 import os
-import sqlite3
+import socket
 import subprocess
 import sys
 import time
 
-print("==> PHASE 3.1 CLOSED-LOOP SELF-HEALING IN-GUEST VERIFICATION")
+print("==> PHASE 3.1 CLOSED-LOOP SELF-HEALING & LIVE REMEDIATION VERIFICATION")
 
-# 1. Anti-flap & Transient Signal Filtering Check
-print("\n--- 1. Testing Anti-Flap Duration Filter ---")
-conn = sqlite3.connect("/tmp/wm.sqlite")
-cur = conn.cursor()
-cur.execute("""
-    CREATE TABLE IF NOT EXISTS units (
-        name TEXT PRIMARY KEY, load_state TEXT, active_state TEXT, sub_state TEXT,
-        enabled TEXT, unit_file_preset TEXT, description TEXT, since_ts TEXT, synced_at TEXT
-    );
-""")
-cur.execute("""
-    CREATE TABLE IF NOT EXISTS unit_events (
-        id INTEGER PRIMARY KEY AUTOINCREMENT, unit TEXT, kind TEXT,
-        old_value TEXT, new_value TEXT, ts TEXT
-    );
-""")
-conn.commit()
+def send_cap(cap, is_rb=False):
+    s = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+    s.settimeout(60.0)
+    s.connect("/tmp/live-cap.sock")
+    req = {
+        "api_version": 1,
+        "id": "self-heal-vm-test",
+        "requester": "self-healing-engine",
+        "token": "tok-selfheal",
+        "is_rollback": is_rb,
+        "capability": cap,
+    }
+    s.sendall(json.dumps(req).encode() + b"\n")
+    resp_raw = s.makefile("r").readline()
+    s.close()
+    return json.loads(resp_raw)
 
-# 2. Audit Trail Inspection
-worklog_path = "/var/log/live-worklog.jsonl"
-print(f"\n--- 2. Live Work Log Audit Inspection ({worklog_path}) ---")
-if os.path.exists(worklog_path):
-    with open(worklog_path, "r") as f:
-        entries = [json.loads(line) for line in f if line.strip()]
-    print(f"Total verified live audit entries: {len(entries)}")
-    for e in entries[-5:]:
-        print(f"  #{e.get('seq', '?')} [{e.get('timestamp')}] {e.get('capability')} by {e.get('requester')}")
+# 1. Test live ServiceRestart capability dispatch & post-verification
+print("\n--- 1. Testing Live ServiceRestart Capability Dispatch ---")
+r_svc = send_cap({
+    "capability": "service_restart",
+    "unit": "systemd-journald.service",
+    "approved": True,
+})
+print("ServiceRestart response:", r_svc)
+if r_svc.get("status") != "success":
+    sys.exit(f"FAIL: ServiceRestart failed: {r_svc}")
+print("Verified ServiceRestart executed successfully on systemd-journald.service")
 
-# 3. Killswitch Integration Verification
-print("\n--- 3. Killswitch File Lock Verification ---")
+# 2. Test Killswitch Enforcement on Live Socket
+print("\n--- 2. Testing Killswitch Live Socket Silencing ---")
 lock_path = "/tmp/live-killswitch.lock"
 with open(lock_path, "w") as f:
     f.write("ENGAGED\n")
-print(f"Killswitch lock engaged at {lock_path}")
-assert os.path.exists(lock_path), "Killswitch lock must exist"
-os.remove(lock_path)
-print("Killswitch lock cleanly released")
+print(f"Engaged killswitch lockfile at {lock_path}")
 
-print("\n==> ALL PHASE 3.1 IN-GUEST VERIFICATION CHECKS PASSED")
+# Attempt capability dispatch while killswitch is active -> MUST be denied
+r_ks_denied = send_cap({
+    "capability": "service_restart",
+    "unit": "systemd-journald.service",
+    "approved": True,
+})
+print("Capability dispatch during active killswitch response:", r_ks_denied)
+if r_ks_denied.get("status") != "denied" or "kill switch" not in r_ks_denied.get("reason", "").lower():
+    sys.exit(f"FAIL: Expected killswitch denial, got: {r_ks_denied}")
+print("Verified Killswitch actively silenced capability daemon dispatch")
+
+# Release killswitch
+if os.path.exists(lock_path):
+    os.remove(lock_path)
+print("Released killswitch lockfile")
+
+# Verify dispatch succeeds again after killswitch release
+r_ks_released = send_cap({
+    "capability": "service_status",
+    "unit": "systemd-journald.service",
+})
+if r_ks_released.get("status") != "success":
+    sys.exit(f"FAIL: Expected success after killswitch release, got: {r_ks_released}")
+print("Verified normal operation restored after killswitch release")
+
+# 3. Live Work Log Audit Stream Verification
+print("\n--- 3. Verifying Append-Only Work Log Audit Trail ---")
+worklog_path = "/var/log/live-worklog.jsonl"
+if os.path.exists(worklog_path):
+    with open(worklog_path, "r") as f:
+        entries = [json.loads(line) for line in f if line.strip()]
+    print(f"Total live audit log entries recorded in VM: {len(entries)}")
+    for e in entries[-6:]:
+        print(f"  #{e.get('seq', '?')} [{e.get('timestamp')}] {e.get('capability')} -> status={e.get('outcome', {}).get('status', e.get('outcome', {}).get('result', {}))}")
+
+print("\n==> ALL PHASE 3.1 LIVE IN-GUEST VERIFICATION CHECKS PASSED")
