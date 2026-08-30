@@ -24,20 +24,25 @@ def send_cap(cap, is_rb=False):
     s.close()
     return json.loads(resp_raw)
 
-# 1. Test live ServiceRestart capability dispatch & post-verification
-print("\n--- 1. Testing Live ServiceRestart Capability Dispatch ---")
+# 1. Setup an isolated canary service for testing self-healing restarts
+print("\n--- 1. Starting Isolated Canary Service ---")
+subprocess.run(["sudo", "systemd-run", "--unit=canary-selfheal", "sleep", "3600"], capture_output=True)
+time.sleep(0.5)
+
+# 2. Test live ServiceRestart capability dispatch & post-verification
+print("\n--- 2. Testing Live ServiceRestart Capability Dispatch ---")
 r_svc = send_cap({
     "capability": "service_restart",
-    "unit": "systemd-journald.service",
+    "unit": "canary-selfheal.service",
     "approved": True,
 })
 print("ServiceRestart response:", r_svc)
 if r_svc.get("status") != "success":
     sys.exit(f"FAIL: ServiceRestart failed: {r_svc}")
-print("Verified ServiceRestart executed successfully on systemd-journald.service")
+print("Verified ServiceRestart executed successfully on canary-selfheal.service")
 
-# 2. Test Killswitch Enforcement on Live Socket
-print("\n--- 2. Testing Killswitch Live Socket Silencing ---")
+# 3. Test Killswitch Enforcement on Live Socket
+print("\n--- 3. Testing Killswitch Live Socket Silencing ---")
 lock_path = "/tmp/live-killswitch.lock"
 with open(lock_path, "w") as f:
     f.write("ENGAGED\n")
@@ -46,7 +51,7 @@ print(f"Engaged killswitch lockfile at {lock_path}")
 # Attempt capability dispatch while killswitch is active -> MUST be denied
 r_ks_denied = send_cap({
     "capability": "service_restart",
-    "unit": "systemd-journald.service",
+    "unit": "canary-selfheal.service",
     "approved": True,
 })
 print("Capability dispatch during active killswitch response:", r_ks_denied)
@@ -62,14 +67,17 @@ print("Released killswitch lockfile")
 # Verify dispatch succeeds again after killswitch release
 r_ks_released = send_cap({
     "capability": "service_status",
-    "unit": "systemd-journald.service",
+    "unit": "canary-selfheal.service",
 })
 if r_ks_released.get("status") != "success":
     sys.exit(f"FAIL: Expected success after killswitch release, got: {r_ks_released}")
 print("Verified normal operation restored after killswitch release")
 
-# 3. Live Work Log Audit Stream Verification
-print("\n--- 3. Verifying Append-Only Work Log Audit Trail ---")
+# 4. Clean up canary unit
+subprocess.run(["sudo", "systemctl", "stop", "canary-selfheal.service"], capture_output=True)
+
+# 5. Live Work Log Audit Stream Verification
+print("\n--- 4. Verifying Append-Only Work Log Audit Trail ---")
 worklog_path = "/var/log/live-worklog.jsonl"
 if os.path.exists(worklog_path):
     with open(worklog_path, "r") as f:
