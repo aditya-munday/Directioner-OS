@@ -13,7 +13,7 @@
 //!    is strictly opt-in and disabled by default.
 //! 4. **Role Isolation**: User inputs are strictly sanitized and bounded to prevent role breakout.
 
-use std::io::{BufRead, BufReader, Write};
+use std::io::{BufReader, Write};
 use std::os::unix::net::UnixStream;
 use std::path::PathBuf;
 use std::process::Command;
@@ -136,22 +136,46 @@ pub trait LlmBackend: Send + Sync {
 pub struct LocalSocketBackend {
     /// Path to local socket.
     pub socket_path: PathBuf,
-    /// Communication timeout.
+    /// Communication timeout per attempt.
     pub timeout: Duration,
+    /// Maximum connection / communication retries on transient errors.
+    pub max_retries: usize,
+    /// Initial backoff duration between retries.
+    pub initial_backoff: Duration,
+    /// Maximum allowed response payload in bytes (defense-in-depth against DoS).
+    pub max_response_bytes: usize,
 }
 
 impl LocalSocketBackend {
-    /// Create a new local socket backend.
+    /// Create a new local socket backend with default parameters.
     pub fn new(socket_path: PathBuf) -> Self {
         Self {
             socket_path,
             timeout: Duration::from_secs(30),
+            max_retries: 3,
+            initial_backoff: Duration::from_millis(50),
+            max_response_bytes: 512 * 1024, // 512KB matching PlanDraftValidator boundary
         }
     }
-}
 
-impl LlmBackend for LocalSocketBackend {
-    fn complete(&self, prompt: &str) -> Result<String, ConversationalError> {
+    /// Create a local socket backend with custom timeout and retry configuration.
+    pub fn with_options(
+        socket_path: PathBuf,
+        timeout: Duration,
+        max_retries: usize,
+        initial_backoff: Duration,
+        max_response_bytes: usize,
+    ) -> Self {
+        Self {
+            socket_path,
+            timeout,
+            max_retries,
+            initial_backoff,
+            max_response_bytes,
+        }
+    }
+
+    fn try_complete_once(&self, prompt: &str) -> Result<String, ConversationalError> {
         if !self.socket_path.exists() {
             return Err(ConversationalError::BackendError(format!(
                 "Local model socket '{}' not found. To enable local offline inference, launch a compatible model server (e.g. 'llama-server --host-socket {} -m <model.gguf>' or 'ollama serve').",
@@ -190,22 +214,108 @@ impl LlmBackend for LocalSocketBackend {
             .flush()
             .map_err(|e| ConversationalError::BackendError(format!("Socket flush failed: {e}")))?;
 
+        // Bounded buffered reader
         let mut reader = BufReader::new(stream);
-        let mut response_line = String::new();
-        reader.read_line(&mut response_line).map_err(|e| {
-            ConversationalError::BackendError(format!("Failed to read response from socket: {e}"))
+        let mut response_buf = Vec::new();
+        let mut total_bytes = 0;
+        let mut chunk = [0u8; 4096];
+
+        loop {
+            match std::io::Read::read(&mut reader, &mut chunk) {
+                Ok(0) => break, // EOF reached
+                Ok(n) => {
+                    total_bytes += n;
+                    if total_bytes > self.max_response_bytes {
+                        return Err(ConversationalError::BackendError(format!(
+                            "Local model response exceeded maximum allowed limit ({total_bytes} bytes > {} bytes)",
+                            self.max_response_bytes
+                        )));
+                    }
+                    response_buf.extend_from_slice(&chunk[..n]);
+                    // If response contains newline and parses as valid JSON, break early
+                    if response_buf.contains(&b'\n')
+                        && serde_json::from_slice::<serde_json::Value>(&response_buf).is_ok()
+                    {
+                        break;
+                    }
+                }
+                Err(ref e)
+                    if e.kind() == std::io::ErrorKind::WouldBlock
+                        || e.kind() == std::io::ErrorKind::TimedOut =>
+                {
+                    // If we already read some bytes that form valid JSON, accept it
+                    if !response_buf.is_empty()
+                        && serde_json::from_slice::<serde_json::Value>(&response_buf).is_ok()
+                    {
+                        break;
+                    }
+                    return Err(ConversationalError::BackendError(format!(
+                        "Socket read timed out after {:?}: {e}",
+                        self.timeout
+                    )));
+                }
+                Err(e) => {
+                    return Err(ConversationalError::BackendError(format!(
+                        "Socket read failed mid-stream: {e}"
+                    )));
+                }
+            }
+        }
+
+        if response_buf.is_empty() {
+            return Err(ConversationalError::BackendError(
+                "Local model socket returned empty response (EOF on connection open)".into(),
+            ));
+        }
+
+        let response_str = String::from_utf8(response_buf).map_err(|e| {
+            ConversationalError::BackendError(format!("Local model output is not valid UTF-8: {e}"))
         })?;
 
-        if let Ok(val) = serde_json::from_str::<serde_json::Value>(&response_line) {
+        // Extract wrapped JSON if response is a JSON object with "response", "content", or "text"
+        if let Ok(val) = serde_json::from_str::<serde_json::Value>(&response_str) {
             if let Some(text) = val.get("response").and_then(|r| r.as_str()) {
                 return Ok(text.to_string());
             }
             if let Some(text) = val.get("content").and_then(|r| r.as_str()) {
                 return Ok(text.to_string());
             }
+            if let Some(text) = val.get("text").and_then(|r| r.as_str()) {
+                return Ok(text.to_string());
+            }
         }
 
-        Ok(response_line.trim().to_string())
+        Ok(response_str.trim().to_string())
+    }
+}
+
+impl LlmBackend for LocalSocketBackend {
+    fn complete(&self, prompt: &str) -> Result<String, ConversationalError> {
+        let mut last_err = ConversationalError::BackendError("Unknown socket error".into());
+        let mut current_backoff = self.initial_backoff;
+
+        for attempt in 0..=self.max_retries {
+            match self.try_complete_once(prompt) {
+                Ok(res) => return Ok(res),
+                Err(err) => {
+                    // Do not retry if socket file does not exist or payload is oversized (deterministic failure)
+                    if let ConversationalError::BackendError(ref msg) = err {
+                        let is_fatal = msg.contains("not found. To enable local offline inference")
+                            || msg.contains("exceeded maximum allowed limit");
+                        if is_fatal {
+                            return Err(err);
+                        }
+                    }
+                    last_err = err;
+                    if attempt < self.max_retries {
+                        std::thread::sleep(current_backoff);
+                        current_backoff = current_backoff.saturating_mul(2);
+                    }
+                }
+            }
+        }
+
+        Err(last_err)
     }
 }
 

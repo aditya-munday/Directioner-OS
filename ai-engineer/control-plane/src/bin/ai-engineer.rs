@@ -504,9 +504,8 @@ fn run_conversational_preview(
         }
     };
 
-    let reviewer = control_plane::reviewer::Reviewer::new(
-        control_plane::reviewer::ReviewerConfig::default(),
-    );
+    let reviewer =
+        control_plane::reviewer::Reviewer::new(control_plane::reviewer::ReviewerConfig::default());
     let review_report = reviewer.review_plan(&plan);
 
     let preview = Simulator::simulate_plan(&plan, Some(work_root));

@@ -203,11 +203,20 @@ impl Planner {
         }
 
         // Pattern 3b: Package removal
-        if lower.contains("remove package ") || lower.contains("uninstall ") || lower.contains("delete package ") {
+        if lower.contains("remove package ")
+            || lower.contains("uninstall ")
+            || lower.contains("delete package ")
+        {
             let pkg = if let Some(idx) = lower.find("remove package ") {
-                lower[idx + "remove package ".len()..].split_whitespace().next().unwrap_or("curl")
+                lower[idx + "remove package ".len()..]
+                    .split_whitespace()
+                    .next()
+                    .unwrap_or("curl")
             } else if let Some(idx) = lower.find("uninstall ") {
-                lower[idx + "uninstall ".len()..].split_whitespace().next().unwrap_or("curl")
+                lower[idx + "uninstall ".len()..]
+                    .split_whitespace()
+                    .next()
+                    .unwrap_or("curl")
             } else {
                 "curl"
             };

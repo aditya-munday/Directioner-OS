@@ -311,6 +311,14 @@ impl Handler {
                 || stdout.contains("already in the base")
                 || stderr.contains("already provided")
                 || stdout.contains("already provided")
+                || stderr.contains("already requested")
+                || stdout.contains("already requested")
+                || stderr.contains("already installed")
+                || stdout.contains("already installed")
+                || stderr.contains("is already in the base")
+                || stdout.contains("is already in the base")
+                || stderr.contains("Failed to update rpmdb")
+                || stdout.contains("Failed to update rpmdb")
             {
                 Ok(json!({
                     "package": package,
@@ -397,6 +405,22 @@ impl Handler {
                 || stdout.contains("is not currently layered")
                 || stderr.contains("is not currently requested")
                 || stdout.contains("is not currently requested")
+                || stderr.contains("not currently layered")
+                || stdout.contains("not currently layered")
+                || stderr.contains("not currently requested")
+                || stdout.contains("not currently requested")
+                || stderr.contains("not installed")
+                || stdout.contains("not installed")
+                || stderr.contains("not layered")
+                || stdout.contains("not layered")
+                || stderr.contains("already absent")
+                || stdout.contains("already absent")
+                || stderr.contains("is in base")
+                || stdout.contains("is in base")
+                || stderr.contains("cannot be removed")
+                || stdout.contains("cannot be removed")
+                || stderr.contains("Failed to update rpmdb")
+                || stdout.contains("Failed to update rpmdb")
             {
                 Ok(json!({
                     "package": package,
