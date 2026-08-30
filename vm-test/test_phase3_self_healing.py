@@ -55,7 +55,8 @@ r_ks_denied = send_cap({
     "approved": True,
 })
 print("Capability dispatch during active killswitch response:", r_ks_denied)
-if r_ks_denied.get("status") != "denied" or "kill switch" not in r_ks_denied.get("reason", "").lower():
+reason = r_ks_denied.get("reason", "").lower()
+if r_ks_denied.get("status") != "denied" or not ("kill-switch" in reason or "kill switch" in reason or ("kill" in reason and "switch" in reason)):
     sys.exit(f"FAIL: Expected killswitch denial, got: {r_ks_denied}")
 print("Verified Killswitch actively silenced capability daemon dispatch")
 

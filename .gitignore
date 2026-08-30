@@ -20,5 +20,8 @@ image/*.qcow2
 
 # Local state
 local-state/
+# Python cache
+__pycache__/
+*.pyc
 
 # NOTE: Cargo.lock is committed for this application workspace (reproducible builds).
