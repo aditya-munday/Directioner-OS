@@ -69,12 +69,20 @@ Legend: `[x]` done and verified · `[~]` scaffolded, needs CI/VM to verify · `[
 
 ## 3.1 Closed-Loop Self-Healing & Automated Remediation (`control-plane::self_healing`)
 - [x] Closed-loop `SelfHealingEngine` consuming live multi-signal telemetry from `HealthModel` and World Model
-- [x] Pre-synthesis KillSwitch integration: complete silencing of remediation loop when killswitch is engaged
-- [x] Anti-flap duration filter: requires $\ge 2$ consecutive degraded cycles before plan synthesis (transient single failure suppressed)
-- [x] Per-entity remediation budget: max 3 attempts per incident target, escalating to hard stop + `CRITICAL` lockout on 4th trigger
-- [x] Global remediation velocity throttle: max 5 autonomous actions in 10-minute sliding window across ALL entities, hard-halting and engaging circuit breaker on 6th
-- [x] Tier ceiling & 3-stage audit ordering:
-  - `Notify` tier safe actions (service restart, module load) execute with strict 3-stage audit ordering (`remediation.intent_dispatched` $\to$ execution $\to$ `remediation.completed_verified`)
-  - `Confirm` / `ExpertReview` tier actions (sysctl tuning, package actions, service stop) stop at plan synthesis + unified diff preview and await operator confirmation
-- [x] In-guest verification under live ostree VM (Assertion 11)
-- **What this actually verifies**: Autonomous self-healing with multi-layer circuit breakers, hard-halt global throttles, anti-flap duration suppression, and strict Notify-tier ceilings with pre-dispatch auditing. ✔
+- [x] Strict disabled-by-default invariant: shipped configuration (`/etc/ai-engineer/self-healing.toml`) and binary defaults have `enabled = false`, guaranteeing zero autonomous actions occur anywhere by default
+- [x] Background loop & CLI wiring: `ai-engineer daemon` and `ai-engineer self-heal` wired with configuration loading, interval management, and `--once` mode
+- [x] Passive capability daemon: `ai-capabilityd` remains a strictly passive UNIX domain socket listener
+- [x] Gate 0: Pre-synthesis KillSwitch integration — immediate silencing of evaluation and plan synthesis when killswitch is engaged
+- [x] Gate 1: Anti-flap duration filter — requires $\ge 2$ consecutive degraded cycles before triggering remediation (single-blip transient failures suppressed)
+- [x] Gate 2: Per-entity remediation budget — max 3 attempts per target entity in 1-hour window; 4th trigger refuses remediation and enters `CRITICAL` lockout
+- [x] Gate 3: Global remediation velocity throttle — max 5 autonomous actions in 10-minute sliding window across ALL entities; 6th triggers hard-halt circuit breaker
+- [x] Gate 4: Safety Tier ceiling & Confirm-tier surfacing:
+  - `Notify` tier safe actions (service restarts) execute autonomously with strict 3-stage audit ordering (`remediation.intent_dispatched` $\to$ capability dispatch $\to$ `remediation.completed_verified`)
+  - `Confirm` / `ExpertReview` tier actions ($\ge 40$, e.g. kernel param tuning, package mutations) stop at plan proposal + unified diff preview and surface strictly to `ai-cockpit` / Work Log for human operator approval
+- [x] In-guest verification under live ostree VM (Assertion 11):
+  - Verified default shipped configuration (`/etc/ai-engineer/self-healing.toml`) yields `enabled=false` and zero autonomous actions
+  - Verified live `service_restart` dispatch and verification on isolated `canary-selfheal.service`
+  - Verified live socket silencing and denial when killswitch is engaged
+  - Verified append-only Work Log audit trail
+- **What this actually verifies**: Autonomous closed-loop self-healing engine with multi-layer circuit breakers, per-entity attempt limits, global velocity throttles, anti-flap duration filters, strict Notify-tier ceilings with pre-dispatch auditing, and a guaranteed disabled-by-default configuration. ✔ (verified in CI run `33312019099`)
+
