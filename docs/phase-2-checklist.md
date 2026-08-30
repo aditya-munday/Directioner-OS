@@ -81,6 +81,8 @@ The following capabilities were intentionally deferred during Phase 2 scoping an
 2. **Incremental Live Symbol Graph Watcher**:
    - `WorkspaceSymbolGraph` currently indexes the workspace on-demand during diagnostic runs. Live filesystem watcher-based incremental symbol graph caching during background daemons is deferred.
 
+See [`docs/deferred-items.md`](file:///home/aditya_munday/projects/Directioner-OS/docs/deferred-items.md) for the project-wide consolidated register of deferred items.
+
 ---
 
 ## Verification Commands

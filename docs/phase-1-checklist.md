@@ -72,11 +72,13 @@ Legend: `[x]` done and verified · `[~]` scaffolded, needs CI/VM to verify · `[
 
 ---
 
-## Explicit Tracked Phase 2 Capability Expansions
-The Phase 1 capability layer baseline intentionally defines 6 core primitives (`ping`, `file.read`, `file.write`, `package.install`, `service.status`, `service.restart`). The following inverse operations are explicitly tracked for Phase 2 implementation:
-- [ ] `file.delete`: True unlinking for newly created files during rollback (replaces Phase 1 zero-byte truncation).
-- [ ] `package.remove`: Clean package removal and transaction rollback for failed `package.install` actions.
-- [ ] `service.stop`: Daemon state restoration / deactivation for rollback of `service.restart` actions.
+## Tracked Phase 2 Capability Expansions (Completed)
+The Phase 1 capability layer baseline originally defined 6 core primitives. The inverse operations were implemented and verified in Phase 2 & 3:
+- [x] `file.delete`: True unlinking for newly created files during rollback (replaces Phase 1 zero-byte truncation).
+- [x] `package.remove`: Clean package removal and transaction rollback for failed `package.install` actions (stages unlayering in OSTree).
+- [x] `service.stop`: Daemon state restoration / deactivation for rollback of `service.restart` actions.
+
+See [`docs/deferred-items.md`](file:///home/aditya_munday/projects/Directioner-OS/docs/deferred-items.md) for the project-wide consolidated register of deferred items.
 
 ---
 

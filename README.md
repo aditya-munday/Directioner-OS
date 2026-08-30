@@ -90,12 +90,16 @@ real hardware before it is proven in a disposable VM.
 - [x] Phase 2.3 Diagnostic CLI Subcommands: `ai-engineer diagnose` and `ai-engineer fix` with machine suggestion patch generation and clean refusal when suggestions are absent
 - [x] Phase 2.4 Policy Engine Hardening: crate-boundary dispersion risk penalties (+15 for 2 crates, +25 for >= 3 crates) and Reviewer multi-crate warnings
 - [x] Phase 2 Tooling: Operational Cockpit (`ai-cockpit` CLI, `CockpitState`, real-time ANSI terminal dashboard and `--json` telemetry)
+- [x] Phase 3.0.1 Autonomous Boot-Slot Pinning & Tier 1 Watchdog Mechanics: GRUB2/greenboot retry countdown, `boot_slot.pin`, automatic ostree deployment rollback below user-space, verified under live QEMU guest with SELinux Enforcing
+- [x] Phase 3.0.2 Multi-Signal Health Model v1: real telemetry ingestion from SQLite World Model and JSONL Work Log, crash-loop detection, scoring-only veracity invariant
+- [x] Phase 3.0.3 Incident Response Observer Boundary: strictly read-only post-hoc observer component with zero mutating capability authority
+- [x] Phase 3.0.4 Tier 2 Controlled Remediation: runtime/persistent kernel sysctl tuning (`KernelParamSet`), allowlisted dynamic kernel module loading/unloading (`KernelModuleLoad`/`KernelModuleUnload`) with kernel refcount protection and pre-captured rollback values
+- [x] Phase 3.1 Closed-Loop Self-Healing Engine: multi-layer circuit breakers, per-entity attempt limits, global velocity throttles, anti-flap duration filters, strict Notify-tier ceilings with pre-dispatch auditing, and a guaranteed disabled-by-default configuration (`self_healing.enabled = false`)
 
-### Explicitly Deferred Phase 2 Items
-- **Autonomous Semantic Code Synthesis**: Generating synthetic code logic for errors lacking `rustc` machine suggestions is deferred for dedicated scoped design.
-- **Incremental Live Symbol Graph Watcher**: Live watcher-based symbol graph caching during background daemons is deferred.
+### Consolidated Deferred & Known-Incomplete Register
+See [`docs/deferred-items.md`](file:///home/aditya_munday/projects/Directioner-OS/docs/deferred-items.md) for the unified register of deferred capabilities across all phases.
 
-See `docs/phase-0-checklist.md`, `docs/phase-1-checklist.md`, and `docs/phase-2-checklist.md` for detailed tracking.
+See `docs/phase-0-checklist.md`, `docs/phase-1-checklist.md`, `docs/phase-2-checklist.md`, and `docs/phase-3-checklist.md` for detailed tracking.
 
 ## AI Engineer CLI Commands
 

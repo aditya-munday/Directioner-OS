@@ -86,3 +86,9 @@ Legend: `[x]` done and verified · `[~]` scaffolded, needs CI/VM to verify · `[
   - Verified append-only Work Log audit trail
 - **What this actually verifies**: Autonomous closed-loop self-healing engine with multi-layer circuit breakers, per-entity attempt limits, global velocity throttles, anti-flap duration filters, strict Notify-tier ceilings with pre-dispatch auditing, and a guaranteed disabled-by-default configuration. ✔ (verified in CI run `33312019099`)
 
+---
+
+## Consolidated Deferred & Known-Incomplete Register
+See [`docs/deferred-items.md`](file:///home/aditya_munday/projects/Directioner-OS/docs/deferred-items.md) for the project-wide consolidated register of deferred items.
+
+
