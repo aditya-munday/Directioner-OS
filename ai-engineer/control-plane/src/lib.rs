@@ -13,6 +13,7 @@
 pub mod client;
 pub mod cockpit;
 pub mod code_engine;
+pub mod draft_validator;
 pub mod health_model;
 pub mod implementer;
 pub mod incident_response;
@@ -31,6 +32,10 @@ pub use cockpit::{
     AuditStreamEntry, CockpitRenderer, CockpitSnapshot, CockpitState, SystemHealthSummary,
 };
 pub use code_engine::{BuildTestReport, CodeEngine, Diagnostic, TestFailure};
+pub use draft_validator::{
+    CandidateCapabilityDraft, CandidatePlanDraft, CandidateRollbackDraft, CandidateStepDraft,
+    DriftError, MAX_DRAFT_PAYLOAD_BYTES, PlanDraftValidator, ValidationError,
+};
 pub use health_model::{
     HealthEvidence, HealthModel, HealthModelConfig, HealthStatus, SubsystemHealth,
     SystemHealthReport,
