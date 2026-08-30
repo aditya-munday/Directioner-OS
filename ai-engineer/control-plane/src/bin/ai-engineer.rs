@@ -16,7 +16,7 @@ use rusqlite::Connection;
 
 fn print_usage() {
     eprintln!(
-        r#"Directioner-OS AI Engineer CLI (Phase 1 & Phase 2 Control Plane)
+        r#"Directioner-OS AI Engineer CLI (Phase 1, 2 & 3 Control Plane)
 
 USAGE:
     ai-engineer <COMMAND> [OPTIONS]
@@ -29,11 +29,18 @@ COMMANDS:
     explain <INTENT>     Provide 3-depth explanation (summary, engineering plan, raw diffs)
     diagnose [PATH]      Scan workspace, parse compiler diagnostics, and localize cross-crate root causes
     fix [PATH]           Synthesize multi-crate repair plan, audit with Reviewer, preview diffs, and apply with verification
+    self-heal            Run a single cycle of the closed-loop self-healing engine (evaluates HealthModel -> Remediation)
+    daemon               Run the continuous background self-healing evaluation runner
 
 OPTIONS:
-    --socket <PATH>      Path to ai-capabilityd Unix domain socket (default: /tmp/ai-engineer/ai-capabilityd.sock)
-    --db <PATH>          Path to world-model SQLite DB (default: /tmp/ai-engineer/worldmodel.db)
+    --config <PATH>      Path to self-healing TOML configuration (default: /etc/ai-engineer/self-healing.toml)
+    --socket <PATH>      Path to ai-capabilityd Unix domain socket (default: /tmp/live-cap.sock or /tmp/ai-engineer/ai-capabilityd.sock)
+    --db <PATH>          Path to world-model SQLite DB (default: /tmp/wm.sqlite or /tmp/ai-engineer/worldmodel.db)
+    --lock <PATH>        Path to killswitch lockfile (default: /tmp/live-killswitch.lock or /etc/ai-engineer/killswitch.lock)
+    --worklog <PATH>     Path to append-only Work Log (default: /var/log/live-worklog.jsonl)
     --work-root <PATH>   Path root for workspace source operations (default: current directory or /tmp/ai-engineer/scope)
+    --interval <SECS>    Evaluation interval in seconds for background daemon [default: 30]
+    --once               Run one self-healing cycle and exit immediately
     --auto-approve       Bypass interactive confirmation prompt (strictly limited to low-risk Notify tier)
     --depth <1|2|3>      Explanation depth (1=Summary, 2=Engineering, 3=Raw) [default: 2]
     --json               Output raw JSON format
@@ -45,9 +52,14 @@ OPTIONS:
 struct CliArgs {
     command: String,
     intent: String,
+    config_path: PathBuf,
     socket_path: PathBuf,
     db_path: PathBuf,
+    lock_path: PathBuf,
+    worklog_path: PathBuf,
     work_root: PathBuf,
+    interval_secs: u64,
+    once: bool,
     auto_approve: bool,
     depth: u8,
     json: bool,
@@ -62,9 +74,26 @@ fn parse_args() -> Result<CliArgs, String> {
 
     let mut command = String::new();
     let mut intent_parts = Vec::new();
-    let mut socket_path = PathBuf::from("/tmp/ai-engineer/ai-capabilityd.sock");
-    let mut db_path = PathBuf::from("/tmp/ai-engineer/worldmodel.db");
+    let mut config_path = PathBuf::from("/etc/ai-engineer/self-healing.toml");
+    let mut socket_path = if Path::new("/tmp/live-cap.sock").exists() {
+        PathBuf::from("/tmp/live-cap.sock")
+    } else {
+        PathBuf::from("/tmp/ai-engineer/ai-capabilityd.sock")
+    };
+    let mut db_path = if Path::new("/tmp/wm.sqlite").exists() {
+        PathBuf::from("/tmp/wm.sqlite")
+    } else {
+        PathBuf::from("/tmp/ai-engineer/worldmodel.db")
+    };
+    let mut lock_path = if Path::new("/tmp/live-killswitch.lock").exists() {
+        PathBuf::from("/tmp/live-killswitch.lock")
+    } else {
+        PathBuf::from("/etc/ai-engineer/killswitch.lock")
+    };
+    let mut worklog_path = PathBuf::from("/var/log/live-worklog.jsonl");
     let mut work_root = PathBuf::from("/tmp/ai-engineer/scope");
+    let mut interval_secs = 30;
+    let mut once = false;
     let mut auto_approve = false;
     let mut depth = 2;
     let mut json = false;
@@ -76,6 +105,13 @@ fn parse_args() -> Result<CliArgs, String> {
             "-h" | "--help" => {
                 print_usage();
                 exit(0);
+            }
+            "--config" => {
+                i += 1;
+                if i >= args.len() {
+                    return Err("--config requires an argument".into());
+                }
+                config_path = PathBuf::from(&args[i]);
             }
             "--socket" => {
                 i += 1;
@@ -91,12 +127,36 @@ fn parse_args() -> Result<CliArgs, String> {
                 }
                 db_path = PathBuf::from(&args[i]);
             }
+            "--lock" => {
+                i += 1;
+                if i >= args.len() {
+                    return Err("--lock requires an argument".into());
+                }
+                lock_path = PathBuf::from(&args[i]);
+            }
+            "--worklog" => {
+                i += 1;
+                if i >= args.len() {
+                    return Err("--worklog requires an argument".into());
+                }
+                worklog_path = PathBuf::from(&args[i]);
+            }
             "--work-root" => {
                 i += 1;
                 if i >= args.len() {
                     return Err("--work-root requires an argument".into());
                 }
                 work_root = PathBuf::from(&args[i]);
+            }
+            "--interval" => {
+                i += 1;
+                if i >= args.len() {
+                    return Err("--interval requires an integer argument".into());
+                }
+                interval_secs = args[i].parse::<u64>().unwrap_or(30);
+            }
+            "--once" => {
+                once = true;
             }
             "--auto-approve" => {
                 auto_approve = true;
@@ -127,9 +187,14 @@ fn parse_args() -> Result<CliArgs, String> {
     Ok(CliArgs {
         command,
         intent,
+        config_path,
         socket_path,
         db_path,
+        lock_path,
+        worklog_path,
         work_root,
+        interval_secs,
+        once,
         auto_approve,
         depth,
         json,
@@ -160,6 +225,99 @@ fn main() {
     };
 
     let db_conn = open_db(&args.db_path);
+
+    if args.command == "daemon" || args.command == "self-heal" {
+        let once = args.once || args.command == "self-heal";
+        let mut config = control_plane::self_healing::SelfHealingConfig::load_from_file_or_default(
+            &args.config_path,
+        );
+        config.db_path = args.db_path.clone();
+        config.worklog_path = Some(args.worklog_path.clone());
+
+        let killswitch = capability_layer::killswitch::KillSwitch::new(&args.lock_path);
+        let client = CapabilityClient::new(&args.socket_path, "ai-engineer-daemon");
+        let rem_agent = control_plane::remediation::RemediationAgent::new(
+            control_plane::remediation::RemediationConfig::default(),
+        );
+
+        let mut engine = control_plane::self_healing::SelfHealingEngine::new(
+            config.clone(),
+            killswitch,
+            client,
+            rem_agent,
+        );
+
+        if !config.enabled {
+            println!(
+                "[Self-Healing] Closed-loop self-healing is DISABLED by configuration (enabled = false in {}).",
+                args.config_path.display()
+            );
+            println!("[Self-Healing] Zero autonomous remediation actions will be dispatched.");
+            if once {
+                let report = engine.evaluate_and_heal();
+                if args.json {
+                    println!("{}", serde_json::to_string_pretty(&report).unwrap());
+                }
+                exit(0);
+            }
+        } else {
+            println!(
+                "[Self-Healing] Closed-loop self-healing engine ACTIVE (interval: {}s, max_entity_attempts: {}, global_action_cap: {}).",
+                args.interval_secs, config.max_entity_attempts, config.global_action_cap
+            );
+        }
+
+        loop {
+            let report = engine.evaluate_and_heal();
+            if args.json {
+                println!("{}", serde_json::to_string_pretty(&report).unwrap());
+            } else {
+                println!(
+                    "[{}] Self-Healing Cycle Evaluated: overall_status={}, outcomes={}",
+                    report.evaluated_at,
+                    report.health_report.overall_status,
+                    report.outcomes.len()
+                );
+                for outcome in &report.outcomes {
+                    match outcome {
+                        control_plane::self_healing::SelfHealingOutcome::DisabledByConfig => {
+                            println!("  • Self-healing disabled by configuration.");
+                        }
+                        control_plane::self_healing::SelfHealingOutcome::DisabledByKillswitch => {
+                            println!("  • KillSwitch engaged: Evaluation and dispatches halted.");
+                        }
+                        control_plane::self_healing::SelfHealingOutcome::HealthyOrUnobserved { score } => {
+                            println!("  • System Healthy/Unobserved (score: {:?}).", score);
+                        }
+                        control_plane::self_healing::SelfHealingOutcome::AntiFlapSuppressed { entity, consecutive_cycles, required_cycles } => {
+                            println!("  • Anti-Flap Filter: Transient failure suppressed for '{entity}' ({consecutive_cycles}/{required_cycles} cycles).");
+                        }
+                        control_plane::self_healing::SelfHealingOutcome::EntityLockedOut { entity, attempts, message } => {
+                            println!("  • Entity Locked Out: '{entity}' (attempts: {attempts}): {message}");
+                        }
+                        control_plane::self_healing::SelfHealingOutcome::GlobalThrottleEngaged { actions_in_window, cap, message } => {
+                            println!("  • Global Throttle Engaged ({actions_in_window}/{cap} actions): {message}");
+                        }
+                        control_plane::self_healing::SelfHealingOutcome::AwaitingConfirmation { entity, plan_id, tier, summary, .. } => {
+                            println!("  • [Awaiting Operator Confirmation] Entity '{entity}' -> Plan '{plan_id}' ({:?} tier): {summary}", tier);
+                        }
+                        control_plane::self_healing::SelfHealingOutcome::ExecutedNotifyTier { entity, plan_id, action, verified, .. } => {
+                            println!("  • [Executed Notify Tier] Entity '{entity}' -> Plan '{plan_id}': {action} (verified: {verified})");
+                        }
+                        control_plane::self_healing::SelfHealingOutcome::ExecutionFailedRolledBack { entity, plan_id, attempt, error } => {
+                            println!("  • [Failed & Rolled Back] Entity '{entity}' -> Plan '{plan_id}' (attempt {attempt}): {error}");
+                        }
+                    }
+                }
+            }
+
+            if once {
+                break;
+            }
+            std::thread::sleep(std::time::Duration::from_secs(args.interval_secs));
+        }
+        return;
+    }
 
     if args.command == "diagnose" {
         let mut engine = control_plane::CodeEngine::new(&target_dir);

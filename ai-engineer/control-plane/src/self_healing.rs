@@ -32,6 +32,9 @@ use capability_layer::killswitch::KillSwitch;
 /// Configuration for the SelfHealingEngine.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SelfHealingConfig {
+    /// Whether closed-loop autonomous self-healing is enabled (default: false).
+    #[serde(default)]
+    pub enabled: bool,
     /// Path to World Model SQLite database.
     pub db_path: PathBuf,
     /// Maximum remediation attempts allowed per entity within window (default: 3).
@@ -51,6 +54,7 @@ pub struct SelfHealingConfig {
 impl Default for SelfHealingConfig {
     fn default() -> Self {
         Self {
+            enabled: false,
             db_path: PathBuf::from("/tmp/wm.sqlite"),
             max_entity_attempts: 3,
             entity_window_secs: 3600,
@@ -59,6 +63,19 @@ impl Default for SelfHealingConfig {
             anti_flap_consecutive_cycles: 2,
             worklog_path: Some(PathBuf::from("/var/log/live-worklog.jsonl")),
         }
+    }
+}
+
+impl SelfHealingConfig {
+    /// Load configuration from a TOML file, falling back to defaults if not found.
+    pub fn load_from_file_or_default(path: impl AsRef<std::path::Path>) -> Self {
+        let p = path.as_ref();
+        if let Ok(content) = std::fs::read_to_string(p)
+            && let Ok(cfg) = toml::from_str::<SelfHealingConfig>(&content)
+        {
+            return cfg;
+        }
+        Self::default()
     }
 }
 
@@ -101,6 +118,8 @@ impl EntityIncidentState {
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum SelfHealingOutcome {
+    /// Silenced immediately because self-healing is disabled in configuration (default: enabled=false).
+    DisabledByConfig,
     /// Silenced immediately because killswitch is engaged.
     DisabledByKillswitch,
     /// System is healthy or unobserved; no self-healing required.
@@ -279,7 +298,23 @@ impl SelfHealingEngine {
     pub fn evaluate_and_heal(&mut self) -> SelfHealingReport {
         let now_str = Utc::now().to_rfc3339();
 
-        // 1. INVARIANT 1: KillSwitch check BEFORE any plan synthesis or evaluation
+        // 1. INVARIANT 0: Disabled-by-default configuration check
+        if !self.config.enabled {
+            return SelfHealingReport {
+                evaluated_at: now_str,
+                health_report: SystemHealthReport {
+                    evaluated_at: Utc::now().to_rfc3339(),
+                    composite_score: None,
+                    overall_status: HealthStatus::Unknown,
+                    summary: "Self-healing disabled by configuration (enabled=false)".into(),
+                    subsystems: Vec::new(),
+                },
+                killswitch_engaged: self.killswitch.is_engaged(),
+                outcomes: vec![SelfHealingOutcome::DisabledByConfig],
+            };
+        }
+
+        // 2. INVARIANT 1: KillSwitch check BEFORE any plan synthesis or evaluation
         if self.killswitch.is_engaged() {
             return SelfHealingReport {
                 evaluated_at: now_str,

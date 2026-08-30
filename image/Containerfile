@@ -28,6 +28,12 @@ RUN echo 'Hello from the AI-Native OS build' > /etc/motd \
 COPY configs/systemd/directioner-milestone.service /usr/lib/systemd/system/directioner-milestone.service
 COPY configs/greenboot/01_directioner_milestone.sh /etc/greenboot/check/required.d/01_directioner_milestone.sh
 
+# ------------------------------------------------------------------
+# Phase 3.1: Default AI Engineer Self-Healing Configuration (Disabled by default)
+# ------------------------------------------------------------------
+RUN mkdir -p /etc/ai-engineer
+COPY configs/ai-engineer/self-healing.toml /etc/ai-engineer/self-healing.toml
+
 RUN chmod 755 /etc/greenboot/check/required.d/01_directioner_milestone.sh \
     && systemctl enable greenboot-healthcheck.service directioner-milestone.service
 

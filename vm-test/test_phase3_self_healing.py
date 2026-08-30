@@ -24,6 +24,21 @@ def send_cap(cap, is_rb=False):
     s.close()
     return json.loads(resp_raw)
 
+# 0. Test default shipped config: self_healing.enabled=false in /etc/ai-engineer/self-healing.toml
+print("\n--- 0. Verifying Shipped Configuration Guarantee (enabled=false) ---")
+res = subprocess.run(
+    ["/var/lib/ai-bin/ai-engineer", "self-heal", "--config", "/etc/ai-engineer/self-healing.toml", "--once", "--json"],
+    capture_output=True,
+    text=True
+)
+print("ai-engineer self-heal exit code:", res.returncode)
+print("ai-engineer self-heal stdout:\n", res.stdout)
+if res.returncode != 0:
+    sys.exit(f"FAIL: ai-engineer self-heal failed with code {res.returncode}: {res.stderr}")
+if "Self-healing disabled by configuration" not in res.stdout:
+    sys.exit("FAIL: Expected output to confirm Self-healing is disabled by configuration")
+print("Confirmed: /etc/ai-engineer/self-healing.toml has enabled=false; zero autonomous action executed by default.")
+
 # 1. Setup an isolated canary service for testing self-healing restarts
 print("\n--- 1. Starting Isolated Canary Service ---")
 subprocess.run(["sudo", "systemd-run", "--unit=canary-selfheal", "sleep", "3600"], capture_output=True)

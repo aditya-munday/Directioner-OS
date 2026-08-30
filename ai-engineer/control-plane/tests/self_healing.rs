@@ -138,6 +138,43 @@ fn create_test_db_with_service(
 }
 
 #[test]
+fn test_0_disabled_by_default_configuration_guarantee() {
+    let temp = tempdir().unwrap();
+    let (sock, audit_log, lock_file) = setup_test_daemon(&temp);
+    let db_path = temp.path().join("wm.db");
+    let conn = Connection::open(&db_path).unwrap();
+
+    // Create degraded state
+    create_test_db_with_service(&conn, "failing-worker.service", "failed", "failed", 5);
+
+    let client = CapabilityClient::new(&sock, "self-heal-test");
+    let killswitch = KillSwitch::new(&lock_file);
+    let rem_agent = RemediationAgent::new(RemediationConfig::default());
+
+    // Default configuration: enabled = false
+    let mut engine = SelfHealingEngine::new(
+        SelfHealingConfig {
+            db_path: db_path.clone(),
+            worklog_path: Some(audit_log.clone()),
+            ..Default::default()
+        },
+        killswitch,
+        client,
+        rem_agent,
+    );
+
+    let report = engine.evaluate_and_heal();
+    assert_eq!(report.outcomes, vec![SelfHealingOutcome::DisabledByConfig]);
+
+    // Verify zero capability calls or dispatches occurred
+    if audit_log.exists() {
+        let worklog_content = fs::read_to_string(&audit_log).unwrap();
+        assert!(!worklog_content.contains("remediation.intent_dispatched"));
+        assert!(!worklog_content.contains("service.restart"));
+    }
+}
+
+#[test]
 fn test_1_anti_flap_single_blip_suppressed_consecutive_triggers() {
     let temp = tempdir().unwrap();
     let (sock, audit_log, lock_file) = setup_test_daemon(&temp);
@@ -151,6 +188,7 @@ fn test_1_anti_flap_single_blip_suppressed_consecutive_triggers() {
     let rem_agent = RemediationAgent::new(RemediationConfig::default());
     let mut engine = SelfHealingEngine::new(
         SelfHealingConfig {
+            enabled: true,
             db_path: db_path.clone(),
             anti_flap_consecutive_cycles: 2,
             worklog_path: Some(audit_log.clone()),
@@ -205,6 +243,7 @@ fn test_2_notify_tier_execution_and_three_stage_audit_sequence() {
     let rem_agent = RemediationAgent::new(RemediationConfig::default());
     let mut engine = SelfHealingEngine::new(
         SelfHealingConfig {
+            enabled: true,
             db_path: db_path.clone(),
             anti_flap_consecutive_cycles: 1, // trigger on cycle 1 for audit inspection
             worklog_path: Some(audit_log.clone()),
@@ -271,6 +310,7 @@ fn test_3_persistent_failure_budget_lockout_after_three_attempts() {
     let rem_agent = RemediationAgent::new(RemediationConfig::default());
     let mut engine = SelfHealingEngine::new(
         SelfHealingConfig {
+            enabled: true,
             db_path: db_path.clone(),
             anti_flap_consecutive_cycles: 1,
             max_entity_attempts: 3,
@@ -332,6 +372,7 @@ fn test_4_global_throttle_circuit_breaker_five_actions_cap() {
     let rem_agent = RemediationAgent::new(RemediationConfig::default());
     let mut engine = SelfHealingEngine::new(
         SelfHealingConfig {
+            enabled: true,
             db_path: db_path.clone(),
             anti_flap_consecutive_cycles: 1,
             global_action_cap: 5,
@@ -392,6 +433,7 @@ fn test_5_killswitch_engaged_silences_loop_before_synthesis() {
     let rem_agent = RemediationAgent::new(RemediationConfig::default());
     let mut engine = SelfHealingEngine::new(
         SelfHealingConfig {
+            enabled: true,
             db_path: db_path.clone(),
             anti_flap_consecutive_cycles: 1,
             worklog_path: Some(audit_log.clone()),
@@ -432,6 +474,7 @@ fn test_6_confirm_tier_boundary_holding_stops_at_proposal() {
     let rem_agent = RemediationAgent::new(RemediationConfig::default());
     let mut engine = SelfHealingEngine::new(
         SelfHealingConfig {
+            enabled: true,
             db_path: db_path.clone(),
             anti_flap_consecutive_cycles: 1,
             worklog_path: Some(audit_log.clone()),

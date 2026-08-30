@@ -1,0 +1,14 @@
+# Directioner-OS Closed-Loop Self-Healing & Remediation Configuration (Phase 3.1)
+#
+# INVARIANT: Self-healing is strictly DISABLED by default (enabled = false).
+# Autonomous remediation will NOT dispatch any mutating action unless explicitly
+# enabled by a human operator.
+
+enabled = false
+db_path = "/tmp/wm.sqlite"
+max_entity_attempts = 3
+entity_window_secs = 3600
+global_action_cap = 5
+global_window_secs = 600
+anti_flap_consecutive_cycles = 2
+worklog_path = "/var/log/live-worklog.jsonl"
