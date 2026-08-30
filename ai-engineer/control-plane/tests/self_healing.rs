@@ -47,7 +47,7 @@ fn setup_test_daemon(
         HandlerConfig {
             approval_required: false,
             protected_units: vec!["ssh.service".into()],
-            dry_run: false,
+            dry_run: true,
         },
     );
 

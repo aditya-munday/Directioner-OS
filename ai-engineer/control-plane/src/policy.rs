@@ -291,25 +291,40 @@ impl PolicyEngine {
                         "Unit '{unit}' is a protected/critical system daemon; restart may disconnect or destabilize machine"
                     ));
                 } else {
-                    score += 50;
-                    factors.push(format!("Restarting systemd service unit '{unit}'"));
-                }
-
-                // Check unit state from world-model if available
-                match db {
-                    Some(conn) => {
-                        if let Ok(Some(u_info)) = world_model::query::unit_info(conn, unit) {
-                            factors.push(format!(
-                                "Current unit state in World Model: active='{}', substate='{}'",
-                                u_info.active_state, u_info.sub_state
-                            ));
+                    // Check unit state from world-model if available
+                    match db {
+                        Some(conn) => {
+                            if let Ok(Some(u_info)) = world_model::query::unit_info(conn, unit) {
+                                if u_info.active_state == "failed"
+                                    || u_info.sub_state == "failed"
+                                    || u_info.active_state == "inactive"
+                                {
+                                    score += 30; // Safe self-healing Notify tier
+                                    factors.push(format!(
+                                        "Restarting failed/inactive service '{unit}' to recover subsystem"
+                                    ));
+                                } else {
+                                    score += 45; // Confirm tier for running service
+                                    factors.push(format!(
+                                        "Restarting active running service '{unit}'"
+                                    ));
+                                }
+                                factors.push(format!(
+                                    "Current unit state in World Model: active='{}', substate='{}'",
+                                    u_info.active_state, u_info.sub_state
+                                ));
+                            } else {
+                                score += 35;
+                                factors.push(format!("Restarting systemd service unit '{unit}'"));
+                            }
                         }
-                    }
-                    None => {
-                        factors.push(
-                            "World Model offline; unit runtime state unverified prior to restart"
-                                .into(),
-                        );
+                        None => {
+                            score += 50;
+                            factors.push(
+                                "World Model offline; unit runtime state unverified prior to restart"
+                                    .into(),
+                            );
+                        }
                     }
                 }
             }

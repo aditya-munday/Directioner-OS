@@ -19,7 +19,7 @@ fn test_tier2_kernel_param_tuning_lifecycle() {
     });
 
     let plan = agent
-        .plan_kernel_param_tuning("net.ipv4.ip_forward", "1", true)
+        .plan_kernel_param_tuning("net.ipv4.ip_forward", "1", true, None)
         .expect("synthesis should succeed");
 
     assert_eq!(plan.steps.len(), 1);
@@ -67,7 +67,7 @@ fn test_tier2_kernel_module_remediation_lifecycle() {
     let agent = RemediationAgent::new(RemediationConfig::default());
 
     let plan = agent
-        .plan_module_load("dummy", vec!["numdummies=2".into()])
+        .plan_module_load("dummy", vec!["numdummies=2".into()], None)
         .expect("synthesis for allowed module should succeed");
 
     assert_eq!(plan.steps.len(), 1);
@@ -104,7 +104,7 @@ fn test_tier2_prohibited_security_param_hard_fatal_refusal() {
     let agent = RemediationAgent::new(RemediationConfig::default());
 
     let err = agent
-        .plan_kernel_param_tuning("kernel.core_pattern", "|/tmp/bad", false)
+        .plan_kernel_param_tuning("kernel.core_pattern", "|/tmp/bad", false, None)
         .expect_err("prohibited param must be rejected");
 
     match err {
@@ -122,7 +122,7 @@ fn test_tier2_unauthorized_module_hard_fatal_refusal() {
     let agent = RemediationAgent::new(RemediationConfig::default());
 
     let err = agent
-        .plan_module_load("unknown_untrusted_module", vec![])
+        .plan_module_load("unknown_untrusted_module", vec![], None)
         .expect_err("unauthorized module must be rejected");
 
     match err {
