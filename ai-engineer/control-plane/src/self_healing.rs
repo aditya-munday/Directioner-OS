@@ -330,14 +330,14 @@ impl SelfHealingEngine {
         let mut degraded_entities: Vec<(String, String, String)> = Vec::new(); // (entity, source, reason)
         for sub in &health.subsystems {
             for ev in &sub.evidence {
-                if ev.severity == "critical" || ev.severity == "warning" {
-                    if !ev.entity.is_empty() {
-                        degraded_entities.push((
-                            ev.entity.clone(),
-                            ev.source.clone(),
-                            ev.description.clone(),
-                        ));
-                    }
+                if (ev.severity == "critical" || ev.severity == "warning")
+                    && !ev.entity.is_empty()
+                {
+                    degraded_entities.push((
+                        ev.entity.clone(),
+                        ev.source.clone(),
+                        ev.description.clone(),
+                    ));
                 }
             }
         }
