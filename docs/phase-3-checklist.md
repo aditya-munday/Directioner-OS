@@ -37,13 +37,16 @@ Legend: `[x]` done and verified · `[~]` scaffolded, needs CI/VM to verify · `[
 
 ---
 
-## 3.0.3 Health Model Integration & Tier 1 Gating (`control-plane::health_gate`)
-- [ ] Policy engine health score gating before high-blast actions
-- [ ] Evaluation triggers and degraded health alerts
+## 3.0.3 IncidentResponseAgent & Tier 1 Observation Boundary (`control-plane::incident_response`)
+- [x] Formalized named `IncidentResponseAgent` component owning Tier 1 post-hoc observation and resilience posture synthesis
+- [x] Explicit code-level authority boundary doc-block stating: "Tier 1 recovery is fully autonomous at the bootloader/greenboot layer and requires no action from this agent. This agent's only current responsibility is post-hoc observation and logging. It has zero write/mutating capability access as of Phase 3.0.3."
+- [x] Zero capability-client imports, mutating calls, or proactive action triggers in `IncidentResponseAgent`
+- [x] Sourced post-rollback observation and incident posture through `IncidentResponseAgent` in `ai-cockpit` and integration test suite
+- **What this actually verifies**: Architectural formalization and structural separation of Tier 1 autonomous bootloader mechanics from agent control plane, establishing a strictly read-only post-hoc observer component with zero capability dispatch authority. ✔
 
 ---
 
-## 3.1 Self-Healing Loop & Automated Remediation
-- [ ] Tier 2 Automated Remediation Agent
+## 3.0.4 Tier 2 Self-Healing & Remediation Loop (`control-plane::remediation`)
+- [ ] Tier 2 kernel/module and service remediation through existing PolicyEngine/Reviewer with conservative blast radius floor
 - [ ] Automated incident containment and service remediation
 - [ ] Bounded remediation attempts with fallback to operator confirmation

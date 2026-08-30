@@ -12,7 +12,10 @@ use capability_layer::killswitch::KillSwitch;
 use rusqlite::Connection;
 use serde::{Deserialize, Serialize};
 
-use crate::health_model::{HealthModel, HealthModelConfig, SystemHealthReport};
+use crate::health_model::SystemHealthReport;
+use crate::incident_response::{
+    IncidentPostureReport, IncidentResponseAgent, IncidentResponseConfig,
+};
 use crate::plan::Plan;
 
 /// System health and systemd unit summary.
@@ -56,6 +59,8 @@ pub struct CockpitSnapshot {
     pub health: SystemHealthSummary,
     /// Multi-signal health model evaluation report.
     pub health_report: Option<SystemHealthReport>,
+    /// Incident Response Agent posture report (Tier 1 observations + active incidents).
+    pub incident_posture: Option<IncidentPostureReport>,
     /// Recent capability dispatch audit entries (newest first).
     pub recent_audit: Vec<AuditStreamEntry>,
     /// Currently inspected or active remediation plan.
@@ -91,17 +96,19 @@ impl CockpitState {
         let health = self.poll_health();
         let recent_audit = self.poll_audit_stream(10);
 
-        let health_model = HealthModel::new(HealthModelConfig {
+        let ir_agent = IncidentResponseAgent::new(IncidentResponseConfig {
             db_path: self.db_path.clone(),
             worklog_path: Some(self.audit_log_path.clone()),
         });
-        let health_report = Some(health_model.evaluate());
+        let incident_posture = Some(ir_agent.evaluate_posture());
+        let health_report = incident_posture.as_ref().map(|p| p.health_report.clone());
 
         CockpitSnapshot {
             timestamp: chrono::Utc::now().to_rfc3339(),
             killswitch_engaged,
             health,
             health_report,
+            incident_posture,
             recent_audit,
             active_plan,
         }
@@ -289,6 +296,21 @@ impl CockpitRenderer {
                 snapshot.health.failed_unit_count,
                 snapshot.health.failed_units.join(", ")
             ));
+        }
+
+        if let Some(ref posture) = snapshot.incident_posture {
+            if let Some(ref rec) = posture.latest_tier1_recovery {
+                out.push_str(&format!(
+                    "    • Tier 1 Recovery:  ⚠️ Watchdog Rollback Recorded (Seq #{})\n      - Trigger: {}\n      - Action:  {}\n",
+                    rec.audit_seq, rec.trigger, rec.action
+                ));
+            }
+            if !posture.active_incidents.is_empty() {
+                out.push_str("    • Active Alerts:\n");
+                for alert in &posture.active_incidents {
+                    out.push_str(&format!("      ! {}\n", alert));
+                }
+            }
         }
 
         out.push_str(

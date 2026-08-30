@@ -15,6 +15,7 @@ pub mod cockpit;
 pub mod code_engine;
 pub mod health_model;
 pub mod implementer;
+pub mod incident_response;
 pub mod plan;
 pub mod planner;
 pub mod policy;
@@ -33,6 +34,9 @@ pub use health_model::{
     SystemHealthReport,
 };
 pub use implementer::Implementer;
+pub use incident_response::{
+    IncidentPostureReport, IncidentResponseAgent, IncidentResponseConfig, Tier1RecoveryObservation,
+};
 pub use plan::{
     Plan, PlanExecutionReport, PlanStatus, PlanStep, RollbackStep, StepExecutionResult,
 };
