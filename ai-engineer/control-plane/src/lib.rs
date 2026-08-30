@@ -34,8 +34,9 @@ pub use cockpit::{
 };
 pub use code_engine::{BuildTestReport, CodeEngine, Diagnostic, TestFailure};
 pub use conversational::{
-    ChatMessage, ChatRole, CloudAnthropicBackend, ConversationSession, ConversationalConfig,
-    ConversationalError, IntentParser, LlmBackend, LocalSocketBackend, MockBackend,
+    ChatMessage, ChatRole, CloudAnthropicBackend, CloudGeminiBackend, CloudProvider,
+    ConversationSession, ConversationalConfig, ConversationalError, IntentParser, LlmBackend,
+    LocalSocketBackend, MockBackend,
 };
 pub use draft_validator::{
     CandidateCapabilityDraft, CandidatePlanDraft, CandidateRollbackDraft, CandidateStepDraft,

@@ -1,10 +1,17 @@
-# Phase 4.0.1 Design Proposal: Policy-Governed Conversational Operator & Multi-Turn Plan Negotiation
+# Phase 4.0.1 Design Proposal & Implementation Status: Policy-Governed Conversational Operator
 
-> **Status**: PROPOSAL ONLY — WORDS-FIRST DESIGN (NO CODE IMPLEMENTED)  
-> **Target Subsystem**: `control-plane::operator`, `ai-engineer::chat`  
-> **Safety Invariant**: Strictly passive/proposal-only; zero autonomous execution authority without explicit out-of-band operator confirmation.
+> **Status**: IN PROGRESS — INGESTION PIPELINE, VALIDATOR & CONVERSATIONAL DRAFT REPL IMPLEMENTED (EXECUTION WIRED = FALSE)  
+> **Target Subsystem**: `control-plane::conversational`, `control-plane::draft_validator`, `ai-engineer::chat`, `ai-engineer::ask`  
+> **Safety Invariant**: Strictly passive/draft-only; zero autonomous execution authority without explicit out-of-band operator confirmation. Token signing dropped in favor of interactive standard input confirmation only.
 
 ---
+
+## Current Implementation State (Branch: `phase-4.0.1-validation-pipeline`):
+- [x] **4-Layer PlanDraftValidator**: 512KB payload bounding, strict `deny_unknown_fields` serde deserialization, typed `CapabilityKind` contract checks, and atomic pre-flight state drift detection.
+- [x] **Conversational Engine**: `ConversationSession` with role delimiter sanitization, `LocalSocketBackend` (offline /run/ai-engineer/llm.sock), `CloudAnthropicBackend` (opt-in only, off by default), and `IntentParser`.
+- [x] **CLI Subcommands**: `ai-engineer ask <INTENT>` and `ai-engineer chat` REPL implemented, stopping strictly at validated plan draft preview with unmissable `[DRAFT ONLY — EXECUTION NOT YET WIRED]` banner.
+- [x] **Adversarial Hardening Tests**: Unit and integration suites asserting rejection of malformed JSON, invented capability variants, injected fields, role breakouts, and user inputs mimicking Reviewer approvals.
+- [ ] **Execution Wiring**: Intentionally NOT wired to `Implementer` or live capability dispatch pending user review.
 
 ## 1. Executive Summary & Objective
 

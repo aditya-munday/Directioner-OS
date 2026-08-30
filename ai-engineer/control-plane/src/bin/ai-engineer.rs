@@ -21,7 +21,8 @@ fn print_usage() {
 USAGE:
     ai-engineer <COMMAND> [OPTIONS]
 
-COMMANDS:
+    ask <INTENT>         Parse natural language query via Conversational Operator into validated draft (Draft only)
+    chat                 Start interactive multi-turn conversational session (Draft only)
     plan <INTENT>        Generate a structured multi-step plan with blast-radius scoring
     review <INTENT>      Run independent multi-agent Reviewer audit on synthesized plan
     dry-run <INTENT>     Simulate plan and generate unified diffs without modifying state
@@ -206,6 +207,348 @@ fn open_db(path: &Path) -> Option<Connection> {
         Connection::open(path).ok()
     } else {
         None
+    }
+}
+
+fn run_conversational_preview(
+    intent: &str,
+    session: &mut control_plane::conversational::ConversationSession,
+    work_root: &Path,
+    db_conn: Option<&Connection>,
+    json: bool,
+) {
+    session.add_user_message(intent);
+
+    let grounding = if let Some(conn) = db_conn {
+        if let Ok(stats) = world_model::query::graph_stats(conn) {
+            format!(
+                "World Model online: {} packages indexed, {} units tracked.",
+                stats.packages, stats.units
+            )
+        } else {
+            "World Model online (query active).".to_string()
+        }
+    } else {
+        "World Model offline (using local fixtures).".to_string()
+    };
+
+    let socket_path = PathBuf::from("/run/ai-engineer/llm.sock");
+    let plan = if socket_path.exists() {
+        let backend = control_plane::conversational::LocalSocketBackend::new(socket_path);
+        match control_plane::conversational::IntentParser::parse_intent(
+            session,
+            &backend,
+            Some(&grounding),
+        ) {
+            Ok(p) => p,
+            Err(e) => {
+                eprintln!("Conversational intent parsing error: {e}");
+                exit(1);
+            }
+        }
+    } else {
+        let planner = Planner::new(PlannerConfig {
+            work_root: work_root.to_path_buf(),
+            default_timeout_secs: 30,
+        });
+        let generated_plan = match planner.create_plan(intent, db_conn) {
+            Ok(p) => p,
+            Err(e) => {
+                eprintln!("Planning error: {e}");
+                exit(1);
+            }
+        };
+
+        let candidate_dto = control_plane::draft_validator::CandidatePlanDraft {
+            intent: generated_plan.intent.clone(),
+            summary: generated_plan.summary.clone(),
+            steps: generated_plan
+                .steps
+                .iter()
+                .map(|s| control_plane::draft_validator::CandidateStepDraft {
+                    step_id: s.step_id.clone(),
+                    description: s.description.clone(),
+                    capability: match &s.capability {
+                        capability_layer::CapabilityKind::Ping => {
+                            control_plane::draft_validator::CandidateCapabilityDraft::Ping
+                        }
+                        capability_layer::CapabilityKind::FileRead { path } => {
+                            control_plane::draft_validator::CandidateCapabilityDraft::FileRead {
+                                path: path.clone(),
+                            }
+                        }
+                        capability_layer::CapabilityKind::FileWrite {
+                            path,
+                            content,
+                            append,
+                        } => control_plane::draft_validator::CandidateCapabilityDraft::FileWrite {
+                            path: path.clone(),
+                            content: content.clone(),
+                            append: *append,
+                        },
+                        capability_layer::CapabilityKind::FileDelete { path } => {
+                            control_plane::draft_validator::CandidateCapabilityDraft::FileDelete {
+                                path: path.clone(),
+                            }
+                        }
+                        capability_layer::CapabilityKind::PackageInstall { package, approved } => {
+                            control_plane::draft_validator::CandidateCapabilityDraft::PackageInstall {
+                                package: package.clone(),
+                                approved: *approved,
+                            }
+                        }
+                        capability_layer::CapabilityKind::PackageRemove { package, approved } => {
+                            control_plane::draft_validator::CandidateCapabilityDraft::PackageRemove {
+                                package: package.clone(),
+                                approved: *approved,
+                            }
+                        }
+                        capability_layer::CapabilityKind::ServiceStatus { unit } => {
+                            control_plane::draft_validator::CandidateCapabilityDraft::ServiceStatus {
+                                unit: unit.clone(),
+                            }
+                        }
+                        capability_layer::CapabilityKind::ServiceRestart { unit, approved } => {
+                            control_plane::draft_validator::CandidateCapabilityDraft::ServiceRestart {
+                                unit: unit.clone(),
+                                approved: *approved,
+                            }
+                        }
+                        capability_layer::CapabilityKind::ServiceStop { unit, approved } => {
+                            control_plane::draft_validator::CandidateCapabilityDraft::ServiceStop {
+                                unit: unit.clone(),
+                                approved: *approved,
+                            }
+                        }
+                        capability_layer::CapabilityKind::BootSlotPin { slot, approved } => {
+                            control_plane::draft_validator::CandidateCapabilityDraft::BootSlotPin {
+                                slot: *slot,
+                                approved: *approved,
+                            }
+                        }
+                        capability_layer::CapabilityKind::KernelParamSet {
+                            key,
+                            value,
+                            persistent,
+                            approved,
+                        } => control_plane::draft_validator::CandidateCapabilityDraft::KernelParamSet {
+                            key: key.clone(),
+                            value: value.clone(),
+                            persistent: *persistent,
+                            approved: *approved,
+                        },
+                        capability_layer::CapabilityKind::KernelModuleLoad {
+                            module,
+                            args,
+                            approved,
+                        } => control_plane::draft_validator::CandidateCapabilityDraft::KernelModuleLoad {
+                            module: module.clone(),
+                            args: args.clone(),
+                            approved: *approved,
+                        },
+                        capability_layer::CapabilityKind::KernelModuleUnload {
+                            module,
+                            approved,
+                        } => {
+                            control_plane::draft_validator::CandidateCapabilityDraft::KernelModuleUnload {
+                                module: module.clone(),
+                                approved: *approved,
+                            }
+                        }
+                        capability_layer::CapabilityKind::BootcRollback => {
+                            control_plane::draft_validator::CandidateCapabilityDraft::BootcRollback
+                        }
+                    },
+                    timeout_secs: Some(s.timeout_secs),
+                })
+                .collect(),
+            rollback_steps: Some(
+                generated_plan
+                    .rollback_steps
+                    .iter()
+                    .map(|rb| control_plane::draft_validator::CandidateRollbackDraft {
+                        step_id: rb.step_id.clone(),
+                        description: rb.description.clone(),
+                        capability: match &rb.capability {
+                            capability_layer::CapabilityKind::Ping => {
+                                control_plane::draft_validator::CandidateCapabilityDraft::Ping
+                            }
+                            capability_layer::CapabilityKind::FileRead { path } => {
+                                control_plane::draft_validator::CandidateCapabilityDraft::FileRead {
+                                    path: path.clone(),
+                                }
+                            }
+                            capability_layer::CapabilityKind::FileWrite {
+                                path,
+                                content,
+                                append,
+                            } => {
+                                control_plane::draft_validator::CandidateCapabilityDraft::FileWrite {
+                                    path: path.clone(),
+                                    content: content.clone(),
+                                    append: *append,
+                                }
+                            }
+                            capability_layer::CapabilityKind::FileDelete { path } => {
+                                control_plane::draft_validator::CandidateCapabilityDraft::FileDelete {
+                                    path: path.clone(),
+                                }
+                            }
+                            capability_layer::CapabilityKind::PackageInstall {
+                                package,
+                                approved,
+                            } => {
+                                control_plane::draft_validator::CandidateCapabilityDraft::PackageInstall {
+                                    package: package.clone(),
+                                    approved: *approved,
+                                }
+                            }
+                            capability_layer::CapabilityKind::PackageRemove {
+                                package,
+                                approved,
+                            } => {
+                                control_plane::draft_validator::CandidateCapabilityDraft::PackageRemove {
+                                    package: package.clone(),
+                                    approved: *approved,
+                                }
+                            }
+                            capability_layer::CapabilityKind::ServiceStatus { unit } => {
+                                control_plane::draft_validator::CandidateCapabilityDraft::ServiceStatus {
+                                    unit: unit.clone(),
+                                }
+                            }
+                            capability_layer::CapabilityKind::ServiceRestart {
+                                unit,
+                                approved,
+                            } => {
+                                control_plane::draft_validator::CandidateCapabilityDraft::ServiceRestart {
+                                    unit: unit.clone(),
+                                    approved: *approved,
+                                }
+                            }
+                            capability_layer::CapabilityKind::ServiceStop { unit, approved } => {
+                                control_plane::draft_validator::CandidateCapabilityDraft::ServiceStop {
+                                    unit: unit.clone(),
+                                    approved: *approved,
+                                }
+                            }
+                            capability_layer::CapabilityKind::BootSlotPin { slot, approved } => {
+                                control_plane::draft_validator::CandidateCapabilityDraft::BootSlotPin {
+                                    slot: *slot,
+                                    approved: *approved,
+                                }
+                            }
+                            capability_layer::CapabilityKind::KernelParamSet {
+                                key,
+                                value,
+                                persistent,
+                                approved,
+                            } => {
+                                control_plane::draft_validator::CandidateCapabilityDraft::KernelParamSet {
+                                    key: key.clone(),
+                                    value: value.clone(),
+                                    persistent: *persistent,
+                                    approved: *approved,
+                                }
+                            }
+                            capability_layer::CapabilityKind::KernelModuleLoad {
+                                module,
+                                args,
+                                approved,
+                            } => {
+                                control_plane::draft_validator::CandidateCapabilityDraft::KernelModuleLoad {
+                                    module: module.clone(),
+                                    args: args.clone(),
+                                    approved: *approved,
+                                }
+                            }
+                            capability_layer::CapabilityKind::KernelModuleUnload {
+                                module,
+                                approved,
+                            } => {
+                                control_plane::draft_validator::CandidateCapabilityDraft::KernelModuleUnload {
+                                    module: module.clone(),
+                                    approved: *approved,
+                                }
+                            }
+                            capability_layer::CapabilityKind::BootcRollback => {
+                                control_plane::draft_validator::CandidateCapabilityDraft::BootcRollback
+                            }
+                        },
+                        triggers: rb.triggers.clone(),
+                    })
+                    .collect(),
+            ),
+        };
+
+        let raw_dto_json = serde_json::to_string(&candidate_dto).unwrap();
+        match control_plane::draft_validator::PlanDraftValidator::validate_and_convert(
+            &raw_dto_json,
+        ) {
+            Ok(mut p) => {
+                for step in &mut p.steps {
+                    step.blast_radius = control_plane::policy::PolicyEngine::evaluate_capability(
+                        &step.capability,
+                        db_conn,
+                    );
+                }
+                let caps: Vec<_> = p.steps.iter().map(|s| s.capability.clone()).collect();
+                p.aggregate_blast_radius =
+                    control_plane::policy::PolicyEngine::evaluate_plan_aggregate(&caps, db_conn);
+                p
+            }
+            Err(e) => {
+                eprintln!("Plan draft validation error: {e}");
+                exit(1);
+            }
+        }
+    };
+
+    let preview = Simulator::simulate_plan(&plan, Some(work_root));
+
+    if json {
+        let combined = serde_json::json!({
+            "plan_draft": plan,
+            "simulation": preview,
+            "execution_status": "DRAFT_ONLY_NOT_WIRED",
+        });
+        println!("{}", serde_json::to_string_pretty(&combined).unwrap());
+    } else {
+        println!("══════════════════════════════════════════════════════════════════════");
+        println!("  PHASE 4.0.1 CONVERSATIONAL OPERATOR — VALIDATED PLAN DRAFT");
+        println!("══════════════════════════════════════════════════════════════════════");
+        println!("  Plan ID:     {}", plan.id);
+        println!("  Intent:      \"{}\"", plan.intent);
+        println!("  Status:      {:?}", plan.status);
+        println!(
+            "  Blast Score: {}/100 (Tier: {:?})",
+            plan.aggregate_blast_radius.score, plan.aggregate_blast_radius.tier
+        );
+        println!("  Summary:     {}", plan.summary);
+        println!("──────────────────────────────────────────────────────────────────────");
+        println!("  Execution Steps ({}):", plan.steps.len());
+        for (idx, step) in plan.steps.iter().enumerate() {
+            println!(
+                "    {}. [{:?}] {} (Blast: {}/100)",
+                idx + 1,
+                step.capability,
+                step.description,
+                step.blast_radius.score
+            );
+        }
+        if !plan.rollback_steps.is_empty() {
+            println!("  Compensating Rollbacks ({}):", plan.rollback_steps.len());
+            for (idx, rb) in plan.rollback_steps.iter().enumerate() {
+                println!("    {}. {}", idx + 1, rb.description);
+            }
+        }
+        println!("──────────────────────────────────────────────────────────────────────");
+        println!("{}", preview.render_terminal());
+        println!("──────────────────────────────────────────────────────────────────────");
+        println!("  [!] DRAFT ONLY — EXECUTION NOT YET WIRED PER PHASE 4.0.1 SAFETY POLICY");
+        println!("      This plan has been synthesized and strictly schema-validated,");
+        println!("      but autonomous execution authority remains disabled.");
+        println!("══════════════════════════════════════════════════════════════════════");
     }
 }
 
@@ -497,6 +840,53 @@ fn main() {
             plan.steps.len()
         );
         println!("══════════════════════════════════════════════════════════════════════");
+        return;
+    }
+
+    if args.command == "chat" {
+        use std::io::{self, BufRead};
+        println!("══════════════════════════════════════════════════════════════════════");
+        println!("  DIRECTIONER-OS CONVERSATIONAL OPERATOR (PHASE 4.0.1 REPL)");
+        println!("  Type your intent, or 'exit' / 'quit' to end session.");
+        println!("══════════════════════════════════════════════════════════════════════");
+
+        let mut session = control_plane::conversational::ConversationSession::new(20);
+        let stdin = io::stdin();
+        loop {
+            eprint!("\nOperator> ");
+            let mut line = String::new();
+            if stdin.lock().read_line(&mut line).is_err() {
+                break;
+            }
+            let trimmed = line.trim();
+            if trimmed.is_empty() {
+                continue;
+            }
+            if trimmed == "exit" || trimmed == "quit" {
+                println!("Exiting conversational session.");
+                break;
+            }
+
+            run_conversational_preview(
+                trimmed,
+                &mut session,
+                &args.work_root,
+                db_conn.as_ref(),
+                args.json,
+            );
+        }
+        return;
+    }
+
+    if args.command == "ask" {
+        let mut session = control_plane::conversational::ConversationSession::new(20);
+        run_conversational_preview(
+            &args.intent,
+            &mut session,
+            &args.work_root,
+            db_conn.as_ref(),
+            args.json,
+        );
         return;
     }
 
