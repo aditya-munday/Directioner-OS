@@ -63,7 +63,7 @@ Legend: `[x]` done and verified · `[~]` scaffolded, needs CI/VM to verify · `[
   - Real Refcount-Guard denial when attempting to unload active in-use interface (`ip link set dummy0 up`)
   - Clean unload upon releasing interface (`ip link set dummy0 down`)
   - Strict refusal of prohibited parameters and unlisted modules
-- **What this actually verifies**: Controlled Tier 2 kernel/module remediation with double-enforced conservative floor, deterministic rollback capture, and real kernel-enforced refcount safety guards. ✔
+- **What this actually verifies**: Controlled Tier 2 kernel/module remediation with double-enforced conservative floor, deterministic rollback capture, and real kernel-enforced refcount safety guards. ✔ (verified in CI run `33300880201`)
 
 ---
 
