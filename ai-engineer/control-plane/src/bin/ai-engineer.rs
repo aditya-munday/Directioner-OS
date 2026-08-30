@@ -504,11 +504,17 @@ fn run_conversational_preview(
         }
     };
 
+    let reviewer = control_plane::reviewer::Reviewer::new(
+        control_plane::reviewer::ReviewerConfig::default(),
+    );
+    let review_report = reviewer.review_plan(&plan);
+
     let preview = Simulator::simulate_plan(&plan, Some(work_root));
 
     if json {
         let combined = serde_json::json!({
             "plan_draft": plan,
+            "review": review_report,
             "simulation": preview,
             "execution_status": "DRAFT_ONLY_NOT_WIRED",
         });
@@ -525,6 +531,20 @@ fn run_conversational_preview(
             plan.aggregate_blast_radius.score, plan.aggregate_blast_radius.tier
         );
         println!("  Summary:     {}", plan.summary);
+        println!("──────────────────────────────────────────────────────────────────────");
+        println!("  Reviewer Verdict: {:?}", review_report.verdict);
+        if review_report.findings.is_empty() {
+            println!("    ✔ No invariant violations or warnings found.");
+        } else {
+            for (idx, f) in review_report.findings.iter().enumerate() {
+                let icon = match f.severity {
+                    control_plane::reviewer::FindingSeverity::Fatal => "✘ [FATAL]",
+                    control_plane::reviewer::FindingSeverity::Warning => "▲ [WARN]",
+                    control_plane::reviewer::FindingSeverity::Info => "ℹ [INFO]",
+                };
+                println!("    {}. {} [{}] {}", idx + 1, icon, f.category, f.message);
+            }
+        }
         println!("──────────────────────────────────────────────────────────────────────");
         println!("  Execution Steps ({}):", plan.steps.len());
         for (idx, step) in plan.steps.iter().enumerate() {
