@@ -3,7 +3,7 @@ import socket
 import sys
 
 s = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
-s.settimeout(60.0)
+s.settimeout(180.0)
 s.connect("/tmp/live-cap.sock")
 req = {
     "api_version": 1,
