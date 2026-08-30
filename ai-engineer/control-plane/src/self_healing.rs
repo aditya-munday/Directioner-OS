@@ -19,7 +19,6 @@ use std::time::{Duration, Instant};
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 
-use capability_layer::killswitch::KillSwitch;
 use crate::client::CapabilityClient;
 use crate::health_model::{HealthModel, HealthModelConfig, HealthStatus, SystemHealthReport};
 use crate::implementer::Implementer;
@@ -28,6 +27,7 @@ use crate::policy::ApprovalTier;
 use crate::remediation::RemediationAgent;
 use crate::simulation::Simulator;
 use crate::verifier::Verifier;
+use capability_layer::killswitch::KillSwitch;
 
 /// Configuration for the SelfHealingEngine.
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -445,7 +445,8 @@ impl SelfHealingEngine {
                 self.remediation_agent.plan_service_restart(&entity)
             } else if entity.starts_with("module:") {
                 let mod_name = entity.trim_start_matches("module:");
-                self.remediation_agent.plan_module_load(mod_name, Vec::new())
+                self.remediation_agent
+                    .plan_module_load(mod_name, Vec::new())
             } else if entity.starts_with("sysctl:") || entity.contains('.') {
                 let key = entity.trim_start_matches("sysctl:");
                 self.remediation_agent

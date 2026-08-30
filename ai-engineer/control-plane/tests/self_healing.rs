@@ -30,11 +30,7 @@ use tempfile::tempdir;
 
 fn setup_test_daemon(
     temp: &tempfile::TempDir,
-) -> (
-    std::path::PathBuf,
-    std::path::PathBuf,
-    std::path::PathBuf,
-) {
+) -> (std::path::PathBuf, std::path::PathBuf, std::path::PathBuf) {
     let sock = temp.path().join("cap.sock");
     let audit_log = temp.path().join("audit.jsonl");
     let lock_file = temp.path().join("kill.lock");
@@ -429,13 +425,7 @@ fn test_6_confirm_tier_boundary_holding_stops_at_proposal() {
     // Create DB where a sysctl parameter remediation is indicated
     let db_path = temp.path().join("wm.db");
     let conn = Connection::open(&db_path).unwrap();
-    create_test_db_with_service(
-        &conn,
-        "sysctl:net.ipv4.ip_forward",
-        "failed",
-        "failed",
-        3,
-    );
+    create_test_db_with_service(&conn, "sysctl:net.ipv4.ip_forward", "failed", "failed", 3);
 
     let client = CapabilityClient::new(&sock, "self-heal-test");
     let killswitch = KillSwitch::new(&lock_file);
