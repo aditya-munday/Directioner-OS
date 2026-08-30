@@ -796,7 +796,7 @@ impl Handler {
             }));
         }
 
-        // Refcount check via /proc/modules
+        // 1. Refcount check via /proc/modules
         if let Ok(proc_modules) = std::fs::read_to_string("/proc/modules") {
             for line in proc_modules.lines() {
                 let parts: Vec<&str> = line.split_whitespace().collect();
@@ -812,6 +812,51 @@ impl Handler {
                         )));
                     }
                     break;
+                }
+            }
+        }
+
+        // 2. Sysfs refcnt check
+        let sys_refcnt = format!("/sys/module/{module}/refcnt");
+        if let Ok(refcnt_str) = std::fs::read_to_string(&sys_refcnt)
+            && let Ok(refcnt) = refcnt_str.trim().parse::<u32>()
+            && refcnt > 0
+        {
+            return Err(CapError::Denied(format!(
+                "module '{module}' is in use (refcnt={refcnt})"
+            )));
+        }
+
+        // 3. Sysfs holders check (dependent modules)
+        let sys_holders = format!("/sys/module/{module}/holders");
+        if let Ok(entries) = std::fs::read_dir(&sys_holders) {
+            let holders: Vec<String> = entries
+                .filter_map(|e| e.ok().map(|d| d.file_name().to_string_lossy().into_owned()))
+                .collect();
+            if !holders.is_empty() {
+                return Err(CapError::Denied(format!(
+                    "module '{module}' is in use (held by: {})",
+                    holders.join(", ")
+                )));
+            }
+        }
+
+        // 4. Active network interface check (e.g. dummy0, veth, etc.)
+        if let Ok(net_entries) = std::fs::read_dir("/sys/class/net") {
+            for entry in net_entries.flatten() {
+                let iface_name = entry.file_name().to_string_lossy().into_owned();
+                if iface_name.starts_with(module) {
+                    let flags_path = entry.path().join("flags");
+                    if let Ok(flags_raw) = std::fs::read_to_string(flags_path) {
+                        let flags_str = flags_raw.trim().trim_start_matches("0x");
+                        if let Ok(flags_val) = u32::from_str_radix(flags_str, 16)
+                            && (flags_val & 0x1) != 0
+                        {
+                            return Err(CapError::Denied(format!(
+                                "module '{module}' is in use (interface {iface_name} is UP)"
+                            )));
+                        }
+                    }
                 }
             }
         }
