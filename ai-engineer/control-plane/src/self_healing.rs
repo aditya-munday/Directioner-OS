@@ -440,18 +440,20 @@ impl SelfHealingEngine {
             }
 
             // 7. Plan Synthesis based on entity type
+            let db_conn = rusqlite::Connection::open(&self.config.db_path).ok();
+            let db_ref = db_conn.as_ref();
             let plan_res = if entity.ends_with(".service") {
-                self.remediation_agent.plan_service_restart(&entity)
+                self.remediation_agent.plan_service_restart(&entity, db_ref)
             } else if entity.starts_with("module:") {
                 let mod_name = entity.trim_start_matches("module:");
                 self.remediation_agent
-                    .plan_module_load(mod_name, Vec::new())
+                    .plan_module_load(mod_name, Vec::new(), db_ref)
             } else if entity.starts_with("sysctl:") || entity.contains('.') {
                 let key = entity.trim_start_matches("sysctl:");
                 self.remediation_agent
-                    .plan_kernel_param_tuning(key, "1", false)
+                    .plan_kernel_param_tuning(key, "1", false, db_ref)
             } else {
-                self.remediation_agent.plan_service_restart(&entity)
+                self.remediation_agent.plan_service_restart(&entity, db_ref)
             };
 
             let plan = match plan_res {

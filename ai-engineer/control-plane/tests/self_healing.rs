@@ -384,8 +384,8 @@ fn test_5_killswitch_engaged_silences_loop_before_synthesis() {
     create_test_db_with_service(&conn, "unhealthy.service", "failed", "failed", 5);
 
     // Engage killswitch
-    fs::write(&lock_file, "KILLSWITCH_ENGAGED").unwrap();
-    let killswitch = KillSwitch::new(&lock_file);
+    let mut killswitch = KillSwitch::new(&lock_file);
+    killswitch.engage().unwrap();
     assert!(killswitch.is_engaged());
 
     let client = CapabilityClient::new(&sock, "self-heal-test");

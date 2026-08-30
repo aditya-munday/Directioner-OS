@@ -83,6 +83,7 @@ impl RemediationAgent {
         key: &str,
         target_value: &str,
         persistent: bool,
+        conn: Option<&rusqlite::Connection>,
     ) -> Result<Plan, RemediationError> {
         // Query current value from /proc/sys
         let proc_file = self.config.proc_root.join(key.replace('.', "/"));
@@ -108,7 +109,7 @@ impl RemediationAgent {
             approved: true,
         };
 
-        let blast = PolicyEngine::evaluate_capability(&cap_forward, None);
+        let blast = PolicyEngine::evaluate_capability(&cap_forward, conn);
 
         let forward_step = PlanStep {
             step_id: step_id.clone(),
@@ -155,6 +156,7 @@ impl RemediationAgent {
         &self,
         module: &str,
         args: Vec<String>,
+        conn: Option<&rusqlite::Connection>,
     ) -> Result<Plan, RemediationError> {
         let step_id = format!("load_mod_{module}");
         let cap_forward = CapabilityKind::KernelModuleLoad {
@@ -167,7 +169,7 @@ impl RemediationAgent {
             approved: true,
         };
 
-        let blast = PolicyEngine::evaluate_capability(&cap_forward, None);
+        let blast = PolicyEngine::evaluate_capability(&cap_forward, conn);
 
         let forward_step = PlanStep {
             step_id: step_id.clone(),
@@ -210,7 +212,11 @@ impl RemediationAgent {
     }
 
     /// Synthesize an auditable remediation plan for restarting a failed or crashlooping systemd service.
-    pub fn plan_service_restart(&self, unit: &str) -> Result<Plan, RemediationError> {
+    pub fn plan_service_restart(
+        &self,
+        unit: &str,
+        conn: Option<&rusqlite::Connection>,
+    ) -> Result<Plan, RemediationError> {
         let step_id = format!("restart_{}", unit.replace('.', "_"));
         let cap_forward = CapabilityKind::ServiceRestart {
             unit: unit.to_string(),
@@ -220,7 +226,7 @@ impl RemediationAgent {
             unit: unit.to_string(),
         };
 
-        let blast = PolicyEngine::evaluate_capability(&cap_forward, None);
+        let blast = PolicyEngine::evaluate_capability(&cap_forward, conn);
 
         let forward_step = PlanStep {
             step_id: step_id.clone(),
@@ -282,7 +288,7 @@ mod tests {
         });
 
         let plan = agent
-            .plan_kernel_param_tuning("net.ipv4.ip_forward", "1", true)
+            .plan_kernel_param_tuning("net.ipv4.ip_forward", "1", true, None)
             .expect("should synthesize plan");
 
         assert_eq!(plan.steps.len(), 1);
@@ -311,7 +317,7 @@ mod tests {
         });
 
         let err = agent
-            .plan_kernel_param_tuning("kernel.core_pattern", "|/tmp/bad", false)
+            .plan_kernel_param_tuning("kernel.core_pattern", "|/tmp/bad", false, None)
             .expect_err("should reject prohibited parameter");
 
         match err {
@@ -334,7 +340,7 @@ mod tests {
         });
 
         let err = agent
-            .plan_module_load("evil_module", vec![])
+            .plan_module_load("evil_module", vec![], None)
             .expect_err("should reject unlisted module");
 
         match err {
