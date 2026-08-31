@@ -123,8 +123,8 @@ fn test_local_socket_oversized_response_rejected() {
 
     let res = backend.complete("prompt");
     assert!(
-        matches!(res, Err(ConversationalError::BackendError(msg)) if msg.contains("exceeded maximum allowed limit")),
-        "Oversized response must be rejected with error"
+        matches!(res, Err(ConversationalError::BackendError(ref msg)) if msg.contains("exceeded maximum allowed limit")),
+        "Oversized response must be rejected with error: {res:?}"
     );
 
     server_handle.join().unwrap();

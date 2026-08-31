@@ -291,10 +291,30 @@ impl Handler {
             }));
         }
 
+        // Fast-path: Check local rpmdb first (<5ms, zero network or D-Bus latency)
+        if let Some(rpm_bin) = which("rpm") {
+            let is_installed = std::process::Command::new(&rpm_bin)
+                .arg("-q")
+                .arg(package)
+                .status()
+                .map(|s| s.success())
+                .unwrap_or(false);
+            if is_installed {
+                return Ok(json!({
+                    "package": package,
+                    "status": "noop_already_installed",
+                    "adapter": if ostree.is_some() { "rpm-ostree" } else { "rpm" },
+                    "deployment_deferred": false
+                }));
+            }
+        }
+
         if let Some(bin) = ostree {
             let out = std::process::Command::new(&bin)
                 .arg("install")
                 .arg("-y")
+                .arg("--idempotent")
+                .arg("--allow-inactive")
                 .arg(package)
                 .output()
                 .map_err(|e| CapError::Internal(e.to_string()))?;
@@ -385,10 +405,29 @@ impl Handler {
             }));
         }
 
+        // Fast-path: If package is not installed according to local rpmdb, return noop_already_absent (<5ms)
+        if let Some(rpm_bin) = which("rpm") {
+            let not_installed = std::process::Command::new(&rpm_bin)
+                .arg("-q")
+                .arg(package)
+                .status()
+                .map(|s| !s.success())
+                .unwrap_or(false);
+            if not_installed {
+                return Ok(json!({
+                    "package": package,
+                    "status": "noop_already_absent",
+                    "adapter": if ostree.is_some() { "rpm-ostree" } else { "rpm" },
+                    "deployment_deferred": false
+                }));
+            }
+        }
+
         if let Some(bin) = ostree {
             let out = std::process::Command::new(&bin)
                 .arg("uninstall")
                 .arg("-y")
+                .arg("--idempotent")
                 .arg(package)
                 .output()
                 .map_err(|e| CapError::Internal(e.to_string()))?;
