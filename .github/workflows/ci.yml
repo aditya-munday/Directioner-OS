@@ -95,6 +95,8 @@ jobs:
           name: ai-os-qcow2
           path: image/output/qcow2/disk.qcow2
           if-no-files-found: error
+          retention-days: 1
+          compression-level: 9
 
   build-binaries:
     name: build release binaries
@@ -125,6 +127,8 @@ jobs:
           name: ai-binaries
           path: dist_bin/
           if-no-files-found: error
+          retention-days: 1
+          compression-level: 9
 
   vm-smoke:
     name: headless VM boot + SSH smoke test + world-model real sync + live rollback
@@ -462,3 +466,4 @@ jobs:
         with:
           name: vm-console-log
           path: vm/console.log
+          retention-days: 1
