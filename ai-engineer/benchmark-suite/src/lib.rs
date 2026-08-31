@@ -180,6 +180,13 @@ impl BenchmarkRunner {
             Box::new(scenarios::MultiCrateRollbackScenario),
             Box::new(scenarios::AutoApprovePolicyRefusalScenario),
             Box::new(scenarios::CockpitTelemetryScenario),
+            Box::new(scenarios::ConversationalIntentParsingScenario),
+            Box::new(scenarios::ConversationalMultiTurnRefinementScenario),
+            Box::new(scenarios::ConversationalCloudFailoverScenario),
+            Box::new(scenarios::ConversationalLocalFallbackScenario),
+            Box::new(scenarios::ConversationalAdversarialRejectionScenario),
+            Box::new(scenarios::ConversationalStateDriftScenario),
+            Box::new(scenarios::ConversationalSafetyBoundaryScenario),
         ];
 
         Self { scenarios }

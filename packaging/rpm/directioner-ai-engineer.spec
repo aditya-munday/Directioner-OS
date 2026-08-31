@@ -1,3 +1,10 @@
+%{!?_unitdir: %global _unitdir /usr/lib/systemd/system}
+%{!?_sharedstatedir: %global _sharedstatedir /var/lib}
+%{!?systemd_post: %global systemd_post() : }
+%{!?systemd_preun: %global systemd_preun() : }
+%{!?systemd_postun_with_restart: %global systemd_postun_with_restart() : }
+%global debug_package %{nil}
+
 Name:           directioner-ai-engineer
 Version:        0.1.0
 Release:        1%{?dist}

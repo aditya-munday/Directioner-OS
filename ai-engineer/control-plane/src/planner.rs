@@ -202,6 +202,46 @@ impl Planner {
             return Ok((summary, steps, rollbacks));
         }
 
+        // Pattern 3b: Package remove / uninstall
+        if lower.contains("remove package")
+            || lower.contains("uninstall")
+            || lower.starts_with("remove ")
+        {
+            let pkg = lower
+                .trim_start_matches("remove package")
+                .trim_start_matches("uninstall package")
+                .trim_start_matches("uninstall")
+                .trim_start_matches("remove")
+                .split_whitespace()
+                .next()
+                .unwrap_or("curl");
+
+            let summary = format!("Removes package '{pkg}' from system.");
+            let step1_cap = CapabilityKind::PackageRemove {
+                package: pkg.to_string(),
+                approved: true,
+            };
+            steps.push(PlanStep {
+                step_id: "step-1".into(),
+                description: format!("Remove package '{pkg}'"),
+                blast_radius: PolicyEngine::evaluate_capability(&step1_cap, db),
+                capability: step1_cap,
+                timeout_secs: self.config.default_timeout_secs,
+            });
+
+            rollbacks.push(RollbackStep {
+                step_id: "rb-1".into(),
+                description: format!("Reinstall package '{pkg}' if removal failed"),
+                capability: CapabilityKind::PackageInstall {
+                    package: pkg.to_string(),
+                    approved: true,
+                },
+                triggers: vec!["step-1".into()],
+            });
+
+            return Ok((summary, steps, rollbacks));
+        }
+
         // Pattern 4: Generic config write / update
         if lower.contains("config") || lower.contains("write") || lower.contains("set ") {
             let path = self.config.work_root.join("custom.conf");
