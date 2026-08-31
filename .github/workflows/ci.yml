@@ -160,7 +160,7 @@ jobs:
             -b "$(pwd)/vm/disk.qcow2" vm/run.qcow2
 
           qemu-system-x86_64 \
-            -machine accel=$ACCEL -cpu max -m 4096 -smp 4 \
+            -machine accel=$ACCEL -cpu max -m 4096 -smp 2 \
             -drive file=vm/run.qcow2,format=qcow2,if=virtio \
             -netdev user,id=n0,hostfwd=tcp:127.0.0.1:2222-:22 \
             -device virtio-net-pci,netdev=n0 \
