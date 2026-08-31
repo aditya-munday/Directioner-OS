@@ -189,6 +189,7 @@ impl BenchmarkRunner {
             Box::new(scenarios::ConversationalSafetyBoundaryScenario),
             Box::new(scenarios::ConversationalContextCompactionScenario),
             Box::new(scenarios::ConversationalCorruptedModelOutputScenario),
+            Box::new(scenarios::ConversationalExecutionGateScenario),
         ];
 
         Self { scenarios }

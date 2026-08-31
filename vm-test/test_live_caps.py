@@ -51,7 +51,7 @@ if r3.get("status") != "success":
     sys.exit(f"service_stop rb failed: {r3}")
 
 r4 = send_cap(
-    {"capability": "package_install", "package": "htop", "approved": True},
+    {"capability": "package_install", "package": "tree", "approved": True},
     is_rb=False,
 )
 print("r4 package_install:", r4)
@@ -59,7 +59,7 @@ if r4.get("status") != "success":
     sys.exit(f"package_install failed: {r4}")
 
 r5 = send_cap(
-    {"capability": "package_remove", "package": "htop", "approved": True},
+    {"capability": "package_remove", "package": "tree", "approved": True},
     is_rb=True,
 )
 print("r5 package_remove rb:", r5)

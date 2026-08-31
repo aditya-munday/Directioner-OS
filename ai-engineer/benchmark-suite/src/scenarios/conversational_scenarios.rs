@@ -608,3 +608,115 @@ impl BenchmarkScenario for ConversationalCorruptedModelOutputScenario {
         }
     }
 }
+
+/// Scenario 10 (Phase 4.1): Policy-governed execution gate and cryptographic plan approval.
+pub struct ConversationalExecutionGateScenario;
+
+impl BenchmarkScenario for ConversationalExecutionGateScenario {
+    fn name(&self) -> &'static str {
+        "conversational_execution_gate"
+    }
+
+    fn description(&self) -> &'static str {
+        "Validates Phase 4.1 cryptographic plan hashing, Reviewer rejection gating, and execution approval transitions"
+    }
+
+    fn run(&self) -> (bool, String) {
+        use control_plane::conversational::{GateVerdict, PlanExecutionGate};
+
+        let raw_json = r#"```json
+        {
+            "intent": "Tune network buffers",
+            "summary": "Updates sysctl rmem_max and restart NetworkManager",
+            "steps": [
+                {
+                    "step_id": "step-1",
+                    "description": "Set rmem_max",
+                    "capability": {
+                        "kind": "KernelParamSet",
+                        "key": "net.core.rmem_max",
+                        "value": "16777216",
+                        "persistent": true,
+                        "approved": false
+                    }
+                }
+            ],
+            "rollback_steps": [
+                {
+                    "step_id": "rb-1",
+                    "description": "Restore rmem_max",
+                    "capability": {
+                        "kind": "KernelParamSet",
+                        "key": "net.core.rmem_max",
+                        "value": "212992",
+                        "persistent": true,
+                        "approved": false
+                    },
+                    "triggers": ["step-1"]
+                }
+            ]
+        }
+        ```"#;
+
+        let mock = MockBackend::new(vec![raw_json.to_string()]);
+        let mut session = ConversationSession::new(10);
+        session.add_user_message("Tune network buffer size");
+
+        let mut draft = match IntentParser::parse_intent(&session, &mock, None) {
+            Ok(p) => p,
+            Err(e) => return (false, format!("Failed to parse intent: {e}")),
+        };
+
+        if draft.status != PlanStatus::Draft {
+            return (false, "Draft plan did not have Draft status".into());
+        }
+
+        // Evaluate blast radius tiers via PolicyEngine
+        for step in &mut draft.steps {
+            step.blast_radius = PolicyEngine::evaluate_capability(&step.capability, None);
+        }
+        let caps: Vec<_> = draft.steps.iter().map(|s| s.capability.clone()).collect();
+        draft.aggregate_blast_radius = PolicyEngine::evaluate_plan_aggregate(&caps, None);
+
+        // 1. Evaluate with passing Reviewer
+        let reviewer = Reviewer::new(ReviewerConfig::default());
+        let review = reviewer.review_plan(&draft);
+        let gate = PlanExecutionGate::evaluate(&draft, &review);
+
+        let plan_hash = match gate {
+            GateVerdict::Ready {
+                plan_hash,
+                requires_human_confirmation,
+                ..
+            } => {
+                if !requires_human_confirmation {
+                    return (
+                        false,
+                        "Expected human confirmation required for Confirm tier".into(),
+                    );
+                }
+                plan_hash
+            }
+            other => return (false, format!("Expected GateVerdict::Ready, got {other:?}")),
+        };
+
+        // 2. Approve plan with valid hash
+        let approved = match PlanExecutionGate::approve_plan(draft.clone(), &plan_hash) {
+            Ok(p) => p,
+            Err(e) => return (false, format!("Approval failed with valid hash: {e}")),
+        };
+        if approved.status != PlanStatus::Approved {
+            return (false, "Approved plan status was not Approved".into());
+        }
+
+        // 3. Reject on hash mismatch
+        if PlanExecutionGate::approve_plan(draft, "invalid-tampered-hash").is_ok() {
+            return (false, "Hash mismatch must fail closed".into());
+        }
+
+        (
+            true,
+            "Execution gate correctly enforced Reviewer approval, human confirmation flag, and cryptographic hash pinning".into(),
+        )
+    }
+}

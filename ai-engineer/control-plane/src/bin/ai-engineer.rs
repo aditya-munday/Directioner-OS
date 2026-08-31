@@ -17,7 +17,7 @@ use rusqlite::Connection;
 
 fn print_usage() {
     eprintln!(
-        r#"Directioner-OS AI Engineer CLI (Phase 1, 2 & 3 Control Plane)
+        r#"Directioner-OS AI Engineer CLI (Phase 1, 2, 3 & 4 Control Plane)
 
 USAGE:
     ai-engineer <COMMAND> [OPTIONS]
@@ -27,6 +27,8 @@ COMMANDS:
     review <INTENT>      Run independent multi-agent Reviewer audit on synthesized plan
     dry-run <INTENT>     Simulate plan and generate unified diffs without modifying state
     apply <INTENT>       Plan, review, preview, prompt for confirmation, and execute via Capability Layer
+    ask <QUERY>          Grounded conversational intent parsing and interactive plan negotiation
+    chat                 Interactive conversational operator shell
     explain <INTENT>     Provide 3-depth explanation (summary, engineering plan, raw diffs)
     diagnose [PATH]      Scan workspace, parse compiler diagnostics, and localize cross-crate root causes
     fix [PATH]           Synthesize multi-crate repair plan, audit with Reviewer, preview diffs, and apply with verification
@@ -40,6 +42,9 @@ OPTIONS:
     --lock <PATH>        Path to killswitch lockfile (default: /tmp/live-killswitch.lock or /etc/ai-engineer/killswitch.lock)
     --worklog <PATH>     Path to append-only Work Log (default: /var/log/live-worklog.jsonl)
     --work-root <PATH>   Path root for workspace source operations (default: current directory or /tmp/ai-engineer/scope)
+    --apply              Approve and execute conversational plan draft through the Capability Layer
+    -y, --yes            Bypass interactive confirmation prompt (strictly requires non-rejected Reviewer verdict)
+    --confirm-hash <HEX> Verify and pin cryptographic plan hash before execution
     --interval <SECS>    Evaluation interval in seconds for background daemon [default: 30]
     --once               Run one self-healing cycle and exit immediately
     --auto-approve       Bypass interactive confirmation prompt (strictly limited to low-risk Notify tier)
@@ -62,6 +67,9 @@ struct CliArgs {
     interval_secs: u64,
     once: bool,
     auto_approve: bool,
+    apply: bool,
+    yes: bool,
+    confirm_hash: Option<String>,
     depth: u8,
     json: bool,
 }
@@ -96,6 +104,9 @@ fn parse_args() -> Result<CliArgs, String> {
     let mut interval_secs = 30;
     let mut once = false;
     let mut auto_approve = false;
+    let mut apply = false;
+    let mut yes = false;
+    let mut confirm_hash = None;
     let mut depth = 2;
     let mut json = false;
 
@@ -149,6 +160,19 @@ fn parse_args() -> Result<CliArgs, String> {
                 }
                 work_root = PathBuf::from(&args[i]);
             }
+            "--apply" => {
+                apply = true;
+            }
+            "-y" | "--yes" => {
+                yes = true;
+            }
+            "--confirm-hash" => {
+                i += 1;
+                if i >= args.len() {
+                    return Err("--confirm-hash requires an argument".into());
+                }
+                confirm_hash = Some(args[i].clone());
+            }
             "--interval" => {
                 i += 1;
                 if i >= args.len() {
@@ -197,6 +221,9 @@ fn parse_args() -> Result<CliArgs, String> {
         interval_secs,
         once,
         auto_approve,
+        apply,
+        yes,
+        confirm_hash,
         depth,
         json,
     })
@@ -205,9 +232,8 @@ fn parse_args() -> Result<CliArgs, String> {
 fn run_conversational_preview(
     intent: &str,
     session: &mut control_plane::conversational::ConversationSession,
-    work_root: &Path,
+    args: &CliArgs,
     db_conn: Option<&Connection>,
-    json: bool,
 ) {
     session.add_user_message(intent);
 
@@ -240,7 +266,7 @@ fn run_conversational_preview(
         }
     } else {
         let planner = Planner::new(PlannerConfig {
-            work_root: work_root.to_path_buf(),
+            work_root: args.work_root.clone(),
             default_timeout_secs: 30,
         });
         let generated_plan = match planner.create_plan(intent, db_conn) {
@@ -326,21 +352,25 @@ fn run_conversational_preview(
                             value,
                             persistent,
                             approved,
-                        } => control_plane::draft_validator::CandidateCapabilityDraft::KernelParamSet {
-                            key: key.clone(),
-                            value: value.clone(),
-                            persistent: *persistent,
-                            approved: *approved,
-                        },
+                        } => {
+                            control_plane::draft_validator::CandidateCapabilityDraft::KernelParamSet {
+                                key: key.clone(),
+                                value: value.clone(),
+                                persistent: *persistent,
+                                approved: *approved,
+                            }
+                        }
                         capability_layer::CapabilityKind::KernelModuleLoad {
                             module,
                             args,
                             approved,
-                        } => control_plane::draft_validator::CandidateCapabilityDraft::KernelModuleLoad {
-                            module: module.clone(),
-                            args: args.clone(),
-                            approved: *approved,
-                        },
+                        } => {
+                            control_plane::draft_validator::CandidateCapabilityDraft::KernelModuleLoad {
+                                module: module.clone(),
+                                args: args.clone(),
+                                approved: *approved,
+                            }
+                        }
                         capability_layer::CapabilityKind::KernelModuleUnload {
                             module,
                             approved,
@@ -494,20 +524,21 @@ fn run_conversational_preview(
     let reviewer =
         control_plane::reviewer::Reviewer::new(control_plane::reviewer::ReviewerConfig::default());
     let review_report = reviewer.review_plan(&plan);
+    let preview = Simulator::simulate_plan(&plan, Some(&args.work_root));
+    let gate = control_plane::conversational::PlanExecutionGate::evaluate(&plan, &review_report);
 
-    let preview = Simulator::simulate_plan(&plan, Some(work_root));
-
-    if json {
+    if args.json {
         let combined = serde_json::json!({
             "plan_draft": plan,
             "review": review_report,
             "simulation": preview,
-            "execution_status": "DRAFT_ONLY_NOT_WIRED",
+            "gate": gate,
+            "execution_status": if args.apply { "EXECUTING" } else { "PROPOSED" },
         });
         println!("{}", serde_json::to_string_pretty(&combined).unwrap());
     } else {
         println!("══════════════════════════════════════════════════════════════════════");
-        println!("  PHASE 4.0.1 CONVERSATIONAL OPERATOR — VALIDATED PLAN DRAFT");
+        println!("  PHASE 4.1 CONVERSATIONAL OPERATOR — PLAN REVIEW & EXECUTION GATE");
         println!("══════════════════════════════════════════════════════════════════════");
         println!("  Plan ID:     {}", plan.id);
         println!("  Intent:      \"{}\"", plan.intent);
@@ -551,9 +582,94 @@ fn run_conversational_preview(
         println!("──────────────────────────────────────────────────────────────────────");
         println!("{}", preview.render_terminal());
         println!("──────────────────────────────────────────────────────────────────────");
-        println!("  [!] DRAFT ONLY — EXECUTION NOT YET WIRED PER PHASE 4.0.1 SAFETY POLICY");
-        println!("      This plan has been synthesized and strictly schema-validated,");
-        println!("      but autonomous execution authority remains disabled.");
+    }
+
+    if args.apply {
+        match gate {
+            control_plane::conversational::GateVerdict::Rejected { reason, findings } => {
+                eprintln!("\nExecution REFUSED: {reason}");
+                for f in findings {
+                    eprintln!("  - {f}");
+                }
+                exit(1);
+            }
+            control_plane::conversational::GateVerdict::InvalidStatus(st) => {
+                eprintln!("\nExecution REFUSED: Plan status '{st}' is not eligible for execution.");
+                exit(1);
+            }
+            control_plane::conversational::GateVerdict::Ready {
+                plan_hash,
+                tier,
+                requires_human_confirmation,
+            } => {
+                if let Some(ref expected) = args.confirm_hash
+                    && expected != &plan_hash
+                {
+                    eprintln!(
+                        "Execution REFUSED: Cryptographic plan hash mismatch (expected {expected}, calculated {plan_hash})"
+                    );
+                    exit(1);
+                }
+
+                if requires_human_confirmation && !args.yes {
+                    print!(
+                        "\nApply this plan [hash: {}] (Tier: {:?})? [y/N]: ",
+                        &plan_hash[..8],
+                        tier
+                    );
+                    std::io::stdout().flush().unwrap();
+                    let mut line = String::new();
+                    if std::io::stdin().read_line(&mut line).unwrap_or(0) == 0 {
+                        println!("\nPlan execution cancelled by operator.");
+                        exit(0);
+                    }
+                    let resp = line.trim().to_lowercase();
+                    if resp != "y" && resp != "yes" {
+                        println!("Plan execution cancelled by operator.");
+                        exit(0);
+                    }
+                }
+
+                let killswitch = capability_layer::killswitch::KillSwitch::new(&args.lock_path);
+                if killswitch.is_engaged() {
+                    eprintln!("Execution BLOCKED: Killswitch is engaged.");
+                    exit(1);
+                }
+
+                let approved_plan =
+                    match control_plane::conversational::PlanExecutionGate::approve_plan(
+                        plan, &plan_hash,
+                    ) {
+                        Ok(p) => p,
+                        Err(e) => {
+                            eprintln!("Plan approval failed: {e}");
+                            exit(1);
+                        }
+                    };
+
+                let client = CapabilityClient::new(&args.socket_path, "ai-engineer-conversational");
+                let implementer = Implementer::new(&client);
+                let report = implementer.execute_plan(&approved_plan);
+
+                if report.final_status != control_plane::PlanStatus::Completed {
+                    eprintln!(
+                        "\nExecution aborted during step application: {:?}",
+                        report.final_status
+                    );
+                    eprintln!("Message: {}", report.message);
+                    exit(1);
+                }
+
+                println!("══════════════════════════════════════════════════════════════════════");
+                println!(
+                    "  EXECUTION SUCCESSFUL: All {} steps verified and executed.",
+                    approved_plan.steps.len()
+                );
+                println!("══════════════════════════════════════════════════════════════════════");
+            }
+        }
+    } else if !args.json {
+        println!("  [!] DRAFT ONLY — PASS '--apply' TO APPROVE AND EXECUTE THIS PLAN");
         println!("══════════════════════════════════════════════════════════════════════");
     }
 }
@@ -862,21 +978,15 @@ fn main() {
             exit(1);
         }
         let mut session = control_plane::conversational::ConversationSession::new(10);
-        run_conversational_preview(
-            &args.intent,
-            &mut session,
-            &args.work_root,
-            db_conn.as_ref(),
-            args.json,
-        );
+        run_conversational_preview(&args.intent, &mut session, &args, db_conn.as_ref());
         return;
     }
 
     if args.command == "chat" {
         println!("══════════════════════════════════════════════════════════════════════");
-        println!("  Directioner-OS Conversational Operator Shell (Phase 4.0.1)");
+        println!("  Directioner-OS Conversational Operator Shell (Phase 4.1)");
         println!("  Type your operational requests below (Ctrl+C or 'exit' to quit).");
-        println!("  [!] SAFETY NOTICE: All outputs are generated as non-executing DRAFTS.");
+        println!("  [!] Use '--apply' flag to enable execution upon confirmation.");
         println!("══════════════════════════════════════════════════════════════════════");
         let mut session = control_plane::conversational::ConversationSession::new(20);
         let stdin = std::io::stdin();
@@ -897,13 +1007,7 @@ fn main() {
                 println!("Exiting conversational shell.");
                 break;
             }
-            run_conversational_preview(
-                query,
-                &mut session,
-                &args.work_root,
-                db_conn.as_ref(),
-                args.json,
-            );
+            run_conversational_preview(query, &mut session, &args, db_conn.as_ref());
         }
         return;
     }

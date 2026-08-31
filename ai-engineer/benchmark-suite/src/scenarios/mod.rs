@@ -21,9 +21,9 @@ pub use cockpit_telemetry::CockpitTelemetryScenario;
 pub use conversational_scenarios::{
     ConversationalAdversarialRejectionScenario, ConversationalCloudFailoverScenario,
     ConversationalContextCompactionScenario, ConversationalCorruptedModelOutputScenario,
-    ConversationalIntentParsingScenario, ConversationalLocalFallbackScenario,
-    ConversationalMultiTurnRefinementScenario, ConversationalSafetyBoundaryScenario,
-    ConversationalStateDriftScenario,
+    ConversationalExecutionGateScenario, ConversationalIntentParsingScenario,
+    ConversationalLocalFallbackScenario, ConversationalMultiTurnRefinementScenario,
+    ConversationalSafetyBoundaryScenario, ConversationalStateDriftScenario,
 };
 pub use dependency_audit::DependencyAuditScenario;
 pub use killswitch::KillswitchScenario;
