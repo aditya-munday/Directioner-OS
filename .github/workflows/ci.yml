@@ -43,16 +43,23 @@ jobs:
         working-directory: ai-engineer
         run: cargo test --workspace
 
-  build-image:
-    name: bootc image build + qcow2
+  build-and-smoke:
+    name: build release binaries + bootc image + headless VM smoke test
     runs-on: ubuntu-24.04
     needs: rust-tests
+    timeout-minutes: 50
     steps:
       - uses: actions/checkout@v4
-      - name: Install podman
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy, rustfmt
+      - name: build release binaries
+        working-directory: ai-engineer
+        run: cargo build --release --workspace
+      - name: Install dependencies (podman, qemu)
         run: |
           sudo apt-get update
-          sudo apt-get install -y podman
+          sudo apt-get install -y podman qemu-system-x86
       - name: Build OS image (rootful so the builder sees the same storage)
         working-directory: image
         run: |
@@ -89,75 +96,18 @@ jobs:
             --type qcow2 --rootfs xfs --config /config.toml \
             "${{ env.IMAGE_TAG }}"
           ls -la output/qcow2/
-      - name: Upload disk image artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: ai-os-qcow2
-          path: image/output/qcow2/disk.qcow2
-          if-no-files-found: error
-
-  build-binaries:
-    name: build release binaries
-    runs-on: ubuntu-24.04
-    needs: rust-tests
-    steps:
-      - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@stable
-        with:
-          components: clippy, rustfmt
-      - name: build release binaries
-        working-directory: ai-engineer
-        run: cargo build --release --workspace
-      - name: Stage release binaries
-        run: |
-          mkdir -p dist_bin
-          cp ai-engineer/target/release/ai-worldmodel dist_bin/
-          cp ai-engineer/target/release/ai-benchmark dist_bin/
-          cp ai-engineer/target/release/ai-capabilityd dist_bin/
-          cp ai-engineer/target/release/ai-worklog dist_bin/
-          cp ai-engineer/target/release/ai-engineer dist_bin/
-          cp ai-engineer/target/release/ai-health dist_bin/
-          cp ai-engineer/target/release/ai-cockpit dist_bin/
-          ls -la dist_bin/
-      - name: Upload release binaries artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: ai-binaries
-          path: dist_bin/
-          if-no-files-found: error
-
-  vm-smoke:
-    name: headless VM boot + SSH smoke test + world-model real sync + live rollback
-    runs-on: ubuntu-24.04
-    needs: [build-image, build-binaries]
-    timeout-minutes: 50
-    if: ${{ !(github.event.inputs['skip-vm-smoke'] == 'true') }}
-    steps:
-      - uses: actions/checkout@v4
-      - name: Download qcow2 artifact
-        uses: actions/download-artifact@v4
-        with:
-          name: ai-os-qcow2
-          path: vm
-      - name: Download release binaries artifact
-        uses: actions/download-artifact@v4
-        with:
-          name: ai-binaries
-          path: vm/bin
-      - name: Install qemu
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y qemu-system-x86
       - name: Boot image headlessly, wait for SSH, assert motd + systemd + live rollback
+        if: ${{ !(github.event.inputs['skip-vm-smoke'] == 'true') }}
         run: |
           set -euo pipefail
+          mkdir -p vm
           chmod 600 vm-test/ci_key
           ACCEL=tcg
           if [ -e /dev/kvm ] && [ -w /dev/kvm ]; then ACCEL=kvm; fi
           echo "==> accel: $ACCEL"
 
           qemu-img create -f qcow2 -F qcow2 \
-            -b "$(pwd)/vm/disk.qcow2" vm/run.qcow2
+            -b "$(pwd)/image/output/qcow2/disk.qcow2" vm/run.qcow2
 
           qemu-system-x86_64 \
             -machine accel=$ACCEL -cpu max -m 4096 -smp 4 \
@@ -229,7 +179,7 @@ jobs:
           echo '==> assertion 4: deploy release binaries to /var/lib/ai-bin in the booted VM'
           ssh_cmd "sudo mkdir -p /var/lib/ai-bin"
           for b in ai-worldmodel ai-benchmark ai-capabilityd ai-worklog ai-engineer ai-health ai-cockpit; do
-            BIN_PATH=$(find vm -name "$b" -type f | head -1)
+            BIN_PATH="ai-engineer/target/release/$b"
             echo "deploying binary: $BIN_PATH -> /var/lib/ai-bin/$b"
             scp $SCP_OPTS "$BIN_PATH" ci@127.0.0.1:/tmp/$b
             ssh_cmd "sudo cp /tmp/$b /var/lib/ai-bin/$b && sudo chmod 755 /var/lib/ai-bin/$b && sudo chcon -t bin_t /var/lib/ai-bin/$b 2>/dev/null || true"
@@ -456,9 +406,10 @@ jobs:
           ssh_cmd 'python3 /tmp/test_phase3_self_healing.py'
 
           echo '==> END TO END PASS (Phase 3.0.1, 3.0.2, 3.0.3, 3.0.4, 3.1 Boot Mechanics + Health Model + Self-Healing Verified)'
-      - name: Upload console log on failure
+      - name: Print console log on failure
         if: failure()
-        uses: actions/upload-artifact@v4
-        with:
-          name: vm-console-log
-          path: vm/console.log
+        run: |
+          if [ -f vm/console.log ]; then
+            echo "=== VM CONSOLE LOG ==="
+            tail -200 vm/console.log
+          fi
