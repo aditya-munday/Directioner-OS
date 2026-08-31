@@ -475,3 +475,136 @@ impl BenchmarkScenario for ConversationalSafetyBoundaryScenario {
         (true, "Dangerous conversational draft was classified ExpertReview (95/100) and Fatal-rejected by Reviewer".into())
     }
 }
+
+/// Scenario 8: Conversational session context compaction and history trimming under extended dialogues.
+pub struct ConversationalContextCompactionScenario;
+
+impl BenchmarkScenario for ConversationalContextCompactionScenario {
+    fn name(&self) -> &'static str {
+        "conversational_context_compaction"
+    }
+
+    fn description(&self) -> &'static str {
+        "Validates that multi-turn sessions properly prune older history turns while preserving grounding framing and synthesizability"
+    }
+
+    fn run(&self) -> (bool, String) {
+        let valid_draft = r#"```json
+        {
+            "intent": "Restart chrony NTP service after 10 dialogue turns",
+            "summary": "Restarts chronyd daemon",
+            "steps": [
+                {
+                    "step_id": "s1",
+                    "description": "Restart chrony",
+                    "capability": {
+                        "kind": "ServiceRestart",
+                        "unit": "chronyd.service",
+                        "approved": false
+                    }
+                }
+            ]
+        }
+        ```"#;
+
+        let mock = MockBackend::new(vec![valid_draft.to_string()]);
+        // Set maximum turns to 4
+        let mut session = ConversationSession::new(4);
+
+        // Add 8 dialogue turns
+        for i in 1..=8 {
+            session.add_user_message(&format!("Operator query #{i}: check status of chronyd"));
+            session.add_assistant_message(&format!("Assistant response #{i}: chronyd is active"));
+        }
+
+        // Add final request
+        session.add_user_message("Please restart chronyd now.");
+
+        // Assert history is capped at max_turns (4)
+        if session.history.len() > 4 {
+            return (
+                false,
+                format!("Expected history <= 4, got {}", session.history.len()),
+            );
+        }
+
+        // Render prompt and verify system framing is intact
+        let prompt = session.render_prompt("Host: fedora-41-directioner | Arch: x86_64");
+        if !prompt.contains("<|im_start|>system") || !prompt.contains("fedora-41-directioner") {
+            return (
+                false,
+                "Rendered prompt missing system grounding facts or system role framing".into(),
+            );
+        }
+
+        // Parse intent into valid plan draft
+        let plan = match IntentParser::parse_intent(
+            &session,
+            &mock,
+            Some("Host: fedora-41-directioner"),
+        ) {
+            Ok(p) => p,
+            Err(e) => {
+                return (
+                    false,
+                    format!("Failed to parse intent after compaction: {e}"),
+                );
+            }
+        };
+
+        if plan.status != PlanStatus::Draft {
+            return (false, "Parsed plan status was not Draft".into());
+        }
+
+        (
+            true,
+            "History compacted to 4 turns without losing system grounding or draft synthesis validity".into(),
+        )
+    }
+}
+
+/// Scenario 9: Conversational fail-closed handling of malformed or corrupted LLM model output.
+pub struct ConversationalCorruptedModelOutputScenario;
+
+impl BenchmarkScenario for ConversationalCorruptedModelOutputScenario {
+    fn name(&self) -> &'static str {
+        "conversational_corrupted_model_output"
+    }
+
+    fn description(&self) -> &'static str {
+        "Validates that truncated JSON, hallucinated capability kinds, and syntax errors fail closed gracefully"
+    }
+
+    fn run(&self) -> (bool, String) {
+        let truncated_json = r#"```json
+        {
+            "intent": "Restart httpd",
+            "summary": "Restarts httpd",
+            "steps": [
+                {
+                    "step_id": "s1",
+                    "capability": {
+                        "kind": "NonExistentMagicCapability",
+        "#;
+
+        let mock = MockBackend::new(vec![truncated_json.to_string()]);
+        let mut session = ConversationSession::new(10);
+        session.add_user_message("Fix httpd");
+
+        let result = IntentParser::parse_intent(&session, &mock, None);
+        match result {
+            Ok(_) => (
+                false,
+                "Expected validation error on truncated/hallucinated model output, but got Ok(plan)".into(),
+            ),
+            Err(ConversationalError::ValidationFailed(ve)) => (
+                true,
+                format!("Malformed model output cleanly failed closed with validation error: {ve}"),
+            ),
+            Err(other) => (
+                false,
+                format!("Expected ValidationFailed error, got: {other:?}"),
+            ),
+        }
+    }
+}

@@ -20,6 +20,7 @@ pub use blast_radius::BlastRadiusScenario;
 pub use cockpit_telemetry::CockpitTelemetryScenario;
 pub use conversational_scenarios::{
     ConversationalAdversarialRejectionScenario, ConversationalCloudFailoverScenario,
+    ConversationalContextCompactionScenario, ConversationalCorruptedModelOutputScenario,
     ConversationalIntentParsingScenario, ConversationalLocalFallbackScenario,
     ConversationalMultiTurnRefinementScenario, ConversationalSafetyBoundaryScenario,
     ConversationalStateDriftScenario,
