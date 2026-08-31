@@ -73,13 +73,16 @@ fn test_concurrent_read_access_during_active_sync() {
             let conn = db::open(&dbp_clone).unwrap();
             let mut reads_performed = 0;
 
-            while running_clone.load(Ordering::SeqCst) {
+            loop {
                 // Reader queries
                 let _ = query::reverse_deps(&conn, "glibc");
                 let _ = query::graph_stats(&conn);
                 let _ = query::requires(&conn, "base-system");
                 let _ = query::unit_info(&conn, "nginx.service");
                 reads_performed += 1;
+                if !running_clone.load(Ordering::SeqCst) {
+                    break;
+                }
                 thread::sleep(Duration::from_millis(1));
             }
 
@@ -91,11 +94,11 @@ fn test_concurrent_read_access_during_active_sync() {
         }));
     }
 
-    // Writer thread performing 10 sync iterations
+    // Writer thread performing 15 sync iterations
     let dbp_writer = dbp.clone();
     let writer_handle = thread::spawn(move || {
         let conn = db::open(&dbp_writer).unwrap();
-        for iter in 0..10 {
+        for iter in 0..15 {
             let pkg_name = format!("pkg-{iter}");
             let data = PackageData {
                 packages: vec![PackageRow {
@@ -123,7 +126,7 @@ fn test_concurrent_read_access_during_active_sync() {
             }];
             sync::apply_unit_snapshot(&conn, &unit_snap).unwrap();
 
-            thread::sleep(Duration::from_millis(5));
+            thread::sleep(Duration::from_millis(10));
         }
     });
 
