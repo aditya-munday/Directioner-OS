@@ -107,6 +107,9 @@ fn test_local_socket_oversized_response_rejected() {
 
     let server_handle = thread::spawn(move || {
         let (mut stream, _) = listener.accept().unwrap();
+        let mut reader = BufReader::new(stream.try_clone().unwrap());
+        let mut line = String::new();
+        let _ = reader.read_line(&mut line);
         // Send large data exceeding the 1024 byte limit set for this test
         let large_payload = vec![b'A'; 2048];
         let _ = stream.write_all(&large_payload);
@@ -140,6 +143,9 @@ fn test_local_socket_empty_response_fails_closed() {
 
     let server_handle = thread::spawn(move || {
         let (stream, _) = listener.accept().unwrap();
+        let mut reader = BufReader::new(stream.try_clone().unwrap());
+        let mut line = String::new();
+        let _ = reader.read_line(&mut line);
         drop(stream); // Immediate EOF
     });
 
