@@ -84,10 +84,10 @@ real hardware before it is proven in a disposable VM.
 - [x] Phase 1.4 Work Log UI & 3-Depth Explanations: `ai-engineer explain <intent> --depth 1|2|3`
 - [x] Phase 1.5 Blast-radius scoring & policy engine: 4-tier approval gates (`auto`, `notify`, `confirm`, `expert_review`)
       with World Model reverse dependency scaling and protected system daemons
-- [x] Phase 1.6 AI Engineer Benchmark Suite: 12 real-world system scenarios, scored runner `ai-benchmark` (12/12 passing, 100.0%)
+- [x] Phase 1.6 AI Engineer Benchmark Suite: 22 real-world system scenarios, scored runner `ai-benchmark` (22/22 passing, 100.0%)
 - [x] Phase 2.1 Multi-Agent Reviewer Role: independent safety audit pass, invariant checks (`/etc/sudoers.d`, critical paths, packages, units), rollback completeness validation
 - [x] Phase 2.2 Workspace Symbol Indexing & Cross-Crate Localization: `WorkspaceSymbolGraph` AST indexing, root-cause localization across crate boundaries
-- [x] Phase 2.3 Diagnostic CLI Subcommands: `ai-engineer diagnose` and `ai-engineer fix` with machine suggestion patch generation and clean refusal when suggestions are absent
+- [x] Phase 2.3 Diagnostic CLI Subcommands: `ai-engineer diagnose` and `ai-engineer fix` with autonomous semantic code synthesis for non-machine suggestions
 - [x] Phase 2.4 Policy Engine Hardening: crate-boundary dispersion risk penalties (+15 for 2 crates, +25 for >= 3 crates) and Reviewer multi-crate warnings
 - [x] Phase 2 Tooling: Operational Cockpit (`ai-cockpit` CLI, `CockpitState`, real-time ANSI terminal dashboard and `--json` telemetry)
 - [x] Phase 3.0.1 Autonomous Boot-Slot Pinning & Tier 1 Watchdog Mechanics: GRUB2/greenboot retry countdown, `boot_slot.pin`, automatic ostree deployment rollback below user-space, verified under live QEMU guest with SELinux Enforcing
@@ -95,15 +95,29 @@ real hardware before it is proven in a disposable VM.
 - [x] Phase 3.0.3 Incident Response Observer Boundary: strictly read-only post-hoc observer component with zero mutating capability authority
 - [x] Phase 3.0.4 Tier 2 Controlled Remediation: runtime/persistent kernel sysctl tuning (`KernelParamSet`), allowlisted dynamic kernel module loading/unloading (`KernelModuleLoad`/`KernelModuleUnload`) with kernel refcount protection and pre-captured rollback values
 - [x] Phase 3.1 Closed-Loop Self-Healing Engine: multi-layer circuit breakers, per-entity attempt limits, global velocity throttles, anti-flap duration filters, strict Notify-tier ceilings with pre-dispatch auditing, and a guaranteed disabled-by-default configuration (`self_healing.enabled = false`)
+- [x] Phase 4.0.1 Policy-Governed Conversational Operator (Draft-Only): Pluggable `ModelBackend`, `ConversationSession` context manager, 4-layer `PlanDraftValidator` with pre-flight state drift checks, anti-jailbreak input sanitization
+- [x] Phase 4.1 Policy-Governed Conversational Execution Wiring: Cryptographic 16-hex plan hashing, Reviewer veto hard-gating, human-in-the-loop confirmation prompts (`y/N`), `--apply`, `-y`, and `--confirm-hash` execution flags
 
-### Consolidated Deferred & Known-Incomplete Register
-See [`docs/deferred-items.md`](file:///home/aditya_munday/projects/Directioner-OS/docs/deferred-items.md) for the unified register of deferred capabilities across all phases.
+### Consolidated Deferred Register
+All 5 items in [`docs/deferred-items.md`](file:///home/aditya_munday/projects/Directioner-OS/docs/deferred-items.md) (Native RPM packaging, Autonomous semantic code synthesis, Incremental symbol graph, Dynamic live package unlayering, and Self-healing disabled defaults) are **100% completed and verified**.
 
-See `docs/phase-0-checklist.md`, `docs/phase-1-checklist.md`, `docs/phase-2-checklist.md`, and `docs/phase-3-checklist.md` for detailed tracking.
+Detailed tracking: [`docs/phase-0-checklist.md`](file:///home/aditya_munday/projects/Directioner-OS/docs/phase-0-checklist.md), [`docs/phase-1-checklist.md`](file:///home/aditya_munday/projects/Directioner-OS/docs/phase-1-checklist.md), [`docs/phase-2-checklist.md`](file:///home/aditya_munday/projects/Directioner-OS/docs/phase-2-checklist.md), [`docs/phase-3-checklist.md`](file:///home/aditya_munday/projects/Directioner-OS/docs/phase-3-checklist.md), [`docs/phase-4-checklist.md`](file:///home/aditya_munday/projects/Directioner-OS/docs/phase-4-checklist.md), [`docs/phase-4.1-checklist.md`](file:///home/aditya_munday/projects/Directioner-OS/docs/phase-4.1-checklist.md).
 
 ## AI Engineer CLI Commands
 
-### 1. Plan & Dry-Run
+### 1. Conversational Intent & Plan Execution
+```sh
+# Grounded natural language query & plan draft proposal
+cargo run -p control-plane --bin ai-engineer -- ask "Tune network receive buffer to 16MB"
+
+# Apply synthesized plan with policy & Reviewer gating
+cargo run -p control-plane --bin ai-engineer -- ask "Restart chrony NTP service" --apply
+
+# Interactive conversational operator shell
+cargo run -p control-plane --bin ai-engineer -- chat
+```
+
+### 2. Plan, Dry-Run & 3-Depth Explanations
 ```sh
 # Generate dry-run preview with unified diffs
 cargo run -p control-plane --bin ai-engineer -- dry-run "configure nginx on port 8080"
@@ -112,21 +126,21 @@ cargo run -p control-plane --bin ai-engineer -- dry-run "configure nginx on port
 cargo run -p control-plane --bin ai-engineer -- explain "configure nginx on port 8080" --depth 2
 ```
 
-### 2. Diagnostics & Automated Remediation
+### 3. Diagnostics & Automated Remediation
 ```sh
 # Inspect and diagnose compilation errors across workspace
 cargo run -p control-plane --bin ai-engineer -- diagnose <path>
 
-# Synthesize and apply machine-applicable compiler fixes
+# Synthesize and apply AST/diagnostic repairs
 cargo run -p control-plane --bin ai-engineer -- fix <path> [--auto-approve]
 ```
 
-### 3. Operational Cockpit & Benchmark Suite
+### 4. Operational Cockpit & Benchmark Suite
 ```sh
 # Launch live 1s refresh cockpit dashboard
 cargo run -p control-plane --bin ai-cockpit --watch
 
-# Execute complete 12-scenario benchmark suite
+# Execute complete 22-scenario benchmark suite
 cargo run -p benchmark-suite --bin ai-benchmark
 ```
 
