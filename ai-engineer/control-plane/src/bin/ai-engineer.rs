@@ -42,9 +42,6 @@ OPTIONS:
     --lock <PATH>        Path to killswitch lockfile (default: /tmp/live-killswitch.lock or /etc/ai-engineer/killswitch.lock)
     --worklog <PATH>     Path to append-only Work Log (default: /var/log/live-worklog.jsonl)
     --work-root <PATH>   Path root for workspace source operations (default: current directory or /tmp/ai-engineer/scope)
-    --apply              Approve and execute conversational plan draft through the Capability Layer
-    -y, --yes            Bypass interactive confirmation prompt (strictly requires non-rejected Reviewer verdict)
-    --confirm-hash <HEX> Verify and pin cryptographic plan hash before execution
     --interval <SECS>    Evaluation interval in seconds for background daemon [default: 30]
     --once               Run one self-healing cycle and exit immediately
     --auto-approve       Bypass interactive confirmation prompt (strictly limited to low-risk Notify tier)
@@ -67,9 +64,6 @@ struct CliArgs {
     interval_secs: u64,
     once: bool,
     auto_approve: bool,
-    apply: bool,
-    yes: bool,
-    confirm_hash: Option<String>,
     depth: u8,
     json: bool,
 }
@@ -104,9 +98,6 @@ fn parse_args() -> Result<CliArgs, String> {
     let mut interval_secs = 30;
     let mut once = false;
     let mut auto_approve = false;
-    let mut apply = false;
-    let mut yes = false;
-    let mut confirm_hash = None;
     let mut depth = 2;
     let mut json = false;
 
@@ -160,25 +151,14 @@ fn parse_args() -> Result<CliArgs, String> {
                 }
                 work_root = PathBuf::from(&args[i]);
             }
-            "--apply" => {
-                apply = true;
-            }
-            "-y" | "--yes" => {
-                yes = true;
-            }
-            "--confirm-hash" => {
-                i += 1;
-                if i >= args.len() {
-                    return Err("--confirm-hash requires an argument".into());
-                }
-                confirm_hash = Some(args[i].clone());
-            }
             "--interval" => {
                 i += 1;
                 if i >= args.len() {
-                    return Err("--interval requires an integer argument".into());
+                    return Err("--interval requires an argument".into());
                 }
-                interval_secs = args[i].parse::<u64>().unwrap_or(30);
+                interval_secs = args[i]
+                    .parse()
+                    .map_err(|_| "--interval must be an integer".to_string())?;
             }
             "--once" => {
                 once = true;
@@ -189,29 +169,36 @@ fn parse_args() -> Result<CliArgs, String> {
             "--depth" => {
                 i += 1;
                 if i >= args.len() {
-                    return Err("--depth requires an argument (1, 2, or 3)".into());
+                    return Err("--depth requires an argument".into());
                 }
-                depth = args[i].parse::<u8>().unwrap_or(2);
+                depth = args[i]
+                    .parse()
+                    .map_err(|_| "--depth must be 1, 2, or 3".to_string())?;
             }
             "--json" => {
                 json = true;
             }
-            _ => {
+            val if val.starts_with('-') => {
+                return Err(format!("Unknown option: {val}"));
+            }
+            val => {
                 if command.is_empty() {
-                    command = arg.clone();
+                    command = val.to_string();
                 } else {
-                    intent_parts.push(arg.clone());
+                    intent_parts.push(val.to_string());
                 }
             }
         }
         i += 1;
     }
 
-    let intent = intent_parts.join(" ");
+    if command.is_empty() {
+        command = "help".to_string();
+    }
 
     Ok(CliArgs {
         command,
-        intent,
+        intent: intent_parts.join(" "),
         config_path,
         socket_path,
         db_path,
@@ -221,9 +208,6 @@ fn parse_args() -> Result<CliArgs, String> {
         interval_secs,
         once,
         auto_approve,
-        apply,
-        yes,
-        confirm_hash,
         depth,
         json,
     })
@@ -533,12 +517,12 @@ fn run_conversational_preview(
             "review": review_report,
             "simulation": preview,
             "gate": gate,
-            "execution_status": if args.apply { "EXECUTING" } else { "PROPOSED" },
+            "execution_status": "DRAFT_ONLY",
         });
         println!("{}", serde_json::to_string_pretty(&combined).unwrap());
     } else {
         println!("══════════════════════════════════════════════════════════════════════");
-        println!("  PHASE 4.1 CONVERSATIONAL OPERATOR — PLAN REVIEW & EXECUTION GATE");
+        println!("  PHASE 4.0.1 CONVERSATIONAL OPERATOR (DRAFT-ONLY PROPOSAL)");
         println!("══════════════════════════════════════════════════════════════════════");
         println!("  Plan ID:     {}", plan.id);
         println!("  Intent:      \"{}\"", plan.intent);
@@ -582,94 +566,7 @@ fn run_conversational_preview(
         println!("──────────────────────────────────────────────────────────────────────");
         println!("{}", preview.render_terminal());
         println!("──────────────────────────────────────────────────────────────────────");
-    }
-
-    if args.apply {
-        match gate {
-            control_plane::conversational::GateVerdict::Rejected { reason, findings } => {
-                eprintln!("\nExecution REFUSED: {reason}");
-                for f in findings {
-                    eprintln!("  - {f}");
-                }
-                exit(1);
-            }
-            control_plane::conversational::GateVerdict::InvalidStatus(st) => {
-                eprintln!("\nExecution REFUSED: Plan status '{st}' is not eligible for execution.");
-                exit(1);
-            }
-            control_plane::conversational::GateVerdict::Ready {
-                plan_hash,
-                tier,
-                requires_human_confirmation,
-            } => {
-                if let Some(ref expected) = args.confirm_hash
-                    && expected != &plan_hash
-                {
-                    eprintln!(
-                        "Execution REFUSED: Cryptographic plan hash mismatch (expected {expected}, calculated {plan_hash})"
-                    );
-                    exit(1);
-                }
-
-                if requires_human_confirmation && !args.yes {
-                    print!(
-                        "\nApply this plan [hash: {}] (Tier: {:?})? [y/N]: ",
-                        &plan_hash[..8],
-                        tier
-                    );
-                    std::io::stdout().flush().unwrap();
-                    let mut line = String::new();
-                    if std::io::stdin().read_line(&mut line).unwrap_or(0) == 0 {
-                        println!("\nPlan execution cancelled by operator.");
-                        exit(0);
-                    }
-                    let resp = line.trim().to_lowercase();
-                    if resp != "y" && resp != "yes" {
-                        println!("Plan execution cancelled by operator.");
-                        exit(0);
-                    }
-                }
-
-                let killswitch = capability_layer::killswitch::KillSwitch::new(&args.lock_path);
-                if killswitch.is_engaged() {
-                    eprintln!("Execution BLOCKED: Killswitch is engaged.");
-                    exit(1);
-                }
-
-                let approved_plan =
-                    match control_plane::conversational::PlanExecutionGate::approve_plan(
-                        plan, &plan_hash,
-                    ) {
-                        Ok(p) => p,
-                        Err(e) => {
-                            eprintln!("Plan approval failed: {e}");
-                            exit(1);
-                        }
-                    };
-
-                let client = CapabilityClient::new(&args.socket_path, "ai-engineer-conversational");
-                let implementer = Implementer::new(&client);
-                let report = implementer.execute_plan(&approved_plan);
-
-                if report.final_status != control_plane::PlanStatus::Completed {
-                    eprintln!(
-                        "\nExecution aborted during step application: {:?}",
-                        report.final_status
-                    );
-                    eprintln!("Message: {}", report.message);
-                    exit(1);
-                }
-
-                println!("══════════════════════════════════════════════════════════════════════");
-                println!(
-                    "  EXECUTION SUCCESSFUL: All {} steps verified and executed.",
-                    approved_plan.steps.len()
-                );
-                println!("══════════════════════════════════════════════════════════════════════");
-            }
-        }
-    } else if !args.json {
-        println!("  [!] DRAFT ONLY — PASS '--apply' TO APPROVE AND EXECUTE THIS PLAN");
+        println!("  [!] DRAFT ONLY — CONVERSATIONAL EXECUTION NOT WIRED IN PHASE 4.0.1");
         println!("══════════════════════════════════════════════════════════════════════");
     }
 }
@@ -984,9 +881,9 @@ fn main() {
 
     if args.command == "chat" {
         println!("══════════════════════════════════════════════════════════════════════");
-        println!("  Directioner-OS Conversational Operator Shell (Phase 4.1)");
+        println!("  Directioner-OS Conversational Operator Shell (Phase 4.0.1 Draft-Only)");
         println!("  Type your operational requests below (Ctrl+C or 'exit' to quit).");
-        println!("  [!] Use '--apply' flag to enable execution upon confirmation.");
+        println!("  [!] Plans are generated as drafts. Execution is not wired in Phase 4.0.1.");
         println!("══════════════════════════════════════════════════════════════════════");
         let mut session = control_plane::conversational::ConversationSession::new(20);
         let stdin = std::io::stdin();

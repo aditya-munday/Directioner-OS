@@ -609,7 +609,7 @@ impl BenchmarkScenario for ConversationalCorruptedModelOutputScenario {
     }
 }
 
-/// Scenario 10 (Phase 4.1): Policy-governed execution gate and cryptographic plan approval.
+/// Scenario 10: Policy-governed execution gate and cryptographic plan approval.
 pub struct ConversationalExecutionGateScenario;
 
 impl BenchmarkScenario for ConversationalExecutionGateScenario {
@@ -618,7 +618,7 @@ impl BenchmarkScenario for ConversationalExecutionGateScenario {
     }
 
     fn description(&self) -> &'static str {
-        "Validates Phase 4.1 cryptographic plan hashing, Reviewer rejection gating, and execution approval transitions"
+        "Validates cryptographic plan hashing, Reviewer rejection gating, and in-memory approval transitions"
     }
 
     fn run(&self) -> (bool, String) {

@@ -697,7 +697,7 @@ impl IntentParser {
     }
 }
 
-/// Result of evaluating a plan against the execution gate (Phase 4.1).
+/// Result of evaluating a plan against the execution gate.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub enum GateVerdict {
     /// Plan satisfies reviewer invariants and is ready for execution.
@@ -720,7 +720,7 @@ pub enum GateVerdict {
     InvalidStatus(String),
 }
 
-/// Cryptographic Plan Execution Gate (Phase 4.1).
+/// Cryptographic Plan Execution Gate.
 ///
 /// Ensures deterministic out-of-band human confirmation, cryptographic hash
 /// pinning, and invariant readiness before allowing any plan to transition
