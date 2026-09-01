@@ -11,10 +11,14 @@ use crate::{
     CapError, CapabilityKind, CapabilityRequest, CapabilityResponse, MAX_READ_BYTES, Result,
 };
 
+/// Configuration settings for the Capability [`Handler`].
 #[derive(Debug, Clone)]
 pub struct HandlerConfig {
+    /// Whether explicit approval tokens are required for mutating capabilities.
     pub approval_required: bool,
+    /// Protected systemd units that cannot be stopped or restarted.
     pub protected_units: Vec<String>,
+    /// Whether package mutations operate in simulated dry-run mode.
     pub dry_run: bool,
 }
 
@@ -28,14 +32,20 @@ impl Default for HandlerConfig {
     }
 }
 
+/// Central dispatcher executing typed capability requests against system APIs.
 pub struct Handler {
+    /// Filesystem sandbox path resolver.
     pub scope: ScopedPath,
+    /// Append-only audit journal.
     pub audit: AuditLog,
+    /// Hardware/file killswitch controller.
     pub killswitch: KillSwitch,
+    /// Active handler configuration.
     pub config: HandlerConfig,
 }
 
 impl Handler {
+    /// Initializes a new Handler instance with scope, audit log, killswitch, and config.
     pub fn new(
         scope: ScopedPath,
         audit: AuditLog,
@@ -50,6 +60,7 @@ impl Handler {
         }
     }
 
+    /// Validates, audits, and executes a capability request, returning the sequence number and response.
     pub fn execute(&mut self, req: &CapabilityRequest) -> Result<(u64, CapabilityResponse)> {
         let started = Instant::now();
         let capability = capability_name(&req.capability);

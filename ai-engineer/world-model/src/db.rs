@@ -1,8 +1,12 @@
+//! Database initialization, schema migration, and key-value metadata management.
+
 use rusqlite::{Connection, params};
 use std::path::Path;
 
+/// Embedded SQL schema definition string.
 pub const SCHEMA_SQL: &str = include_str!("../schema.sql");
 
+/// Opens or creates an SQLite database connection at `path`, setting WAL mode, pragmas, and schema.
 pub fn open(path: &Path) -> rusqlite::Result<Connection> {
     if let Some(parent) = path.parent()
         && !parent.as_os_str().is_empty()
@@ -18,6 +22,7 @@ pub fn open(path: &Path) -> rusqlite::Result<Connection> {
     Ok(conn)
 }
 
+/// Retrieves a metadata value by key from the `meta` table.
 pub fn get_meta(conn: &Connection, key: &str) -> Option<String> {
     conn.query_row("SELECT value FROM meta WHERE key = ?1", params![key], |r| {
         r.get(0)
@@ -25,6 +30,7 @@ pub fn get_meta(conn: &Connection, key: &str) -> Option<String> {
     .ok()
 }
 
+/// Sets or updates a metadata key-value pair in the `meta` table.
 pub fn set_meta(conn: &Connection, key: &str, value: &str) -> rusqlite::Result<()> {
     conn.execute(
         "INSERT INTO meta(key, value) VALUES (?1, ?2)\n         ON CONFLICT(key) DO UPDATE SET value = excluded.value",

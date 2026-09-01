@@ -1,15 +1,28 @@
-use crate::model::{PackageData, PackageRow, ProvideEdge, RequireEdge, UnitSnapshot};
+//! Data extraction adapters and source readers for the World Model.
+//!
+//! Provides parsers for `dnf5`/`rpm` package line protocols, `systemctl` JSON snapshots,
+//! `/proc/mounts` storage utilization, `/sys/class/thermal` sensors, and network interface telemetry.
+
+use crate::model::{
+    DiskSnapshot, NetIfaceSnapshot, PackageData, PackageRow, ProvideEdge, RequireEdge,
+    ThermalSnapshot, UnitSnapshot,
+};
 use std::path::Path;
 use std::process::Command;
 
+/// Command specification wrapper allowing custom execution paths and PATH overrides.
 #[derive(Debug, Clone)]
 pub struct CmdSpec {
+    /// Executable program path or name.
     pub program: std::path::PathBuf,
+    /// Command line arguments.
     pub args: Vec<String>,
+    /// Optional directory to prepend to `PATH` environment variable.
     pub path_override: Option<std::path::PathBuf>,
 }
 
 impl CmdSpec {
+    /// Creates a new command specification for the given program.
     pub fn new(program: impl Into<std::path::PathBuf>) -> Self {
         Self {
             program: program.into(),
@@ -18,16 +31,19 @@ impl CmdSpec {
         }
     }
 
+    /// Appends an argument to the command specification.
     pub fn arg(mut self, a: impl Into<String>) -> Self {
         self.args.push(a.into());
         self
     }
 
+    /// Configures an optional directory override prepended to the system PATH.
     pub fn with_path_override(mut self, dir: Option<&Path>) -> Self {
         self.path_override = dir.map(|p| p.to_path_buf());
         self
     }
 
+    /// Executes the configured command and returns the standard output.
     pub fn output(&self) -> std::io::Result<std::process::Output> {
         let mut c = Command::new(&self.program);
         c.args(&self.args);
@@ -44,11 +60,13 @@ impl CmdSpec {
     }
 }
 
+/// Queryformat string for DNF5 / RPM repoquery line protocol extraction.
 pub const REPOQUERY_QF: &str = "PKG|%{NAME}|%{EVR}|%{ARCH}|%{SUMMARY}\n\
 [REQ|%{REQUIRENAME}|%{REQUIREFLAGS:depflags}|%{REQUIREVERSION}\n]\
 [PROV|%{PROVIDENAME}|%{PROVIDEVERSION}\n]\
 END\n";
 
+/// Returns a [`CmdSpec`] targeting `dnf5 repoquery --installed`.
 pub fn dnf5_repoquery_spec(path_override: Option<&Path>) -> CmdSpec {
     CmdSpec::new("dnf5")
         .arg("repoquery")
@@ -58,6 +76,7 @@ pub fn dnf5_repoquery_spec(path_override: Option<&Path>) -> CmdSpec {
         .with_path_override(path_override)
 }
 
+/// Returns a [`CmdSpec`] targeting `rpm -qa`.
 pub fn rpm_qa_spec(path_override: Option<&Path>) -> CmdSpec {
     CmdSpec::new("rpm")
         .arg("-qa")
@@ -66,6 +85,7 @@ pub fn rpm_qa_spec(path_override: Option<&Path>) -> CmdSpec {
         .with_path_override(path_override)
 }
 
+/// Returns a [`CmdSpec`] targeting `systemctl list-units`.
 pub fn systemctl_list_units_spec(path_override: Option<&Path>) -> CmdSpec {
     CmdSpec::new("systemctl")
         .arg("list-units")
@@ -75,6 +95,7 @@ pub fn systemctl_list_units_spec(path_override: Option<&Path>) -> CmdSpec {
         .with_path_override(path_override)
 }
 
+/// Returns a [`CmdSpec`] targeting `systemctl list-unit-files`.
 pub fn systemctl_unit_files_spec(path_override: Option<&Path>) -> CmdSpec {
     CmdSpec::new("systemctl")
         .arg("list-unit-files")
@@ -87,6 +108,7 @@ fn sanitize(field: &str) -> String {
     field.replace(['\t', '\r', '\n'], " ").trim().to_string()
 }
 
+/// Parses the line protocol text emitted by `dnf5 repoquery` or `rpm -qa` into [`PackageData`].
 pub fn parse_line_protocol(text: &str) -> Result<PackageData, String> {
     let mut data = PackageData::default();
     let mut current: Option<String> = None;
@@ -186,6 +208,7 @@ fn json_array(bytes: &[u8], what: &str) -> Result<Vec<serde_json::Value>, String
     Ok(v.as_array().cloned().unwrap_or_default())
 }
 
+/// Loads and reconciles unit states from `systemctl list-units` and `list-unit-files`.
 pub fn load_unit_snapshot(
     units_spec: &CmdSpec,
     files_spec: &CmdSpec,
@@ -244,4 +267,66 @@ pub fn load_unit_snapshot(
     }
     snap.sort_by(|a, b| a.name.cmp(&b.name));
     Ok(snap)
+}
+
+/// Parses raw mount text (e.g. `/proc/mounts`) and synthetic disk capacity records into [`DiskSnapshot`].
+pub fn parse_mounts_protocol(text: &str) -> Vec<DiskSnapshot> {
+    let mut disks = Vec::new();
+    for line in text.lines() {
+        let line = line.trim();
+        if line.is_empty() || line.starts_with('#') {
+            continue;
+        }
+        let parts: Vec<&str> = line.split_whitespace().collect();
+        if parts.len() >= 6 {
+            // Expected format: <device> <mount_point> <fs_type> <total_bytes> <used_bytes> <avail_bytes>
+            let device = parts[0].to_string();
+            let mount_point = parts[1].to_string();
+            let fs_type = parts[2].to_string();
+            let total_bytes = parts[3].parse::<u64>().unwrap_or(0);
+            let used_bytes = parts[4].parse::<u64>().unwrap_or(0);
+            let avail_bytes = parts[5].parse::<u64>().unwrap_or(0);
+            let use_percent = if total_bytes > 0 {
+                (used_bytes as f64 / total_bytes as f64) * 100.0
+            } else {
+                0.0
+            };
+
+            disks.push(DiskSnapshot {
+                mount_point,
+                device,
+                fs_type,
+                total_bytes,
+                used_bytes,
+                avail_bytes,
+                use_percent,
+            });
+        }
+    }
+    disks
+}
+
+/// Parses thermal sensor reading tuples (`zone`, `temp_milli_celsius`, `trip_type`) into [`ThermalSnapshot`].
+pub fn parse_thermals_data(entries: &[(&str, f64, &str)]) -> Vec<ThermalSnapshot> {
+    entries
+        .iter()
+        .map(|(zone, temp_celsius, trip)| ThermalSnapshot {
+            zone: zone.to_string(),
+            temp_celsius: *temp_celsius,
+            trip_type: trip.to_string(),
+        })
+        .collect()
+}
+
+/// Parses network interface telemetry entries (`name`, `oper_state`, `mac_address`, `carrier`) into [`NetIfaceSnapshot`].
+pub fn parse_net_ifaces_data(entries: &[(&str, &str, &str, bool)]) -> Vec<NetIfaceSnapshot> {
+    entries
+        .iter()
+        .map(|(name, state, mac, carrier)| NetIfaceSnapshot {
+            name: name.to_string(),
+            oper_state: state.to_string(),
+            mac_address: mac.to_string(),
+            carrier: *carrier,
+        })
+        .collect()
 }

@@ -1,9 +1,15 @@
+//! State synchronization engines for the SQLite World Model.
+//!
+//! Provides transactional synchronization routines for installed packages, unit states,
+//! storage filesystems, thermal sensor readings, and network interface operational states.
+
 use crate::db;
-use crate::model::{UnitChange, UnitSnapshot};
+use crate::model::{DiskSnapshot, NetIfaceSnapshot, ThermalSnapshot, UnitChange, UnitSnapshot};
 use crate::now_rfc3339;
 use rusqlite::{Connection, params};
 use std::path::Path;
 
+/// Synchronizes package inventory and dependency edges transactionally.
 pub fn sync_packages(conn: &Connection, data: &crate::model::PackageData) -> Result<usize, String> {
     let ts = now_rfc3339();
     let tx = conn.unchecked_transaction().map_err(|e| e.to_string())?;
@@ -61,6 +67,7 @@ fn field_changed(kind: &str, old: &str, new: &str) -> Option<UnitChange> {
     }
 }
 
+/// Applies a systemd unit snapshot, diffing transitions and recording unit events.
 pub fn apply_unit_snapshot(
     conn: &Connection,
     snap: &[UnitSnapshot],
@@ -109,36 +116,35 @@ pub fn apply_unit_snapshot(
                     unit: s.name.clone(),
                     kind: "added".into(),
                     old_value: String::new(),
-                    new_value: s.active_state.clone(),
+                    new_value: String::new(),
                 });
                 if s.active_state == "failed" {
                     changes.push(UnitChange {
                         unit: s.name.clone(),
                         kind: "active".into(),
-                        old_value: String::new(),
+                        old_value: "unknown".into(),
                         new_value: "failed".into(),
                     });
                 }
             }
-            Some((old_load, old_active, old_sub, old_enabled)) => {
-                for mut c in [
-                    field_changed("load", old_load, &s.load_state),
-                    field_changed("active", old_active, &s.active_state),
-                    field_changed("sub", old_sub, &s.sub_state),
-                    field_changed("enabled", old_enabled, &s.enabled),
-                ]
-                .into_iter()
-                .flatten()
-                {
-                    c.unit = s.name.clone();
-                    changes.push(c);
-                }
+            Some((ol, oa, os, oe)) => {
+                let mut push_if = |kind: &str, old: &str, new: &str| {
+                    if let Some(mut c) = field_changed(kind, old, new) {
+                        c.unit = s.name.clone();
+                        changes.push(c);
+                    }
+                };
+                push_if("load", ol, &s.load_state);
+                push_if("active", oa, &s.active_state);
+                push_if("sub", os, &s.sub_state);
+                push_if("enabled", oe, &s.enabled);
             }
         }
     }
 
     tx.execute("DELETE FROM units", [])
         .map_err(|e| e.to_string())?;
+
     {
         let mut ins_unit = tx
             .prepare(
@@ -187,16 +193,110 @@ pub fn apply_unit_snapshot(
     Ok((snap.len(), changes))
 }
 
+/// Synchronizes read-only storage and filesystem capacity snapshots.
+pub fn sync_disks(conn: &Connection, disks: &[DiskSnapshot]) -> Result<usize, String> {
+    let ts = now_rfc3339();
+    let tx = conn.unchecked_transaction().map_err(|e| e.to_string())?;
+    tx.execute("DELETE FROM system_disks", [])
+        .map_err(|e| e.to_string())?;
+
+    {
+        let mut ins = tx
+            .prepare(
+                "INSERT INTO system_disks(mount_point, device, fs_type, total_bytes, used_bytes, avail_bytes, use_percent, synced_at) \
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
+            )
+            .map_err(|e| e.to_string())?;
+        for d in disks {
+            ins.execute(params![
+                d.mount_point,
+                d.device,
+                d.fs_type,
+                d.total_bytes,
+                d.used_bytes,
+                d.avail_bytes,
+                d.use_percent,
+                ts
+            ])
+            .map_err(|e| format!("insert disk {}: {e}", d.mount_point))?;
+        }
+    }
+
+    db::set_meta(&tx, "disks_synced_at", &ts).map_err(|e| e.to_string())?;
+    tx.commit().map_err(|e| e.to_string())?;
+    Ok(disks.len())
+}
+
+/// Synchronizes read-only hardware thermal zone sensor readings.
+pub fn sync_thermals(conn: &Connection, thermals: &[ThermalSnapshot]) -> Result<usize, String> {
+    let ts = now_rfc3339();
+    let tx = conn.unchecked_transaction().map_err(|e| e.to_string())?;
+    tx.execute("DELETE FROM system_thermals", [])
+        .map_err(|e| e.to_string())?;
+
+    {
+        let mut ins = tx
+            .prepare(
+                "INSERT INTO system_thermals(zone, temp_celsius, trip_type, synced_at) \
+                 VALUES (?1, ?2, ?3, ?4)",
+            )
+            .map_err(|e| e.to_string())?;
+        for t in thermals {
+            ins.execute(params![t.zone, t.temp_celsius, t.trip_type, ts])
+                .map_err(|e| format!("insert thermal {}: {e}", t.zone))?;
+        }
+    }
+
+    db::set_meta(&tx, "thermals_synced_at", &ts).map_err(|e| e.to_string())?;
+    tx.commit().map_err(|e| e.to_string())?;
+    Ok(thermals.len())
+}
+
+/// Synchronizes read-only network interface operational states.
+pub fn sync_net_ifaces(conn: &Connection, ifaces: &[NetIfaceSnapshot]) -> Result<usize, String> {
+    let ts = now_rfc3339();
+    let tx = conn.unchecked_transaction().map_err(|e| e.to_string())?;
+    tx.execute("DELETE FROM system_net_ifaces", [])
+        .map_err(|e| e.to_string())?;
+
+    {
+        let mut ins = tx
+            .prepare(
+                "INSERT INTO system_net_ifaces(name, oper_state, mac_address, carrier, synced_at) \
+                 VALUES (?1, ?2, ?3, ?4, ?5)",
+            )
+            .map_err(|e| e.to_string())?;
+        for iface in ifaces {
+            let carrier_int = if iface.carrier { 1 } else { 0 };
+            ins.execute(params![
+                iface.name,
+                iface.oper_state,
+                iface.mac_address,
+                carrier_int,
+                ts
+            ])
+            .map_err(|e| format!("insert net iface {}: {e}", iface.name))?;
+        }
+    }
+
+    db::set_meta(&tx, "net_ifaces_synced_at", &ts).map_err(|e| e.to_string())?;
+    tx.commit().map_err(|e| e.to_string())?;
+    Ok(ifaces.len())
+}
+
+/// Returns the file size in bytes of the worklog path if it exists.
 pub fn worklog_size(path: &Path) -> Option<u64> {
     std::fs::metadata(path).ok().map(|m| m.len())
 }
 
+/// Records the last observed worklog file size in World Model metadata.
 pub fn mark_worklog(conn: &Connection, path: &Path) {
     if let Some(size) = worklog_size(path) {
         let _ = db::set_meta(conn, "worklog_size_last_seen", &size.to_string());
     }
 }
 
+/// Checks whether the worklog file has changed in size since the last sync.
 pub fn worklog_stale(conn: &Connection, path: &Path) -> bool {
     let stored = db::get_meta(conn, "worklog_size_last_seen").and_then(|v| v.parse::<u64>().ok());
     match (stored, worklog_size(path)) {

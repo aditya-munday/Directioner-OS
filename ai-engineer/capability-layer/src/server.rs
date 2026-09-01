@@ -10,14 +10,17 @@ use parking_lot::Mutex;
 use crate::handler::Handler;
 use crate::{CapabilityRequest, CapabilityResponse};
 
+/// Thread-safe reference-counted pointer to the Capability [`Handler`].
 pub type SharedHandler = Arc<Mutex<Handler>>;
 
+/// Unix domain socket server dispatching capability requests to the [`Handler`].
 pub struct Server {
     listener: UnixListener,
     handler: SharedHandler,
 }
 
 impl Server {
+    /// Binds a Unix domain socket at the specified path and initializes the server.
     pub fn bind(path: impl AsRef<Path>, handler: SharedHandler) -> std::io::Result<Self> {
         let path = path.as_ref();
         if let Some(parent) = path.parent() {
@@ -30,6 +33,7 @@ impl Server {
         Ok(Self { listener, handler })
     }
 
+    /// Listens for incoming Unix socket connections and handles requests sequentially.
     pub fn serve(&self) -> std::io::Result<()> {
         for stream in self.listener.incoming() {
             match stream {

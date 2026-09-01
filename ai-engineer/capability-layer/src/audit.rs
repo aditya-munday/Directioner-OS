@@ -1,6 +1,3 @@
-//! Append-only audit journal for every capability call (Phase 0.3).
-
-use std::collections::VecDeque;
 use std::fs::{File, OpenOptions};
 use std::io::{BufRead, BufReader, Seek, SeekFrom, Write};
 use std::path::{Path, PathBuf};
@@ -9,30 +6,55 @@ use chrono::{SecondsFormat, Utc};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
+/// Outcome status of an audited capability invocation.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[serde(tag = "status", rename_all = "snake_case")]
 pub enum AuditOutcome {
-    Success { result: Value },
-    Denied { reason: String },
-    Error { message: String },
+    /// Capability succeeded returning output payload.
+    Success {
+        /// Serialized return value.
+        result: Value,
+    },
+    /// Capability was denied by policy, killswitch, or verification.
+    Denied {
+        /// Reason for denial.
+        reason: String,
+    },
+    /// Capability failed with a runtime error.
+    Error {
+        /// Error details.
+        message: String,
+    },
 }
 
+/// Strongly-typed journal entry recorded in the append-only audit stream.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct AuditEntry {
+    /// Monotonically increasing sequence number.
     pub seq: u64,
+    /// RFC3339 timestamp.
     pub timestamp: String,
+    /// Client-supplied request ID.
     pub request_id: String,
+    /// Name of the invoked capability.
     pub capability: String,
+    /// Capability parameters.
     pub args: Value,
+    /// Identity of the requesting service or agent.
     pub requester: String,
+    /// Cryptographic or security token.
     pub token: String,
+    /// Indicates whether this invocation was a compensating rollback.
     #[serde(default)]
     pub is_rollback: bool,
+    /// Result outcome of the invocation.
     pub outcome: AuditOutcome,
+    /// Execution latency in milliseconds.
     pub duration_ms: u64,
 }
 
 impl AuditEntry {
+    /// Generates a placeholder entry with a given sequence number.
     pub fn placeholder(seq_hint: u64) -> Self {
         Self {
             seq: seq_hint,
@@ -51,6 +73,7 @@ impl AuditEntry {
     }
 }
 
+/// Append-only audit journal manager backed by a JSONL file.
 #[derive(Debug)]
 pub struct AuditLog {
     path: PathBuf,
@@ -59,6 +82,7 @@ pub struct AuditLog {
 }
 
 impl AuditLog {
+    /// Opens or creates an append-only audit log at the given path.
     pub fn open(path: impl AsRef<Path>) -> std::io::Result<Self> {
         let path = path.as_ref().to_path_buf();
         if let Some(parent) = path.parent()
@@ -75,6 +99,7 @@ impl AuditLog {
         })
     }
 
+    /// Opens an existing audit log in read-only mode.
     pub fn open_read_only(path: impl AsRef<Path>) -> std::io::Result<Self> {
         let path = path.as_ref().to_path_buf();
         let file = File::open(&path)?;
@@ -86,14 +111,17 @@ impl AuditLog {
         })
     }
 
+    /// Returns the filesystem path to the audit log.
     pub fn path(&self) -> &Path {
         &self.path
     }
 
+    /// Returns the next monotonic sequence number that will be assigned.
     pub fn next_seq(&self) -> u64 {
         self.next_seq
     }
 
+    /// Appends an entry to the audit log, flushing to disk.
     pub fn append(&mut self, mut entry: AuditEntry) -> std::io::Result<u64> {
         entry.seq = self.next_seq;
         self.next_seq += 1;
@@ -105,44 +133,36 @@ impl AuditLog {
         Ok(entry.seq)
     }
 
+    /// Reads all entries from the audit log.
     pub fn read_all(&self) -> std::io::Result<Vec<AuditEntry>> {
-        let mut reader = BufReader::new(File::open(&self.path)?);
-        let mut out = Vec::new();
-        let mut line = String::new();
-        loop {
-            line.clear();
-            let n = reader.read_line(&mut line)?;
-            if n == 0 {
-                break;
+        let f = File::open(&self.path)?;
+        let reader = BufReader::new(f);
+        let mut entries = Vec::new();
+        for line in reader.lines() {
+            let line = line?;
+            let line = line.trim();
+            if line.is_empty() {
+                continue;
             }
-            if let Some(entry) = parse_line(&line) {
-                out.push(entry);
+            if let Ok(entry) = serde_json::from_str::<AuditEntry>(line) {
+                entries.push(entry);
             }
         }
-        Ok(out)
+        Ok(entries)
     }
 
+    /// Returns the last `n` entries from the audit log, newest first.
     pub fn tail(&self, n: usize) -> std::io::Result<Vec<AuditEntry>> {
         let mut all = self.read_all()?;
-        let mut deque = VecDeque::new();
         let skip = all.len().saturating_sub(n);
-        for entry in all.drain(skip..) {
-            deque.push_back(entry);
-        }
-        Ok(deque.into_iter().rev().collect())
+        let items: Vec<AuditEntry> = all.drain(skip..).rev().collect();
+        Ok(items)
     }
 
+    /// Re-opens the audit log file handle.
     pub fn reopen(&self) -> std::io::Result<Self> {
         Self::open(&self.path)
     }
-}
-
-fn parse_line(line: &str) -> Option<AuditEntry> {
-    let line = line.trim();
-    if line.is_empty() {
-        return None;
-    }
-    serde_json::from_str::<AuditEntry>(line).ok()
 }
 
 fn count_lines(file: File) -> std::io::Result<u64> {
@@ -162,10 +182,12 @@ fn count_lines(file: File) -> std::io::Result<u64> {
     Ok(n)
 }
 
+/// Returns the current UTC timestamp formatted as RFC3339 with millisecond precision.
 pub fn now_rfc3339() -> String {
     Utc::now().to_rfc3339_opts(SecondsFormat::Millis, true)
 }
 
+/// Rewinds a file cursor to the beginning.
 pub fn rewind(file: &mut File) -> std::io::Result<()> {
     file.seek(SeekFrom::Start(0))?;
     Ok(())

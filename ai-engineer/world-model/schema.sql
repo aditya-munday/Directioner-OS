@@ -48,4 +48,30 @@ CREATE TABLE IF NOT EXISTS unit_events (
 CREATE INDEX IF NOT EXISTS idx_unit_events_ts   ON unit_events(ts);
 CREATE INDEX IF NOT EXISTS idx_unit_events_unit ON unit_events(unit);
 
-INSERT OR IGNORE INTO meta(key, value) VALUES ('schema_version', '1');
+CREATE TABLE IF NOT EXISTS system_disks (
+    mount_point     TEXT PRIMARY KEY,
+    device          TEXT NOT NULL,
+    fs_type         TEXT NOT NULL,
+    total_bytes     INTEGER NOT NULL,
+    used_bytes      INTEGER NOT NULL,
+    avail_bytes     INTEGER NOT NULL,
+    use_percent     REAL NOT NULL,
+    synced_at       TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS system_thermals (
+    zone            TEXT PRIMARY KEY,
+    temp_celsius    REAL NOT NULL,
+    trip_type       TEXT NOT NULL DEFAULT '',
+    synced_at       TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS system_net_ifaces (
+    name            TEXT PRIMARY KEY,
+    oper_state      TEXT NOT NULL,
+    mac_address     TEXT NOT NULL DEFAULT '',
+    carrier         INTEGER NOT NULL DEFAULT 0,
+    synced_at       TEXT NOT NULL
+);
+
+INSERT OR IGNORE INTO meta(key, value) VALUES ('schema_version', '2');

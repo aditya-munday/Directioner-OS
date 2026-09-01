@@ -3,12 +3,14 @@
 use std::io::{self};
 use std::path::{Component, Path, PathBuf};
 
+/// Path sandbox enforcing filesystem isolation within an authorized root directory.
 #[derive(Debug, Clone)]
 pub struct ScopedPath {
     root: PathBuf,
 }
 
 impl ScopedPath {
+    /// Creates a new ScopedPath sandbox rooted at the given directory.
     pub fn new(root: impl AsRef<Path>) -> io::Result<Self> {
         let root = root.as_ref();
         std::fs::create_dir_all(root)?;
@@ -16,10 +18,12 @@ impl ScopedPath {
         Ok(Self { root })
     }
 
+    /// Returns the canonicalized sandbox root path.
     pub fn root(&self) -> &Path {
         &self.root
     }
 
+    /// Resolves and canonicalizes a path string, strictly ensuring it does not escape the sandbox root.
     pub fn resolve(&self, raw: &str) -> std::io::Result<PathBuf> {
         let raw_p = Path::new(raw);
         let candidate = if raw_p.is_absolute() {
@@ -46,6 +50,7 @@ impl ScopedPath {
         Ok(abs)
     }
 
+    /// Sanitizes path components into a relative display path without root or parent traversals.
     pub fn safe_display(raw: &str) -> PathBuf {
         Path::new(raw)
             .components()

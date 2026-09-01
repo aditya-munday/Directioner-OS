@@ -94,6 +94,146 @@ fn test_performance_profile_world_model_large_inventory() {
 }
 
 #[test]
+fn test_performance_profile_world_model_10k_packages_500_units() {
+    let dir = tempdir().unwrap();
+    let db_path = dir.path().join("profile_wm_10k.db");
+
+    let conn = world_model::db::open(&db_path).unwrap();
+
+    // Ingest 10,000 packages with 50,000 dependency edges and 500 units
+    let total_pkgs = 10_000;
+    let total_deps_per_pkg = 5;
+    let sync_start = Instant::now();
+
+    conn.execute("BEGIN TRANSACTION;", []).unwrap();
+    for i in 0..total_pkgs {
+        let pkg_name = format!("pkg-enterprise-{:05}", i);
+        conn.execute(
+            "INSERT INTO packages (name, evr, arch, summary, synced_at) VALUES (?1, '2.4.1-1.fc41', 'x86_64', 'Enterprise production workstation package', datetime('now'))",
+            [&pkg_name],
+        ).unwrap();
+
+        for d in 0..total_deps_per_pkg {
+            let dep_idx = (i + d * 37) % total_pkgs;
+            let dep_name = format!("pkg-enterprise-{:05}", dep_idx);
+            let _ = conn.execute(
+                "INSERT OR IGNORE INTO pkg_requires (pkg, dep, flags, version) VALUES (?1, ?2, 'GE', '2.0')",
+                [&pkg_name, &dep_name],
+            );
+            let _ = conn.execute(
+                "INSERT OR IGNORE INTO pkg_provides (pkg, provide, version) VALUES (?1, ?2, '2.0')",
+                [
+                    &pkg_name,
+                    &format!("libenterprise-{:05}.so.2()(64bit)", dep_idx),
+                ],
+            );
+        }
+    }
+
+    // Ingest 500 systemd units
+    for u in 0..500 {
+        let unit_name = format!("workstation-daemon-{:04}.service", u);
+        conn.execute(
+            "INSERT INTO units (name, load_state, active_state, sub_state, enabled, since_ts) VALUES (?1, 'loaded', 'active', 'running', 'enabled', '1700000000')",
+            [&unit_name],
+        ).unwrap();
+    }
+
+    // Ingest telemetry (disks, thermals, net_ifaces)
+    for d in 0..10 {
+        conn.execute(
+            "INSERT INTO system_disks (mount_point, device, fs_type, total_bytes, used_bytes, avail_bytes, use_percent, synced_at) \
+             VALUES (?1, ?2, 'xfs', 1000000000, 250000000, 750000000, 25.0, datetime('now'))",
+            [&format!("/mnt/vol{:02}", d), &format!("/dev/nvme0n1p{}", d + 1)],
+        ).unwrap();
+    }
+    for t in 0..16 {
+        conn.execute(
+            "INSERT INTO system_thermals (zone, temp_celsius, trip_type, synced_at) \
+             VALUES (?1, 45.5, 'passive_95C', datetime('now'))",
+            [&format!("coretemp-core-{}", t)],
+        )
+        .unwrap();
+    }
+    for n in 0..8 {
+        conn.execute(
+            "INSERT INTO system_net_ifaces (name, oper_state, mac_address, carrier, synced_at) \
+             VALUES (?1, 'up', '52:54:00:12:34:56', 1, datetime('now'))",
+            [&format!("eth{}", n)],
+        )
+        .unwrap();
+    }
+    conn.execute("COMMIT;", []).unwrap();
+
+    let sync_duration = sync_start.elapsed();
+    let db_size_bytes = fs::metadata(&db_path).map(|m| m.len()).unwrap_or(0);
+    let db_size_mb = db_size_bytes as f64 / (1024.0 * 1024.0);
+
+    println!(
+        "\n[PERF PROFILE 10K] World Model Heavy Workload (10,000 pkgs, 50k requires, 50k provides, 500 units, telemetry): {:.2} ms | DB Size: {:.2} MB ({} bytes)",
+        sync_duration.as_secs_f64() * 1000.0,
+        db_size_mb,
+        db_size_bytes
+    );
+
+    // Profile 1,000 reverse-dependency resolution queries via world_model::query
+    let query_iterations = 1000;
+    let query_start = Instant::now();
+    for i in 0..query_iterations {
+        let target_pkg = format!("pkg-enterprise-{:05}", (i * 7) % total_pkgs);
+        let dependents = world_model::query::reverse_deps(&conn, &target_pkg).unwrap();
+        assert!(
+            !dependents.is_empty(),
+            "Reverse-dep should resolve dependents"
+        );
+    }
+    let query_duration = query_start.elapsed();
+    let avg_query_us = query_duration.as_micros() as f64 / query_iterations as f64;
+    let avg_query_ms = avg_query_us / 1000.0;
+
+    println!(
+        "[PERF PROFILE 10K] Reverse-Dependency Traversal (1,000 queries over 10k pkgs): {:.2} µs / query ({:.4} ms / query) (total: {:.2} ms)",
+        avg_query_us,
+        avg_query_ms,
+        query_duration.as_secs_f64() * 1000.0
+    );
+
+    // Profile GraphStats query
+    let stats_start = Instant::now();
+    let stats = world_model::query::graph_stats(&conn).unwrap();
+    let stats_duration = stats_start.elapsed();
+    println!(
+        "[PERF PROFILE 10K] GraphStats Full Aggregation: {:.2} ms (pkgs: {}, requires: {}, provides: {}, units: {}, disks: {}, thermals: {}, net_ifaces: {})",
+        stats_duration.as_secs_f64() * 1000.0,
+        stats.packages,
+        stats.requires,
+        stats.provides,
+        stats.units,
+        stats.disks,
+        stats.thermals,
+        stats.net_ifaces
+    );
+
+    assert_eq!(stats.packages, 10_000);
+    assert_eq!(stats.units, 500);
+    assert_eq!(stats.disks, 10);
+    assert_eq!(stats.thermals, 16);
+    assert_eq!(stats.net_ifaces, 8);
+
+    // Invariant: query times must remain sub-10ms even under 10,000 packages (10,000 µs)
+    assert!(
+        avg_query_us < 10000.0,
+        "Reverse dependency query under 10k packages must be <10ms (took {:.2} µs)",
+        avg_query_us
+    );
+    assert!(
+        stats_duration.as_millis() < 50,
+        "Graph stats aggregation under 10k packages must be <50ms (took {:?})",
+        stats_duration
+    );
+}
+
+#[test]
 fn test_performance_profile_symbol_graph_large_workspace() {
     let dir = tempdir().unwrap();
     let root = dir.path();

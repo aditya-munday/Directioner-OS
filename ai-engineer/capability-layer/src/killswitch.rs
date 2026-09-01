@@ -6,28 +6,35 @@ use std::path::{Path, PathBuf};
 
 const ENGAGED: &str = "ENGAGED\n";
 
+/// State of the hardware/file killswitch.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum KillSwitchState {
+    /// Killswitch is active; all mutations are hard-halted.
     Engaged,
+    /// Killswitch is inactive; normal operation permitted.
     Disengaged,
 }
 
+/// KillSwitch controller managing lockfile state on disk.
 #[derive(Debug)]
 pub struct KillSwitch {
     lock_file: PathBuf,
 }
 
 impl KillSwitch {
+    /// Creates a new KillSwitch instance referencing the target lockfile path.
     pub fn new(path: impl AsRef<Path>) -> Self {
         Self {
             lock_file: path.as_ref().to_path_buf(),
         }
     }
 
+    /// Loads a KillSwitch instance from the specified path.
     pub fn load(path: impl AsRef<Path>) -> io::Result<Self> {
         Ok(Self::new(path))
     }
 
+    /// Engages the killswitch by atomically writing the lockfile.
     pub fn engage(&mut self) -> io::Result<()> {
         if let Some(parent) = self.lock_file.parent() {
             std::fs::create_dir_all(parent)?;
@@ -42,6 +49,7 @@ impl KillSwitch {
         Ok(())
     }
 
+    /// Disengages the killswitch by removing the lockfile.
     pub fn release(&mut self) -> io::Result<()> {
         if self.lock_file.exists() {
             std::fs::remove_file(&self.lock_file)?;
@@ -49,6 +57,7 @@ impl KillSwitch {
         Ok(())
     }
 
+    /// Returns `true` if the lockfile currently exists with `ENGAGED` content.
     pub fn is_engaged(&self) -> bool {
         match std::fs::read_to_string(&self.lock_file) {
             Ok(content) => content.trim() == "ENGAGED",
@@ -56,6 +65,7 @@ impl KillSwitch {
         }
     }
 
+    /// Returns the current [`KillSwitchState`].
     pub fn state(&self) -> KillSwitchState {
         if self.is_engaged() {
             KillSwitchState::Engaged
@@ -64,6 +74,7 @@ impl KillSwitch {
         }
     }
 
+    /// Returns the lockfile path.
     pub fn path(&self) -> &Path {
         &self.lock_file
     }
