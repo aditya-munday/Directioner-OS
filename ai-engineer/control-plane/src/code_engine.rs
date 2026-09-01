@@ -970,8 +970,7 @@ impl CodeEngine {
                         format!("use {};", sym.module_path)
                     };
 
-                    if !prev.contains(&import_stmt)
-                        && !prev.contains(&format!("use {}", sym.name))
+                    if !prev.contains(&import_stmt) && !prev.contains(&format!("use {}", sym.name))
                     {
                         let mut insert_idx = 0;
                         for (idx, line) in lines.iter().enumerate() {
@@ -995,8 +994,7 @@ impl CodeEngine {
                 }
 
                 // Typo correction via Levenshtein matching
-                let mut best_match: Option<(&crate::symbol_graph::SymbolDefinition, usize)> =
-                    None;
+                let mut best_match: Option<(&crate::symbol_graph::SymbolDefinition, usize)> = None;
                 for sym in &graph.symbols {
                     let dist = Self::levenshtein(identifier, &sym.name);
                     if dist > 0 && dist <= 2 {
