@@ -291,6 +291,17 @@ impl Handler {
             }));
         }
 
+        // 1. Fast binary check (e.g. /usr/bin/htop, /usr/bin/nvim, /usr/bin/tmux)
+        if which(package).is_some() {
+            return Ok(json!({
+                "package": package,
+                "status": "noop_already_installed",
+                "adapter": if ostree.is_some() { "rpm-ostree" } else { "rpm" },
+                "deployment_deferred": false
+            }));
+        }
+
+        // 2. Fast rpm database query (rpm -q <package>)
         if let Some(rpm) = which("rpm") {
             let is_installed = std::process::Command::new(&rpm)
                 .arg("-q")
@@ -397,6 +408,27 @@ impl Handler {
                 "package": package,
                 "deployment_deferred": deferred,
             }));
+        }
+
+        // On ostree/bootc, base packages baked into the image cannot be layered-uninstalled
+        if ostree.is_some() {
+            let is_layered = which("rpm-ostree")
+                .and_then(|bin| std::process::Command::new(bin).arg("status").output().ok())
+                .map(|o| {
+                    let s = String::from_utf8_lossy(&o.stdout);
+                    s.contains(&format!("LayeredPackages: {package}"))
+                        || s.contains(&format!(" {package} "))
+                })
+                .unwrap_or(false);
+
+            if !is_layered {
+                return Ok(json!({
+                    "package": package,
+                    "status": "noop_already_absent",
+                    "adapter": "rpm-ostree",
+                    "deployment_deferred": false
+                }));
+            }
         }
 
         if let Some(bin) = ostree {
