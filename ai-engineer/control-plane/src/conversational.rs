@@ -807,6 +807,141 @@ impl PlanExecutionGate {
         plan.status = crate::plan::PlanStatus::Approved;
         Ok(plan)
     }
+
+    /// Dispatch plan execution through Implementer and Verifier following policy and review gating.
+    ///
+    /// # Safety Guarantees:
+    /// - Evaluates Reviewer verdict (refuses if rejected or fatal findings present).
+    /// - Verifies KillSwitch is disengaged prior to socket communication.
+    /// - Verifies state drift against SQLite World Model if available.
+    /// - Verifies human confirmation requirement for Confirm/ExpertReview tiers against confirmed_hash.
+    /// - Executes atomically via `Implementer` and verifies via `Verifier`.
+    pub fn dispatch_execution(
+        plan: &Plan,
+        review: &crate::reviewer::ReviewReport,
+        confirmed_hash: Option<&str>,
+        client: &crate::client::CapabilityClient,
+        killswitch_path: Option<&std::path::Path>,
+        world_model_db: Option<&rusqlite::Connection>,
+    ) -> Result<ConversationalExecutionReport, ConversationalError> {
+        let verdict = Self::evaluate(plan, review);
+        let (plan_hash, tier, requires_human) = match verdict {
+            GateVerdict::Ready {
+                plan_hash,
+                tier,
+                requires_human_confirmation,
+            } => (plan_hash, tier, requires_human_confirmation),
+            GateVerdict::Rejected { reason, findings } => {
+                return Err(ConversationalError::ValidationFailed(
+                    ValidationError::SemanticConstraintViolation(format!(
+                        "Execution BLOCKED by Reviewer Gate: {reason} (findings: {})",
+                        findings.join(", ")
+                    )),
+                ));
+            }
+            GateVerdict::InvalidStatus(s) => {
+                return Err(ConversationalError::ValidationFailed(
+                    ValidationError::SemanticConstraintViolation(format!(
+                        "Plan has invalid status for execution: {s}"
+                    )),
+                ));
+            }
+        };
+
+        if requires_human {
+            match confirmed_hash {
+                Some(h) if h == plan_hash => {}
+                Some(mismatch) => {
+                    return Err(ConversationalError::ValidationFailed(
+                        ValidationError::SemanticConstraintViolation(format!(
+                            "Execution confirmation hash mismatch: expected {plan_hash}, got {mismatch}"
+                        )),
+                    ));
+                }
+                None => {
+                    return Err(ConversationalError::ValidationFailed(
+                        ValidationError::SemanticConstraintViolation(format!(
+                            "Plan requires explicit human confirmation matching plan hash '{plan_hash}' (Tier: {tier:?})"
+                        )),
+                    ));
+                }
+            }
+        }
+
+        if let Some(ks_path) = killswitch_path {
+            let ks = capability_layer::killswitch::KillSwitch::new(ks_path);
+            if ks.is_engaged() {
+                return Err(ConversationalError::ConfigurationError(
+                    "Killswitch is engaged: execution hard-halted before socket dispatch".into(),
+                ));
+            }
+        }
+
+        if let Some(conn) = world_model_db {
+            for step in &plan.steps {
+                if let capability_layer::CapabilityKind::ServiceRestart { unit, .. }
+                | capability_layer::CapabilityKind::ServiceStop { unit, .. }
+                | capability_layer::CapabilityKind::ServiceStatus { unit } = &step.capability
+                {
+                    let unit_base = unit.trim_end_matches(".service");
+                    let mut stmt = conn
+                        .prepare_cached("SELECT count(*) FROM units WHERE name = ?1 OR name = ?2")
+                        .map_err(|e| {
+                            ConversationalError::ValidationFailed(
+                                ValidationError::SemanticConstraintViolation(e.to_string()),
+                            )
+                        })?;
+                    let count: i64 = stmt
+                        .query_row(
+                            rusqlite::params![unit, format!("{unit_base}.service")],
+                            |row| row.get(0),
+                        )
+                        .unwrap_or(0);
+                    let total_units: i64 = conn
+                        .query_row("SELECT count(*) FROM units", [], |r| r.get(0))
+                        .unwrap_or(0);
+                    if count == 0 && total_units > 0 {
+                        return Err(ConversationalError::ValidationFailed(
+                            ValidationError::SemanticConstraintViolation(format!(
+                                "Pre-flight state drift: Target unit '{unit}' not found in active world model index"
+                            )),
+                        ));
+                    }
+                }
+            }
+        }
+
+        let approved_plan = Self::approve_plan(plan.clone(), &plan_hash)?;
+        let implementer = crate::implementer::Implementer::new(client);
+        let exec_report = implementer.execute_plan(&approved_plan);
+
+        let verification = if exec_report.final_status == crate::plan::PlanStatus::Completed {
+            let verifier = crate::verifier::Verifier::new(client);
+            Some(verifier.verify_plan(&approved_plan))
+        } else {
+            None
+        };
+
+        Ok(ConversationalExecutionReport {
+            plan_hash,
+            tier,
+            execution: exec_report,
+            verification,
+        })
+    }
+}
+
+/// Execution outcome for a conversationally initiated plan.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct ConversationalExecutionReport {
+    /// Cryptographic plan hash.
+    pub plan_hash: String,
+    /// Approval tier evaluated by policy.
+    pub tier: crate::policy::ApprovalTier,
+    /// Plan execution report from Implementer.
+    pub execution: crate::plan::PlanExecutionReport,
+    /// Post-execution independent verification report if forward execution succeeded.
+    pub verification: Option<crate::verifier::VerificationReport>,
 }
 
 #[cfg(test)]

@@ -27,7 +27,7 @@ COMMANDS:
     review <INTENT>      Run independent multi-agent Reviewer audit on synthesized plan
     dry-run <INTENT>     Simulate plan and generate unified diffs without modifying state
     apply <INTENT>       Plan, review, preview, prompt for confirmation, and execute via Capability Layer
-    ask <QUERY>          Grounded conversational intent parsing and interactive plan negotiation
+    ask <QUERY>          Grounded conversational intent parsing and interactive plan execution (with --apply)
     chat                 Interactive conversational operator shell
     explain <INTENT>     Provide 3-depth explanation (summary, engineering plan, raw diffs)
     diagnose [PATH]      Scan workspace, parse compiler diagnostics, and localize cross-crate root causes
@@ -45,6 +45,9 @@ OPTIONS:
     --interval <SECS>    Evaluation interval in seconds for background daemon [default: 30]
     --once               Run one self-healing cycle and exit immediately
     --auto-approve       Bypass interactive confirmation prompt (strictly limited to low-risk Notify tier)
+    --apply              Execute synthesized plan via Capability Layer (for 'ask' and conversational commands)
+    -y, --yes            Confirm execution non-interactively where permitted by policy tier
+    --confirm-hash <HEX> Explicit 16-hex cryptographic hash confirmation for Confirm/ExpertReview tiers
     --depth <1|2|3>      Explanation depth (1=Summary, 2=Engineering, 3=Raw) [default: 2]
     --json               Output raw JSON format
     -h, --help           Print help information
@@ -64,6 +67,9 @@ struct CliArgs {
     interval_secs: u64,
     once: bool,
     auto_approve: bool,
+    apply: bool,
+    yes: bool,
+    confirm_hash: Option<String>,
     depth: u8,
     json: bool,
 }
@@ -98,6 +104,9 @@ fn parse_args() -> Result<CliArgs, String> {
     let mut interval_secs = 30;
     let mut once = false;
     let mut auto_approve = false;
+    let mut apply = false;
+    let mut yes = false;
+    let mut confirm_hash = None;
     let mut depth = 2;
     let mut json = false;
 
@@ -166,6 +175,19 @@ fn parse_args() -> Result<CliArgs, String> {
             "--auto-approve" => {
                 auto_approve = true;
             }
+            "--apply" => {
+                apply = true;
+            }
+            "-y" | "--yes" => {
+                yes = true;
+            }
+            "--confirm-hash" => {
+                i += 1;
+                if i >= args.len() {
+                    return Err("--confirm-hash requires an argument".into());
+                }
+                confirm_hash = Some(args[i].clone());
+            }
             "--depth" => {
                 i += 1;
                 if i >= args.len() {
@@ -208,6 +230,9 @@ fn parse_args() -> Result<CliArgs, String> {
         interval_secs,
         once,
         auto_approve,
+        apply,
+        yes,
+        confirm_hash,
         depth,
         json,
     })
@@ -511,63 +536,182 @@ fn run_conversational_preview(
     let preview = Simulator::simulate_plan(&plan, Some(&args.work_root));
     let gate = control_plane::conversational::PlanExecutionGate::evaluate(&plan, &review_report);
 
-    if args.json {
-        let combined = serde_json::json!({
-            "plan_draft": plan,
-            "review": review_report,
-            "simulation": preview,
-            "gate": gate,
-            "execution_status": "DRAFT_ONLY",
-        });
-        println!("{}", serde_json::to_string_pretty(&combined).unwrap());
-    } else {
-        println!("══════════════════════════════════════════════════════════════════════");
-        println!("  PHASE 4.0.1 CONVERSATIONAL OPERATOR (DRAFT-ONLY PROPOSAL)");
-        println!("══════════════════════════════════════════════════════════════════════");
-        println!("  Plan ID:     {}", plan.id);
-        println!("  Intent:      \"{}\"", plan.intent);
-        println!("  Status:      {:?}", plan.status);
-        println!(
-            "  Blast Score: {}/100 (Tier: {:?})",
-            plan.aggregate_blast_radius.score, plan.aggregate_blast_radius.tier
-        );
-        println!("  Summary:     {}", plan.summary);
-        println!("──────────────────────────────────────────────────────────────────────");
-        println!("  Reviewer Verdict: {:?}", review_report.verdict);
-        if review_report.findings.is_empty() {
-            println!("    ✔ No invariant violations or warnings found.");
+    if !args.apply {
+        if args.json {
+            let combined = serde_json::json!({
+                "plan_draft": plan,
+                "review": review_report,
+                "simulation": preview,
+                "gate": gate,
+                "execution_status": "DRAFT_PROPOSAL",
+            });
+            println!("{}", serde_json::to_string_pretty(&combined).unwrap());
         } else {
-            for (idx, f) in review_report.findings.iter().enumerate() {
-                let icon = match f.severity {
-                    control_plane::reviewer::FindingSeverity::Fatal => "✘ [FATAL]",
-                    control_plane::reviewer::FindingSeverity::Warning => "▲ [WARN]",
-                    control_plane::reviewer::FindingSeverity::Info => "ℹ [INFO]",
-                };
-                println!("    {}. {} [{}] {}", idx + 1, icon, f.category, f.message);
-            }
-        }
-        println!("──────────────────────────────────────────────────────────────────────");
-        println!("  Execution Steps ({}):", plan.steps.len());
-        for (idx, step) in plan.steps.iter().enumerate() {
+            println!("══════════════════════════════════════════════════════════════════════");
+            println!("  PHASE 4.1 CONVERSATIONAL OPERATOR (PLAN PROPOSAL)");
+            println!("══════════════════════════════════════════════════════════════════════");
+            println!("  Plan ID:     {}", plan.id);
+            println!("  Intent:      \"{}\"", plan.intent);
+            println!("  Status:      {:?}", plan.status);
             println!(
-                "    {}. [{:?}] {} (Blast: {}/100)",
-                idx + 1,
-                step.capability,
-                step.description,
-                step.blast_radius.score
+                "  Blast Score: {}/100 (Tier: {:?})",
+                plan.aggregate_blast_radius.score, plan.aggregate_blast_radius.tier
             );
+            println!("  Summary:     {}", plan.summary);
+            println!("──────────────────────────────────────────────────────────────────────");
+            println!("  Reviewer Verdict: {:?}", review_report.verdict);
+            if review_report.findings.is_empty() {
+                println!("    ✔ No invariant violations or warnings found.");
+            } else {
+                for (idx, f) in review_report.findings.iter().enumerate() {
+                    let icon = match f.severity {
+                        control_plane::reviewer::FindingSeverity::Fatal => "✘ [FATAL]",
+                        control_plane::reviewer::FindingSeverity::Warning => "▲ [WARN]",
+                        control_plane::reviewer::FindingSeverity::Info => "ℹ [INFO]",
+                    };
+                    println!("    {}. {} [{}] {}", idx + 1, icon, f.category, f.message);
+                }
+            }
+            println!("──────────────────────────────────────────────────────────────────────");
+            println!("  Execution Steps ({}):", plan.steps.len());
+            for (idx, step) in plan.steps.iter().enumerate() {
+                println!(
+                    "    {}. [{:?}] {} (Blast: {}/100)",
+                    idx + 1,
+                    step.capability,
+                    step.description,
+                    step.blast_radius.score
+                );
+            }
+            if !plan.rollback_steps.is_empty() {
+                println!("  Compensating Rollbacks ({}):", plan.rollback_steps.len());
+                for (idx, rb) in plan.rollback_steps.iter().enumerate() {
+                    println!("    {}. {}", idx + 1, rb.description);
+                }
+            }
+            println!("──────────────────────────────────────────────────────────────────────");
+            println!("{}", preview.render_terminal());
+            println!("──────────────────────────────────────────────────────────────────────");
+            let hash = control_plane::conversational::PlanExecutionGate::compute_plan_hash(&plan);
+            println!("  Plan Hash:   {}", hash);
+            println!(
+                "  [i] To execute this proposal, rerun with: ai-engineer ask \"{}\" --apply",
+                intent
+            );
+            println!("══════════════════════════════════════════════════════════════════════");
         }
-        if !plan.rollback_steps.is_empty() {
-            println!("  Compensating Rollbacks ({}):", plan.rollback_steps.len());
-            for (idx, rb) in plan.rollback_steps.iter().enumerate() {
-                println!("    {}. {}", idx + 1, rb.description);
+        return;
+    }
+
+    // --apply execution pathway
+    if review_report.verdict == control_plane::reviewer::ReviewVerdict::Rejected {
+        eprintln!("\nExecution BLOCKED by Reviewer Gate:");
+        for f in &review_report.findings {
+            eprintln!("  ✘ [{:?}] {}: {}", f.severity, f.category, f.message);
+        }
+        exit(1);
+    }
+
+    let plan_hash = control_plane::conversational::PlanExecutionGate::compute_plan_hash(&plan);
+    let requires_human = match plan.aggregate_blast_radius.tier {
+        control_plane::policy::ApprovalTier::Confirm
+        | control_plane::policy::ApprovalTier::ExpertReview => true,
+        control_plane::policy::ApprovalTier::Auto | control_plane::policy::ApprovalTier::Notify => {
+            false
+        }
+    };
+
+    let confirmed_hash = if requires_human {
+        if let Some(h) = &args.confirm_hash {
+            if h != &plan_hash {
+                eprintln!(
+                    "Error: Confirmation hash mismatch (expected {}, got {})",
+                    plan_hash, h
+                );
+                exit(1);
+            }
+            Some(h.as_str())
+        } else if args.yes || args.auto_approve {
+            // Auto approve cannot bypass confirm tier without explicit hash confirmation
+            eprintln!(
+                "Error: Tier {:?} requires explicit human confirmation or --confirm-hash {}",
+                plan.aggregate_blast_radius.tier, plan_hash
+            );
+            exit(1);
+        } else {
+            // Interactive terminal prompt
+            eprint!(
+                "\nApproval required for Tier {:?} (Plan Hash: {}).\nProceed with execution? [y/N]: ",
+                plan.aggregate_blast_radius.tier, plan_hash
+            );
+            let mut line = String::new();
+            let stdin = io::stdin();
+            stdin.lock().read_line(&mut line).unwrap();
+            let trimmed = line.trim().to_lowercase();
+            if trimmed != "y" && trimmed != "yes" {
+                eprintln!("Execution cancelled by user.");
+                exit(0);
+            }
+            Some(plan_hash.as_str())
+        }
+    } else {
+        Some(plan_hash.as_str())
+    };
+
+    let client = CapabilityClient::new(&args.socket_path, "ai-engineer-conversational");
+    let result = control_plane::conversational::PlanExecutionGate::dispatch_execution(
+        &plan,
+        &review_report,
+        confirmed_hash,
+        &client,
+        Some(&args.lock_path),
+        db_conn,
+    );
+
+    match result {
+        Ok(report) => {
+            if args.json {
+                println!("{}", serde_json::to_string_pretty(&report).unwrap());
+            } else {
+                println!(
+                    "\n══════════════════════════════════════════════════════════════════════"
+                );
+                println!(
+                    "  CONVERSATIONAL EXECUTION RESULT: {:?}",
+                    report.execution.final_status
+                );
+                println!("  Message:     {}", report.execution.message);
+                println!("  Duration:    {} ms", report.execution.total_duration_ms);
+                println!("  Plan Hash:   {}", report.plan_hash);
+                println!("──────────────────────────────────────────────────────────────────────");
+                if let Some(vr) = &report.verification {
+                    println!(
+                        "  Verification: {}",
+                        if vr.all_passed {
+                            "PASSED (100%)"
+                        } else {
+                            "FAILED"
+                        }
+                    );
+                    for check in &vr.checks {
+                        println!(
+                            "    [{}] {} - {}",
+                            if check.passed { "✔" } else { "✘" },
+                            check.target,
+                            check.message
+                        );
+                    }
+                }
+                println!("══════════════════════════════════════════════════════════════════════");
+            }
+            if report.execution.final_status != control_plane::PlanStatus::Completed {
+                exit(1);
             }
         }
-        println!("──────────────────────────────────────────────────────────────────────");
-        println!("{}", preview.render_terminal());
-        println!("──────────────────────────────────────────────────────────────────────");
-        println!("  [!] DRAFT ONLY — CONVERSATIONAL EXECUTION NOT WIRED IN PHASE 4.0.1");
-        println!("══════════════════════════════════════════════════════════════════════");
+        Err(e) => {
+            eprintln!("Conversational execution error: {e}");
+            exit(1);
+        }
     }
 }
 
