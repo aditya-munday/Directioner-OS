@@ -575,10 +575,30 @@ impl Handler {
             ));
         }
         if let Some(ostree) = which("ostree") {
-            let out = std::process::Command::new(&ostree)
+            let mut out = std::process::Command::new(&ostree)
                 .args(["admin", "pin", &slot.to_string()])
                 .output()
                 .map_err(|e| CapError::Internal(e.to_string()))?;
+            if !out.status.success() {
+                let stderr = String::from_utf8_lossy(&out.stderr);
+                if stderr.contains("Cannot pin staged deployment")
+                    || stderr.contains("staged deployment")
+                {
+                    // Discard unbooted staged deployment leftover from prior tests so deployment can be pinned
+                    if let Some(rpm_ostree) = which("rpm-ostree") {
+                        let _ = std::process::Command::new(&rpm_ostree)
+                            .args(["cleanup", "-p"])
+                            .output();
+                        let _ = std::process::Command::new(&rpm_ostree)
+                            .arg("cancel")
+                            .output();
+                    }
+                    out = std::process::Command::new(&ostree)
+                        .args(["admin", "pin", &slot.to_string()])
+                        .output()
+                        .map_err(|e| CapError::Internal(e.to_string()))?;
+                }
+            }
             if out.status.success() {
                 Ok(json!({ "slot": slot, "pinned": true }))
             } else {

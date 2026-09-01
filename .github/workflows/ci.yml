@@ -287,6 +287,7 @@ jobs:
           echo '==> assertion 9: Phase 3.0.1 Genuine A/B boot slot mechanics & Tier 1 Automatic Rollback'
 
           # 9.1 Pin the current good deployment (deployment 0) via live capability daemon
+          ssh_cmd 'sudo rpm-ostree cleanup -p 2>/dev/null || true'
           scp $SCP_OPTS vm-test/pin_boot_slot.py ci@127.0.0.1:/tmp/pin_boot_slot.py
           ssh_cmd 'python3 /tmp/pin_boot_slot.py'
 

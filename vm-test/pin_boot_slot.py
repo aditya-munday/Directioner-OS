@@ -17,6 +17,6 @@ s.sendall(json.dumps(req).encode() + b"\n")
 resp_raw = s.makefile("r").readline()
 s.close()
 resp = json.loads(resp_raw)
-print("boot_slot_pin response:", resp)
+print("boot_slot_pin response:", resp, flush=True)
 if resp.get("status") != "success":
     sys.exit(f"boot_slot_pin failed: {resp}")
