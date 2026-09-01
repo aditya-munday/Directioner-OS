@@ -331,6 +331,8 @@ impl Handler {
                 || combined.contains("already requested")
                 || combined.contains("already installed")
                 || combined.contains("is already")
+                || combined.contains("failed to update rpmdb")
+                || combined.contains("writing rpmdb")
             {
                 Ok(json!({
                     "package": package,
@@ -421,6 +423,8 @@ impl Handler {
                 || combined.contains("not currently installed")
                 || combined.contains("not installed")
                 || combined.contains("already absent")
+                || combined.contains("failed to update rpmdb")
+                || combined.contains("writing rpmdb")
             {
                 Ok(json!({
                     "package": package,
@@ -1005,13 +1009,35 @@ fn redacted_args(cap: &CapabilityKind) -> Value {
 }
 
 fn which(bin: &str) -> Option<std::path::PathBuf> {
-    let paths = std::env::var_os("PATH")?;
-    for dir in std::env::split_paths(&paths) {
-        let candidate = dir.join(bin);
-        if candidate.is_file() {
+    let p = std::path::Path::new(bin);
+    if p.is_absolute() && p.exists() {
+        return Some(p.to_path_buf());
+    }
+
+    if let Some(paths) = std::env::var_os("PATH") {
+        for dir in std::env::split_paths(&paths) {
+            let candidate = dir.join(bin);
+            if candidate.exists() {
+                return Some(candidate);
+            }
+        }
+    }
+
+    let default_dirs = [
+        "/usr/bin",
+        "/usr/sbin",
+        "/bin",
+        "/sbin",
+        "/usr/local/bin",
+        "/usr/local/sbin",
+    ];
+    for dir in default_dirs {
+        let candidate = std::path::Path::new(dir).join(bin);
+        if candidate.exists() {
             return Some(candidate);
         }
     }
+
     None
 }
 #[cfg(test)]
