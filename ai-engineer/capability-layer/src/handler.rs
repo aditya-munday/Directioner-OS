@@ -330,11 +330,18 @@ impl Handler {
             let stdout = String::from_utf8_lossy(&out.stdout);
             let combined = format!("{stderr} {stdout}").to_lowercase();
             if out.status.success() {
+                // Attempt live layering without reboot if supported by system
+                let live_applied = std::process::Command::new(&bin)
+                    .arg("apply-live")
+                    .output()
+                    .map(|o| o.status.success())
+                    .unwrap_or(false);
+
                 Ok(json!({
                     "package": package,
-                    "status": "staged_pending_reboot",
+                    "status": if live_applied { "live_applied" } else { "staged_pending_reboot" },
                     "adapter": "rpm-ostree",
-                    "deployment_deferred": true
+                    "deployment_deferred": !live_applied
                 }))
             } else if combined.contains("already in the base")
                 || combined.contains("already in base")
@@ -442,11 +449,18 @@ impl Handler {
             let stdout = String::from_utf8_lossy(&out.stdout);
             let combined = format!("{stderr} {stdout}").to_lowercase();
             if out.status.success() {
+                // Attempt dynamic live unlayering without reboot
+                let live_unlayered = std::process::Command::new(&bin)
+                    .arg("apply-live")
+                    .output()
+                    .map(|o| o.status.success())
+                    .unwrap_or(false);
+
                 Ok(json!({
                     "package": package,
-                    "status": "staged_pending_reboot",
+                    "status": if live_unlayered { "live_unlayered" } else { "staged_pending_reboot" },
                     "adapter": "rpm-ostree",
-                    "deployment_deferred": true
+                    "deployment_deferred": !live_unlayered
                 }))
             } else if combined.contains("is not currently layered")
                 || combined.contains("not currently layered")

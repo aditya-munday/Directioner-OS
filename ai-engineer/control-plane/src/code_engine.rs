@@ -380,8 +380,17 @@ impl CodeEngine {
                         }
                     }
                     (None, Some(rep)) => rep.clone(),
+                    (Some(prev), None) => {
+                        // Autonomous Semantic Code Synthesis without compiler suggestions
+                        if let Some(synthesized) =
+                            self.synthesize_semantic_patch(diag, None, Some(prev))
+                        {
+                            synthesized
+                        } else {
+                            continue;
+                        }
+                    }
                     _ => {
-                        // Skip diagnostics without machine-applicable suggested replacements
                         continue;
                     }
                 };
@@ -767,8 +776,17 @@ impl CodeEngine {
                         }
                     }
                     (None, Some(rep)) => rep.clone(),
+                    (Some(prev), None) => {
+                        // Autonomous Semantic Code Synthesis without compiler suggestions
+                        if let Some(synthesized) =
+                            self.synthesize_semantic_patch(diag, Some(span), Some(prev))
+                        {
+                            synthesized
+                        } else {
+                            continue;
+                        }
+                    }
                     _ => {
-                        // Skip spans without machine-applicable suggested replacements
                         continue;
                     }
                 };
@@ -845,6 +863,278 @@ impl CodeEngine {
             created_at: chrono::Utc::now().to_rfc3339(),
             status: PlanStatus::Draft,
         })
+    }
+
+    /// Calculate Levenshtein distance between two string identifiers.
+    fn levenshtein(a: &str, b: &str) -> usize {
+        let a_chars: Vec<char> = a.chars().collect();
+        let b_chars: Vec<char> = b.chars().collect();
+        let m = a_chars.len();
+        let n = b_chars.len();
+        let mut dp = vec![vec![0; n + 1]; m + 1];
+        for (i, row) in dp.iter_mut().enumerate().take(m + 1) {
+            row[0] = i;
+        }
+        for (j, val) in dp[0].iter_mut().enumerate().take(n + 1) {
+            *val = j;
+        }
+        for i in 1..=m {
+            for j in 1..=n {
+                let cost = if a_chars[i - 1] == b_chars[j - 1] {
+                    0
+                } else {
+                    1
+                };
+                dp[i][j] = (dp[i - 1][j] + 1)
+                    .min(dp[i][j - 1] + 1)
+                    .min(dp[i - 1][j - 1] + cost);
+            }
+        }
+        dp[m][n]
+    }
+
+    /// Autonomous semantic code synthesis when compiler diagnostics lack machine-applicable suggestions.
+    ///
+    /// Resolves:
+    /// - `E0425` / `E0412`: Missing identifiers or types resolved via workspace SymbolGraph imports.
+    /// - Typo correction: Fuzzy Levenshtein matching against indexed workspace definitions.
+    /// - `E0599`: Missing trait method resolved via SymbolGraph trait discovery.
+    /// - `E0308`: Type coercion synthesis (`.as_str()`, `.to_string()`, `.as_path()`, `Some(...)`, `PathBuf::from(...)`).
+    pub fn synthesize_semantic_patch(
+        &self,
+        diag: &Diagnostic,
+        span: Option<&DiagnosticSpan>,
+        source: Option<&str>,
+    ) -> Option<String> {
+        let prev = source?;
+        let lines: Vec<&str> = prev.lines().collect();
+        if lines.is_empty() {
+            return None;
+        }
+
+        let effective_span = span.or_else(|| diag.spans.iter().find(|s| s.is_primary));
+        let line_num = effective_span.map(|s| s.line_start).or(diag.line_number)?;
+        if line_num == 0 || line_num > lines.len() {
+            return None;
+        }
+
+        let target_line = lines[line_num - 1];
+        let (col_start, col_end) = effective_span
+            .map(|s| (s.column_start, s.column_end))
+            .or_else(|| {
+                diag.column_number.map(|c| {
+                    let c_start = (c.saturating_sub(1)).min(target_line.len());
+                    let rest = &target_line[c_start..];
+                    let tok_len = rest
+                        .chars()
+                        .take_while(|ch| ch.is_alphanumeric() || *ch == '_')
+                        .count();
+                    (c, c + tok_len)
+                })
+            })
+            .unwrap_or((0, 0));
+
+        let raw_token = if col_start > 0 && col_end >= col_start {
+            let c_start = (col_start - 1).min(target_line.len());
+            let c_end = (col_end - 1).min(target_line.len());
+            &target_line[c_start..c_end]
+        } else {
+            ""
+        };
+
+        let code_str = diag.code.as_deref().unwrap_or("");
+        let msg = &diag.message;
+
+        // 1. Unresolved value or type: E0425 / E0412
+        if code_str == "E0425"
+            || code_str == "E0412"
+            || msg.contains("cannot find value")
+            || msg.contains("cannot find type")
+            || msg.contains("cannot find struct")
+        {
+            let identifier = if !raw_token.is_empty() && !raw_token.contains(' ') {
+                raw_token.trim()
+            } else {
+                msg.split('`').nth(1).unwrap_or("")
+            };
+
+            if !identifier.is_empty()
+                && let Some(graph) = &self.symbol_graph
+            {
+                // Check exact symbol match in workspace crates
+                let matching = graph.find_by_name(identifier);
+                if let Some(sym) = matching.first() {
+                    let import_stmt = if sym.module_path.is_empty() {
+                        format!("use {}::{};", sym.crate_name.replace('-', "_"), sym.name)
+                    } else {
+                        format!("use {};", sym.module_path)
+                    };
+
+                    if !prev.contains(&import_stmt)
+                        && !prev.contains(&format!("use {}", sym.name))
+                    {
+                        let mut insert_idx = 0;
+                        for (idx, line) in lines.iter().enumerate() {
+                            let trimmed = line.trim();
+                            if trimmed.starts_with("//!")
+                                || trimmed.starts_with("#![")
+                                || trimmed.is_empty()
+                            {
+                                insert_idx = idx + 1;
+                            } else {
+                                break;
+                            }
+                        }
+                        let mut new_lines: Vec<String> =
+                            lines.iter().map(|s| s.to_string()).collect();
+                        new_lines.insert(insert_idx, import_stmt);
+                        let mut res = new_lines.join("\n");
+                        res.push('\n');
+                        return Some(res);
+                    }
+                }
+
+                // Typo correction via Levenshtein matching
+                let mut best_match: Option<(&crate::symbol_graph::SymbolDefinition, usize)> =
+                    None;
+                for sym in &graph.symbols {
+                    let dist = Self::levenshtein(identifier, &sym.name);
+                    if dist > 0 && dist <= 2 {
+                        if let Some((_, best_dist)) = best_match {
+                            if dist < best_dist {
+                                best_match = Some((sym, dist));
+                            }
+                        } else {
+                            best_match = Some((sym, dist));
+                        }
+                    }
+                }
+
+                if let Some((sym, _)) = best_match
+                    && col_start > 0
+                    && col_end >= col_start
+                {
+                    let c_start = (col_start - 1).min(target_line.len());
+                    let c_end = (col_end - 1).min(target_line.len());
+                    let mut mod_line = String::new();
+                    mod_line.push_str(&target_line[..c_start]);
+                    mod_line.push_str(&sym.name);
+                    mod_line.push_str(&target_line[c_end..]);
+                    let mut modified_lines: Vec<String> =
+                        lines.iter().map(|s| s.to_string()).collect();
+                    modified_lines[line_num - 1] = mod_line;
+                    let mut res = modified_lines.join("\n");
+                    res.push('\n');
+                    return Some(res);
+                }
+            }
+        }
+
+        // 2. Missing method or trait: E0599
+        if code_str == "E0599" || msg.contains("no method named") {
+            let method_name = if !raw_token.is_empty() && !raw_token.contains(' ') {
+                raw_token.trim()
+            } else {
+                msg.split('`').nth(1).unwrap_or("")
+            };
+
+            if !method_name.is_empty()
+                && let Some(graph) = &self.symbol_graph
+            {
+                for sym in &graph.symbols {
+                    if (sym.kind == crate::symbol_graph::SymbolKind::Trait
+                        || sym.kind == crate::symbol_graph::SymbolKind::Method)
+                        && sym.name == method_name
+                    {
+                        let import_stmt = if sym.module_path.is_empty() {
+                            format!("use {}::{};", sym.crate_name.replace('-', "_"), sym.name)
+                        } else {
+                            format!("use {};", sym.module_path)
+                        };
+
+                        if !prev.contains(&import_stmt) {
+                            let mut insert_idx = 0;
+                            for (idx, line) in lines.iter().enumerate() {
+                                let trimmed = line.trim();
+                                if trimmed.starts_with("//!")
+                                    || trimmed.starts_with("#![")
+                                    || trimmed.is_empty()
+                                {
+                                    insert_idx = idx + 1;
+                                } else {
+                                    break;
+                                }
+                            }
+                            let mut new_lines: Vec<String> =
+                                lines.iter().map(|s| s.to_string()).collect();
+                            new_lines.insert(insert_idx, import_stmt);
+                            let mut res = new_lines.join("\n");
+                            res.push('\n');
+                            return Some(res);
+                        }
+                    }
+                }
+            }
+        }
+
+        // 3. Mismatched types: E0308
+        if code_str == "E0308" || msg.contains("mismatched types") {
+            let (c_start, c_end) = if col_start > 0 && col_end >= col_start {
+                (
+                    (col_start - 1).min(target_line.len()),
+                    (col_end - 1).min(target_line.len()),
+                )
+            } else {
+                (0, 0)
+            };
+            let expr = if c_end > c_start {
+                &target_line[c_start..c_end]
+            } else {
+                ""
+            };
+
+            if !expr.is_empty() {
+                let rep = if msg.contains("expected `&str`, found `String`")
+                    || (msg.contains("&str")
+                        && msg.contains("String")
+                        && !expr.ends_with(".as_str()"))
+                {
+                    format!("{expr}.as_str()")
+                } else if msg.contains("expected `String`, found `&str`")
+                    && !expr.ends_with(".to_string()")
+                {
+                    format!("{expr}.to_string()")
+                } else if msg.contains("expected `&Path`, found `PathBuf`")
+                    && !expr.ends_with(".as_path()")
+                {
+                    format!("{expr}.as_path()")
+                } else if (msg.contains("expected `PathBuf`, found `&Path`")
+                    || msg.contains("expected `PathBuf`, found `&str`"))
+                    && !expr.starts_with("PathBuf::from(")
+                {
+                    format!("PathBuf::from({expr})")
+                } else if msg.contains("expected enum `Option`") && !expr.starts_with("Some(") {
+                    format!("Some({expr})")
+                } else {
+                    "".to_string()
+                };
+
+                if !rep.is_empty() {
+                    let mut mod_line = String::new();
+                    mod_line.push_str(&target_line[..c_start]);
+                    mod_line.push_str(&rep);
+                    mod_line.push_str(&target_line[c_end..]);
+                    let mut modified_lines: Vec<String> =
+                        lines.iter().map(|s| s.to_string()).collect();
+                    modified_lines[line_num - 1] = mod_line;
+                    let mut res = modified_lines.join("\n");
+                    res.push('\n');
+                    return Some(res);
+                }
+            }
+        }
+
+        None
     }
 }
 
