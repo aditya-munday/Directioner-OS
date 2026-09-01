@@ -291,6 +291,23 @@ impl Handler {
             }));
         }
 
+        if let Some(rpm) = which("rpm") {
+            let is_installed = std::process::Command::new(&rpm)
+                .arg("-q")
+                .arg(package)
+                .output()
+                .map(|c| c.status.success())
+                .unwrap_or(false);
+            if is_installed {
+                return Ok(json!({
+                    "package": package,
+                    "status": "noop_already_installed",
+                    "adapter": if ostree.is_some() { "rpm-ostree" } else { "rpm" },
+                    "deployment_deferred": false
+                }));
+            }
+        }
+
         if let Some(bin) = ostree {
             let out = std::process::Command::new(&bin)
                 .arg("install")
@@ -300,6 +317,7 @@ impl Handler {
                 .map_err(|e| CapError::Internal(e.to_string()))?;
             let stderr = String::from_utf8_lossy(&out.stderr);
             let stdout = String::from_utf8_lossy(&out.stdout);
+            let combined = format!("{stderr} {stdout}").to_lowercase();
             if out.status.success() {
                 Ok(json!({
                     "package": package,
@@ -307,10 +325,12 @@ impl Handler {
                     "adapter": "rpm-ostree",
                     "deployment_deferred": true
                 }))
-            } else if stderr.contains("already in the base")
-                || stdout.contains("already in the base")
-                || stderr.contains("already provided")
-                || stdout.contains("already provided")
+            } else if combined.contains("already in the base")
+                || combined.contains("already in base")
+                || combined.contains("already provided")
+                || combined.contains("already requested")
+                || combined.contains("already installed")
+                || combined.contains("is already")
             {
                 Ok(json!({
                     "package": package,
@@ -386,6 +406,7 @@ impl Handler {
                 .map_err(|e| CapError::Internal(e.to_string()))?;
             let stderr = String::from_utf8_lossy(&out.stderr);
             let stdout = String::from_utf8_lossy(&out.stdout);
+            let combined = format!("{stderr} {stdout}").to_lowercase();
             if out.status.success() {
                 Ok(json!({
                     "package": package,
@@ -393,10 +414,13 @@ impl Handler {
                     "adapter": "rpm-ostree",
                     "deployment_deferred": true
                 }))
-            } else if stderr.contains("is not currently layered")
-                || stdout.contains("is not currently layered")
-                || stderr.contains("is not currently requested")
-                || stdout.contains("is not currently requested")
+            } else if combined.contains("is not currently layered")
+                || combined.contains("not currently layered")
+                || combined.contains("is not currently requested")
+                || combined.contains("not currently requested")
+                || combined.contains("not currently installed")
+                || combined.contains("not installed")
+                || combined.contains("already absent")
             {
                 Ok(json!({
                     "package": package,

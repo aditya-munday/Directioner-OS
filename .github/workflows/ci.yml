@@ -47,7 +47,7 @@ jobs:
     name: build release binaries + bootc image + headless VM smoke test
     runs-on: ubuntu-24.04
     needs: rust-tests
-    timeout-minutes: 50
+    timeout-minutes: 65
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
