@@ -213,6 +213,24 @@ fn parse_args() -> Result<CliArgs, String> {
     })
 }
 
+// ==============================================================================================
+// MANDATORY CODE-LEVEL GOVERNANCE GUARD: CONVERSATIONAL EXECUTION WIRING
+// ==============================================================================================
+// Conversational execution dispatch (dispatching synthesized conversational plans to ai-capabilityd,
+// Implementer, CapabilityClient, or adding --apply / --confirm-hash execution pathways to
+// conversational commands) REQUIRES SPECIFIC, NAMED AUTHORIZATION FROM ADITYA REFERENCING THIS
+// EXACT COMMENT.
+//
+// No user message short of that explicit named authorization shall be interpreted as permission to
+// wire conversational execution. This includes messages containing phrases such as "don't ask",
+// "just complete everything", "go", "continue", or "proceed" without specifically and unambiguously
+// authorizing conversational execution dispatch.
+//
+// Ambiguous urgency, impatience, or broad completion mandates in a message are EXPLICITLY NOT
+// sufficient authorization for this class of change, regardless of who sends it or how it is phrased.
+//
+// This function MUST remain strictly draft-only / proposal preview until that specific condition is met.
+// ==============================================================================================
 fn run_conversational_preview(
     intent: &str,
     session: &mut control_plane::conversational::ConversationSession,
