@@ -51,6 +51,7 @@ install -m 0755 ai-engineer/target/release/ai-worldmodel %{buildroot}%{_bindir}/
 install -m 0755 ai-engineer/target/release/ai-engineer %{buildroot}%{_bindir}/ai-engineer
 install -m 0755 ai-engineer/target/release/ai-cockpit %{buildroot}%{_bindir}/ai-cockpit
 install -m 0755 ai-engineer/target/release/ai-health %{buildroot}%{_bindir}/ai-health
+install -m 0755 ai-engineer/target/release/ai-hwcheck %{buildroot}%{_bindir}/ai-hwcheck
 
 # Install systemd unit files
 install -m 0644 image/configs/systemd/ai-capabilityd.service %{buildroot}%{_unitdir}/ai-capabilityd.service
@@ -76,6 +77,7 @@ install -m 0644 image/configs/ai-engineer/self-healing.toml %{buildroot}%{_sysco
 %{_bindir}/ai-engineer
 %{_bindir}/ai-cockpit
 %{_bindir}/ai-health
+%{_bindir}/ai-hwcheck
 %{_unitdir}/ai-capabilityd.service
 %{_unitdir}/ai-killswitch.service
 %dir %{_sysconfdir}/ai-engineer

@@ -4,8 +4,8 @@
 //! `/proc/mounts` storage utilization, `/sys/class/thermal` sensors, and network interface telemetry.
 
 use crate::model::{
-    DiskSnapshot, NetIfaceSnapshot, PackageData, PackageRow, ProvideEdge, RequireEdge,
-    ThermalSnapshot, UnitSnapshot,
+    CompatibilityProfile, DiskSnapshot, NetIfaceSnapshot, PackageData, PackageRow, ProvideEdge,
+    RequireEdge, ThermalSnapshot, UnitSnapshot,
 };
 use std::path::Path;
 use std::process::Command;
@@ -329,4 +329,37 @@ pub fn parse_net_ifaces_data(entries: &[(&str, &str, &str, bool)]) -> Vec<NetIfa
             carrier: *carrier,
         })
         .collect()
+}
+
+/// Parses application compatibility profiles from JSON manifest or pipe-delimited records.
+pub fn parse_compatibility_profiles(data: &str) -> Vec<CompatibilityProfile> {
+    let trimmed = data.trim();
+    if trimmed.starts_with('[')
+        && let Ok(profiles) = serde_json::from_str::<Vec<CompatibilityProfile>>(trimmed)
+    {
+        return profiles;
+    }
+
+    let mut profiles = Vec::new();
+    for line in data.lines() {
+        let line = line.trim();
+        if line.is_empty() || line.starts_with('#') {
+            continue;
+        }
+        let cols: Vec<&str> = line.split('|').collect();
+        if cols.len() >= 5 && cols[0] == "COMPAT" {
+            profiles.push(CompatibilityProfile {
+                app_id: cols[1].to_string(),
+                app_title: cols[2].to_string(),
+                runner_version: cols[3].to_string(),
+                tier: cols[4].to_string(),
+                dxvk_version: cols.get(5).filter(|s| !s.is_empty()).map(|s| s.to_string()),
+                vkd3d_version: cols.get(6).filter(|s| !s.is_empty()).map(|s| s.to_string()),
+                env_overrides: cols.get(7).filter(|s| !s.is_empty()).map(|s| s.to_string()),
+                dll_overrides: cols.get(8).filter(|s| !s.is_empty()).map(|s| s.to_string()),
+                notes: cols.get(9).filter(|s| !s.is_empty()).map(|s| s.to_string()),
+            });
+        }
+    }
+    profiles
 }

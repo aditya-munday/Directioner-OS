@@ -178,7 +178,7 @@ jobs:
 
           echo '==> assertion 4: deploy release binaries to /var/lib/ai-bin in the booted VM'
           ssh_cmd "sudo mkdir -p /var/lib/ai-bin"
-          for b in ai-worldmodel ai-benchmark ai-capabilityd ai-worklog ai-engineer ai-health ai-cockpit; do
+          for b in ai-worldmodel ai-benchmark ai-capabilityd ai-worklog ai-engineer ai-health ai-cockpit ai-hwcheck; do
             BIN_PATH="ai-engineer/target/release/$b"
             echo "deploying binary: $BIN_PATH -> /var/lib/ai-bin/$b"
             scp $SCP_OPTS "$BIN_PATH" ci@127.0.0.1:/tmp/$b
@@ -381,6 +381,13 @@ jobs:
           echo "$cockpit_out"
           echo "$cockpit_out" | grep -q '"health_report"' \
             || { echo 'FAIL: ai-cockpit snapshot missing health_report'; exit 1; }
+
+          # Test Hardware Compatibility Diagnostic tool in the live VM
+          echo "testing ai-hwcheck --json on guest VM..."
+          hwcheck_out=$(ssh_cmd '/var/lib/ai-bin/ai-hwcheck --json')
+          echo "$hwcheck_out"
+          echo "$hwcheck_out" | grep -q '"overall_status"' \
+            || { echo 'FAIL: ai-hwcheck --json missing overall_status'; exit 1; }
 
           # ------------------------------------------------------------------------------------------------
           # Phase 3.0.4: Tier 2 Kernel Parameter Tuning & Module Loading In-Guest Verification (Spec §4)

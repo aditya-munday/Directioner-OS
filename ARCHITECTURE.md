@@ -179,3 +179,28 @@ For critical system updates, Directioner-OS leverages Fedora bootc / OSTree prim
 * **Greenboot Integration**: Systemd health checks execute post-boot.
 * **GRUB2 Countdown**: Failed boots decrement boot attempt counters.
 * **Autonomous Rollback**: If health checks fail during boot, the system rolls back to the prior known-good OSTree deployment below user-space.
+
+---
+
+## 8. Hardware Diagnostics & Proton/Wine Application Compatibility
+
+* **Hardware Diagnostic Engine (`control_plane::hwcheck` / `ai-hwcheck`)**:
+  - Non-mutating sysfs tree inspector for PCI WiFi adapters (Broadcom `broadcom-wl`, Realtek `rtw89`, Intel `iwlwifi`), USB fingerprint sensors (`InTreeLibfprint` vs `ProprietaryTodRequired`), and ACPI sleep/wake modes (`s2idle` vs S3, NVMe APST latency warnings).
+  - Emits structured JSON and human-readable diagnostic tables with actionable container layering guidance.
+* **Proton/Wine Compatibility Layer (`world-model::model::CompatibilityProfile`)**:
+  - World Model Schema v3 database table `compatibility_profiles` indexed by application title.
+  - Ingests compatibility tiers (`Platinum`, `Gold`, `Silver`, `Bronze`, `Borked`), recommended runners (Proton-GE, Wine-Staging), DXVK/VKD3D versions, and environment/DLL overrides.
+  - Queryable via `ai-worldmodel compat [APP_ID] [--json]`.
+
+---
+
+## 9. Accessibility, Localization & Verification Architecture
+
+* **Complete CLI Accessibility**:
+  - Every CLI tool (`ai-engineer`, `ai-worklog`, `ai-cockpit`, `ai-health`, `ai-worldmodel`, `ai-hwcheck`) provides complete `--json` support for machine consumption and screen readers.
+* **Localization Scaffolding (`control_plane::localization::MessageCatalog`)**:
+  - Hierarchical message namespaces (`cli.banner.*`, `alert.*`, `reviewer.verdict.*`, `hwcheck.*`, `conversational.*`, `compat.*`).
+  - Dynamic parameter interpolation (`{variable}`) with missing-key safety fallbacks.
+* **Scored Benchmark Suite (`benchmark-suite` / `ai-benchmark`)**:
+  - 32 deterministic scenarios spanning system configuration, service remediation, compensating rollbacks, policy gate enforcement, conversational intake, hardware diagnostics, and telemetry verification.
+

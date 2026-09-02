@@ -130,3 +130,26 @@ pub struct NetIfaceSnapshot {
     /// Physical link carrier detection status.
     pub carrier: bool,
 }
+
+/// Read-only application compatibility profile for Wine/Proton execution.
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+pub struct CompatibilityProfile {
+    /// Unique application identifier (e.g. `steam:730`, `standalone:affinity_photo`).
+    pub app_id: String,
+    /// Human-readable application title.
+    pub app_title: String,
+    /// Target Wine or Proton runner version (e.g. `Proton-9.0`, `GE-Proton8-26`).
+    pub runner_version: String,
+    /// Compatibility rating tier (`Platinum`, `Gold`, `Silver`, `Bronze`, `Borked`).
+    pub tier: String,
+    /// Optional DXVK translation layer version.
+    pub dxvk_version: Option<String>,
+    /// Optional VKD3D-Proton translation layer version.
+    pub vkd3d_version: Option<String>,
+    /// Optional JSON-serialized array of environment variable overrides.
+    pub env_overrides: Option<String>,
+    /// Optional JSON-serialized object of DLL overrides.
+    pub dll_overrides: Option<String>,
+    /// Diagnostic notes and known workarounds.
+    pub notes: Option<String>,
+}

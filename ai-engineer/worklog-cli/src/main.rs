@@ -5,7 +5,7 @@ use capability_layer::audit::{AuditLog, AuditOutcome};
 
 fn usage() -> ! {
     eprintln!(
-        "usage: ai-worklog [--log PATH] <tail [--lines N] | show <id> | today | search <term>>"
+        "usage: ai-worklog [--log PATH] [--json] <tail [--lines N] | show <id> | today | search <term>>"
     );
     exit(2);
 }
@@ -85,6 +85,7 @@ fn main() {
     let mut command: Option<String> = None;
     let mut n = 20usize;
     let mut term: Option<String> = None;
+    let mut json_mode = false;
 
     while idx < raw.len() {
         match raw[idx].as_str() {
@@ -101,6 +102,9 @@ fn main() {
                     usage();
                 }
                 n = raw[idx].parse().unwrap_or(20);
+            }
+            "--json" => {
+                json_mode = true;
             }
             "tail" | "today" | "search" => {
                 if command.is_some() {
@@ -151,9 +155,16 @@ fn main() {
                     exit(1);
                 }
             };
-            scan_and_print_alerts(&entries);
-            for e in &entries {
-                print_entry(usize::MAX, e);
+            if json_mode {
+                println!(
+                    "{}",
+                    serde_json::to_string_pretty(&entries).unwrap_or_else(|_| "[]".into())
+                );
+            } else {
+                scan_and_print_alerts(&entries);
+                for e in &entries {
+                    print_entry(usize::MAX, e);
+                }
             }
         }
         Some("today") => {
@@ -164,10 +175,21 @@ fn main() {
                     exit(1);
                 }
             };
-            scan_and_print_alerts(&entries);
             let today = chrono::Utc::now().format("%Y-%m-%d").to_string();
-            for e in entries.iter().filter(|e| e.timestamp.starts_with(&today)) {
-                print_entry(usize::MAX, e);
+            let filtered: Vec<_> = entries
+                .into_iter()
+                .filter(|e| e.timestamp.starts_with(&today))
+                .collect();
+            if json_mode {
+                println!(
+                    "{}",
+                    serde_json::to_string_pretty(&filtered).unwrap_or_else(|_| "[]".into())
+                );
+            } else {
+                scan_and_print_alerts(&filtered);
+                for e in &filtered {
+                    print_entry(usize::MAX, e);
+                }
             }
         }
         Some("show") => {
@@ -186,7 +208,16 @@ fn main() {
                 }
             };
             match entries.iter().find(|e| e.seq == want) {
-                Some(e) => print_entry(e.seq as usize, e),
+                Some(e) => {
+                    if json_mode {
+                        println!(
+                            "{}",
+                            serde_json::to_string_pretty(e).unwrap_or_else(|_| "{}".into())
+                        );
+                    } else {
+                        print_entry(e.seq as usize, e);
+                    }
+                }
                 None => {
                     eprintln!("no entry with seq {want}");
                     exit(1);
@@ -202,7 +233,7 @@ fn main() {
                     exit(1);
                 }
             };
-            let mut found = 0usize;
+            let mut matches = Vec::new();
             for e in entries {
                 let hay = format!(
                     "{}{}{}",
@@ -211,13 +242,22 @@ fn main() {
                     serde_json::to_string(&e.args).unwrap_or_default()
                 );
                 if hay.contains(&needle) {
-                    print_entry(e.seq as usize, &e);
-                    found += 1;
+                    matches.push(e);
                 }
             }
-            if found == 0 {
-                println!("no entries matched '{needle}'");
-                exit(1);
+            if json_mode {
+                println!(
+                    "{}",
+                    serde_json::to_string_pretty(&matches).unwrap_or_else(|_| "[]".into())
+                );
+            } else {
+                if matches.is_empty() {
+                    println!("no entries matched '{needle}'");
+                    exit(1);
+                }
+                for e in &matches {
+                    print_entry(e.seq as usize, e);
+                }
             }
         }
         _ => usage(),

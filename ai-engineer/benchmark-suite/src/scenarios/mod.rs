@@ -9,6 +9,7 @@ pub mod dependency_audit;
 pub mod killswitch;
 pub mod multi_crate_repair;
 pub mod multi_crate_rollback;
+pub mod phase4_scenarios;
 pub mod remediation;
 pub mod rollback;
 pub mod rollback_gaps;
@@ -29,6 +30,13 @@ pub use dependency_audit::DependencyAuditScenario;
 pub use killswitch::KillswitchScenario;
 pub use multi_crate_repair::MultiCrateRepairScenario;
 pub use multi_crate_rollback::MultiCrateRollbackScenario;
+pub use phase4_scenarios::{
+    AccessibilityJsonHealthModelCompletenessScenario, AccessibilityJsonWorklogCompletenessScenario,
+    AccessibilityJsonWorldModelCompletenessScenario, HwcheckFingerprintProbingScenario,
+    HwcheckSleepWakeStateScenario, HwcheckWifiProbingScenario,
+    LocalizationCatalogInterpolationScenario, WorldModelDiskTelemetryScenario,
+    WorldModelProtonWineSyncScenario, WorldModelThermalTelemetryScenario,
+};
 pub use remediation::RemediationScenario;
 pub use rollback::RollbackScenario;
 pub use rollback_gaps::PackageServiceRollbackScenario;
