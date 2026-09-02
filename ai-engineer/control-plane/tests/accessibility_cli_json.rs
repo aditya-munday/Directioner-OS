@@ -12,7 +12,15 @@ use world_model::{db, model::CompatibilityProfile, sync};
 
 fn find_binary(name: &str) -> std::path::PathBuf {
     let manifest_dir = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"));
-    let target_dir = manifest_dir.join("../target/debug").join(name);
+    let workspace_root = manifest_dir.parent().unwrap_or(&manifest_dir);
+    let target_dir = workspace_root.join("target/debug").join(name);
+    if target_dir.exists() {
+        return target_dir;
+    }
+    let _ = Command::new("cargo")
+        .args(["build", "--bin", name])
+        .current_dir(workspace_root)
+        .status();
     if target_dir.exists() {
         target_dir
     } else {
