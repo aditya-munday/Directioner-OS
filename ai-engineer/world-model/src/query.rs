@@ -86,13 +86,14 @@ pub fn reverse_deps(conn: &Connection, name: &str) -> rusqlite::Result<Vec<Strin
     for base in &bases {
         let low = base.clone();
         let high = format!("{}\u{10FFFF}", base);
-        for row in stmt.query_map(params![low, high], |r| {
-            Ok((r.get::<_, String>(0)?, r.get::<_, String>(1)?))
-        })? {
-            if let Ok((pkg, dep)) = row {
-                if bases.contains(&comparable_base(&dep)) {
-                    dependents.insert(pkg);
-                }
+        for (pkg, dep) in stmt
+            .query_map(params![low, high], |r| {
+                Ok((r.get::<_, String>(0)?, r.get::<_, String>(1)?))
+            })?
+            .flatten()
+        {
+            if bases.contains(&comparable_base(&dep)) {
+                dependents.insert(pkg);
             }
         }
     }
