@@ -74,4 +74,18 @@ CREATE TABLE IF NOT EXISTS system_net_ifaces (
     synced_at       TEXT NOT NULL
 );
 
-INSERT OR IGNORE INTO meta(key, value) VALUES ('schema_version', '2');
+CREATE TABLE IF NOT EXISTS compatibility_profiles (
+    app_id          TEXT PRIMARY KEY,
+    app_title       TEXT NOT NULL,
+    runner_version  TEXT NOT NULL,
+    tier            TEXT NOT NULL,
+    dxvk_version    TEXT,
+    vkd3d_version   TEXT,
+    env_overrides   TEXT,
+    dll_overrides   TEXT,
+    notes           TEXT,
+    synced_at       TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_compat_app_title ON compatibility_profiles(app_title);
+
+INSERT OR IGNORE INTO meta(key, value) VALUES ('schema_version', '3');

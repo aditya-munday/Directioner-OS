@@ -8,7 +8,7 @@ use world_model::{cutoff_rfc3339, db, query, sources, sync};
 fn usage() -> ! {
     eprintln!(
         "usage: ai-worldmodel [--db PATH] [--worklog PATH] [--json] \
-         <sync | depends-on PKG | requires PKG | unit NAME | failed-since DUR | watch --interval SECS>"
+         <sync | stats | depends-on PKG | requires PKG | unit NAME | failed-since DUR | disks | thermals | net | compat [APP_ID] | watch --interval SECS>"
     );
     exit(2);
 }
@@ -262,6 +262,87 @@ fn main() {
                         "  [{}] {} ({} -> {})",
                         e.ts, e.unit, e.old_value, e.new_value
                     );
+                }
+            }
+            Ok(())
+        }
+
+        "disks" => {
+            let conn = ctx.open_db()?;
+            let rows = query::system_disks(&conn).map_err(|e| e.to_string())?;
+            if json_out {
+                println!("{}", serde_json::to_string_pretty(&rows).unwrap());
+            } else {
+                println!("{} disk mount(s):", rows.len());
+                for d in rows {
+                    println!(
+                        "  {} on {} ({}) - {:.1}% used",
+                        d.device, d.mount_point, d.fs_type, d.use_percent
+                    );
+                }
+            }
+            Ok(())
+        }
+
+        "thermals" => {
+            let conn = ctx.open_db()?;
+            let rows = query::system_thermals(&conn).map_err(|e| e.to_string())?;
+            if json_out {
+                println!("{}", serde_json::to_string_pretty(&rows).unwrap());
+            } else {
+                println!("{} thermal zone(s):", rows.len());
+                for t in rows {
+                    println!("  {}: {:.1}°C ({})", t.zone, t.temp_celsius, t.trip_type);
+                }
+            }
+            Ok(())
+        }
+
+        "net" => {
+            let conn = ctx.open_db()?;
+            let rows = query::system_net_ifaces(&conn).map_err(|e| e.to_string())?;
+            if json_out {
+                println!("{}", serde_json::to_string_pretty(&rows).unwrap());
+            } else {
+                println!("{} network interface(s):", rows.len());
+                for n in rows {
+                    println!(
+                        "  {}: {} (mac: {}, carrier: {})",
+                        n.name, n.oper_state, n.mac_address, n.carrier
+                    );
+                }
+            }
+            Ok(())
+        }
+
+        "compat" => {
+            let conn = ctx.open_db()?;
+            if let Some(app_id) = cmd_args.first() {
+                let prof = query::compatibility_profile(&conn, app_id)
+                    .map_err(|e| e.to_string())?
+                    .ok_or_else(|| format!("unknown compatibility profile: {app_id}"))?;
+                if json_out {
+                    println!("{}", serde_json::to_string_pretty(&prof).unwrap());
+                } else {
+                    println!(
+                        "{} ({}): tier={} runner={} dxvk={} vkd3d={}",
+                        prof.app_title,
+                        prof.app_id,
+                        prof.tier,
+                        prof.runner_version,
+                        prof.dxvk_version.as_deref().unwrap_or("none"),
+                        prof.vkd3d_version.as_deref().unwrap_or("none")
+                    );
+                }
+            } else {
+                let rows = query::all_compatibility_profiles(&conn).map_err(|e| e.to_string())?;
+                if json_out {
+                    println!("{}", serde_json::to_string_pretty(&rows).unwrap());
+                } else {
+                    println!("{} compatibility profile(s):", rows.len());
+                    for p in rows {
+                        println!("  • [{}] {} - Tier: {}", p.app_id, p.app_title, p.tier);
+                    }
                 }
             }
             Ok(())

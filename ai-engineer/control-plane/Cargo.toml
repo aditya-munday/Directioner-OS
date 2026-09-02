@@ -32,6 +32,10 @@ path = "src/bin/ai-cockpit.rs"
 name = "ai-health"
 path = "src/bin/ai-health.rs"
 
+[[bin]]
+name = "ai-hwcheck"
+path = "src/bin/ai-hwcheck.rs"
+
 [lints]
 workspace = true
 

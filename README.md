@@ -95,11 +95,17 @@ real hardware before it is proven in a disposable VM.
 - [x] Phase 3.0.3 Incident Response Observer Boundary: strictly read-only post-hoc observer component with zero mutating capability authority
 - [x] Phase 3.0.4 Tier 2 Controlled Remediation: runtime/persistent kernel sysctl tuning (`KernelParamSet`), allowlisted dynamic kernel module loading/unloading (`KernelModuleLoad`/`KernelModuleUnload`) with kernel refcount protection and pre-captured rollback values
 - [x] Phase 3.1 Closed-Loop Self-Healing Engine: multi-layer circuit breakers, per-entity attempt limits, global velocity throttles, anti-flap duration filters, strict Notify-tier ceilings with pre-dispatch auditing, and a guaranteed disabled-by-default configuration (`self_healing.enabled = false`)
+- [x] Phase 4.1 Conversational Operator (Draft-Only): grounded multi-turn intent parsing, model backends (`LocalSocketBackend`, `CloudAnthropicBackend`, `CloudGeminiBackend`), 4-layer `PlanDraftValidator`, cryptographic `PlanExecutionGate`, strictly passive draft preview without execution dispatch
+- [x] Phase 4.2 Hardware Diagnostic & Driver Compatibility (`ai-hwcheck`): read-only PCI WiFi (Broadcom/Realtek/Intel), USB fingerprint sensor (libfprint vs libfprint-tod), and ACPI sleep/wake (`s2idle` vs S3, NVMe APST) inspector
+- [x] Phase 4.3 Proton/Wine Application Compatibility: World Model Schema v3 `compatibility_profiles` table, manifest parsing, runner/DXVK/VKD3D override tracking (`ai-worldmodel compat`)
+- [x] Phase 4.4 Complete CLI Accessibility: full `--json` support across all 6 CLI tools (`ai-engineer`, `ai-worklog`, `ai-cockpit`, `ai-health`, `ai-worldmodel`, `ai-hwcheck`)
+- [x] Phase 4.5 Localization Scaffolding: `control_plane::localization::MessageCatalog`, dynamic parameter interpolation, multi-locale JSON catalogs, `docs/localization.md`
+- [x] Phase 4.6 Scored Benchmark Suite (32 Scenarios): 32/32 passing (100.0%) across planning, remediation, rollback, policy gates, conversational intake, hardware diagnostics, and telemetry
 
 ### Consolidated Deferred & Known-Incomplete Register
 See [`docs/deferred-items.md`](file:///home/aditya_munday/projects/Directioner-OS/docs/deferred-items.md) for the unified register of deferred capabilities across all phases.
 
-See `docs/phase-0-checklist.md`, `docs/phase-1-checklist.md`, `docs/phase-2-checklist.md`, and `docs/phase-3-checklist.md` for detailed tracking.
+See `docs/phase-0-checklist.md`, `docs/phase-1-checklist.md`, `docs/phase-2-checklist.md`, `docs/phase-3-checklist.md`, and `docs/phase-4-checklist.md` for detailed tracking.
 
 ## AI Engineer CLI Commands
 
@@ -110,15 +116,21 @@ cargo run -p control-plane --bin ai-engineer -- dry-run "configure nginx on port
 
 # 3-Depth technical explanation
 cargo run -p control-plane --bin ai-engineer -- explain "configure nginx on port 8080" --depth 2
+
+# Grounded conversational intent preview (Draft-Only)
+cargo run -p control-plane --bin ai-engineer -- ask "why is thermal zone 0 high and can we tune fan profile?"
 ```
 
-### 2. Diagnostics & Automated Remediation
+### 2. Diagnostics, Hardware & Automated Remediation
 ```sh
 # Inspect and diagnose compilation errors across workspace
 cargo run -p control-plane --bin ai-engineer -- diagnose <path>
 
 # Synthesize and apply machine-applicable compiler fixes
 cargo run -p control-plane --bin ai-engineer -- fix <path> [--auto-approve]
+
+# Read-only hardware compatibility diagnostic
+cargo run -p control-plane --bin ai-hwcheck [--json]
 ```
 
 ### 3. Operational Cockpit & Benchmark Suite
@@ -126,7 +138,11 @@ cargo run -p control-plane --bin ai-engineer -- fix <path> [--auto-approve]
 # Launch live 1s refresh cockpit dashboard
 cargo run -p control-plane --bin ai-cockpit --watch
 
-# Execute complete 12-scenario benchmark suite
+# Inspect World Model stats and compatibility profiles
+cargo run -p world-model --bin ai-worldmodel -- stats --json
+cargo run -p world-model --bin ai-worldmodel -- compat steam:1091500
+
+# Execute complete 32-scenario benchmark suite
 cargo run -p benchmark-suite --bin ai-benchmark
 ```
 

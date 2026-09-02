@@ -190,6 +190,16 @@ impl BenchmarkRunner {
             Box::new(scenarios::ConversationalContextCompactionScenario),
             Box::new(scenarios::ConversationalCorruptedModelOutputScenario),
             Box::new(scenarios::ConversationalExecutionGateScenario),
+            Box::new(scenarios::HwcheckWifiProbingScenario),
+            Box::new(scenarios::HwcheckFingerprintProbingScenario),
+            Box::new(scenarios::HwcheckSleepWakeStateScenario),
+            Box::new(scenarios::AccessibilityJsonWorklogCompletenessScenario),
+            Box::new(scenarios::AccessibilityJsonWorldModelCompletenessScenario),
+            Box::new(scenarios::AccessibilityJsonHealthModelCompletenessScenario),
+            Box::new(scenarios::WorldModelProtonWineSyncScenario),
+            Box::new(scenarios::WorldModelDiskTelemetryScenario),
+            Box::new(scenarios::WorldModelThermalTelemetryScenario),
+            Box::new(scenarios::LocalizationCatalogInterpolationScenario),
         ];
 
         Self { scenarios }

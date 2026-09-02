@@ -4,7 +4,9 @@
 //! storage filesystems, thermal sensor readings, and network interface operational states.
 
 use crate::db;
-use crate::model::{DiskSnapshot, NetIfaceSnapshot, ThermalSnapshot, UnitChange, UnitSnapshot};
+use crate::model::{
+    CompatibilityProfile, DiskSnapshot, NetIfaceSnapshot, ThermalSnapshot, UnitChange, UnitSnapshot,
+};
 use crate::now_rfc3339;
 use rusqlite::{Connection, params};
 use std::path::Path;
@@ -282,6 +284,46 @@ pub fn sync_net_ifaces(conn: &Connection, ifaces: &[NetIfaceSnapshot]) -> Result
     db::set_meta(&tx, "net_ifaces_synced_at", &ts).map_err(|e| e.to_string())?;
     tx.commit().map_err(|e| e.to_string())?;
     Ok(ifaces.len())
+}
+
+/// Synchronizes read-only application compatibility profiles.
+pub fn sync_compatibility_profiles(
+    conn: &Connection,
+    profiles: &[CompatibilityProfile],
+) -> Result<usize, String> {
+    let ts = now_rfc3339();
+    let tx = conn.unchecked_transaction().map_err(|e| e.to_string())?;
+    tx.execute("DELETE FROM compatibility_profiles", [])
+        .map_err(|e| e.to_string())?;
+
+    {
+        let mut ins = tx
+            .prepare(
+                "INSERT INTO compatibility_profiles(app_id, app_title, runner_version, tier, \
+                 dxvk_version, vkd3d_version, env_overrides, dll_overrides, notes, synced_at) \
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)",
+            )
+            .map_err(|e| e.to_string())?;
+        for prof in profiles {
+            ins.execute(params![
+                prof.app_id,
+                prof.app_title,
+                prof.runner_version,
+                prof.tier,
+                prof.dxvk_version,
+                prof.vkd3d_version,
+                prof.env_overrides,
+                prof.dll_overrides,
+                prof.notes,
+                ts
+            ])
+            .map_err(|e| format!("insert compatibility profile {}: {e}", prof.app_id))?;
+        }
+    }
+
+    db::set_meta(&tx, "compatibility_profiles_synced_at", &ts).map_err(|e| e.to_string())?;
+    tx.commit().map_err(|e| e.to_string())?;
+    Ok(profiles.len())
 }
 
 /// Returns the file size in bytes of the worklog path if it exists.

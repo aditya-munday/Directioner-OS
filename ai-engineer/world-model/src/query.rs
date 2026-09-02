@@ -3,7 +3,7 @@
 //! Exposes graph queries for reverse dependency resolution, unit transition histories,
 //! package requirements, and read-only hardware/filesystem telemetry.
 
-use crate::model::{DiskSnapshot, NetIfaceSnapshot, ThermalSnapshot};
+use crate::model::{CompatibilityProfile, DiskSnapshot, NetIfaceSnapshot, ThermalSnapshot};
 use rusqlite::{Connection, params};
 
 /// Represents a package requirement dependency record.
@@ -211,6 +211,8 @@ pub struct GraphStats {
     pub thermals: i64,
     /// Number of tracked network interfaces.
     pub net_ifaces: i64,
+    /// Number of tracked application compatibility profiles.
+    pub compatibility_profiles: i64,
 }
 
 /// Computes summary statistics across all entities in the World Model.
@@ -228,6 +230,11 @@ pub fn graph_stats(conn: &Connection) -> rusqlite::Result<GraphStats> {
     let net_ifaces: i64 = conn
         .query_row("SELECT COUNT(*) FROM system_net_ifaces", [], |r| r.get(0))
         .unwrap_or(0);
+    let compatibility_profiles: i64 = conn
+        .query_row("SELECT COUNT(*) FROM compatibility_profiles", [], |r| {
+            r.get(0)
+        })
+        .unwrap_or(0);
 
     Ok(GraphStats {
         packages,
@@ -237,6 +244,7 @@ pub fn graph_stats(conn: &Connection) -> rusqlite::Result<GraphStats> {
         disks,
         thermals,
         net_ifaces,
+        compatibility_profiles,
     })
 }
 
@@ -293,6 +301,63 @@ pub fn system_net_ifaces(conn: &Connection) -> rusqlite::Result<Vec<NetIfaceSnap
                 oper_state: r.get(1)?,
                 mac_address: r.get(2)?,
                 carrier: carrier_int != 0,
+            })
+        })?
+        .filter_map(Result::ok)
+        .collect();
+    Ok(rows)
+}
+
+/// Retrieves an application compatibility profile by unique application ID.
+pub fn compatibility_profile(
+    conn: &Connection,
+    app_id: &str,
+) -> rusqlite::Result<Option<CompatibilityProfile>> {
+    let mut stmt = conn.prepare(
+        "SELECT app_id, app_title, runner_version, tier, dxvk_version, vkd3d_version, \
+         env_overrides, dll_overrides, notes FROM compatibility_profiles WHERE app_id = ?1",
+    )?;
+    let mut rows = stmt.query_map(params![app_id], |r| {
+        Ok(CompatibilityProfile {
+            app_id: r.get(0)?,
+            app_title: r.get(1)?,
+            runner_version: r.get(2)?,
+            tier: r.get(3)?,
+            dxvk_version: r.get(4)?,
+            vkd3d_version: r.get(5)?,
+            env_overrides: r.get(6)?,
+            dll_overrides: r.get(7)?,
+            notes: r.get(8)?,
+        })
+    })?;
+
+    if let Some(row) = rows.next() {
+        Ok(Some(row?))
+    } else {
+        Ok(None)
+    }
+}
+
+/// Returns all currently registered application compatibility profiles.
+pub fn all_compatibility_profiles(
+    conn: &Connection,
+) -> rusqlite::Result<Vec<CompatibilityProfile>> {
+    let mut stmt = conn.prepare(
+        "SELECT app_id, app_title, runner_version, tier, dxvk_version, vkd3d_version, \
+         env_overrides, dll_overrides, notes FROM compatibility_profiles ORDER BY app_title",
+    )?;
+    let rows = stmt
+        .query_map([], |r| {
+            Ok(CompatibilityProfile {
+                app_id: r.get(0)?,
+                app_title: r.get(1)?,
+                runner_version: r.get(2)?,
+                tier: r.get(3)?,
+                dxvk_version: r.get(4)?,
+                vkd3d_version: r.get(5)?,
+                env_overrides: r.get(6)?,
+                dll_overrides: r.get(7)?,
+                notes: r.get(8)?,
             })
         })?
         .filter_map(Result::ok)
