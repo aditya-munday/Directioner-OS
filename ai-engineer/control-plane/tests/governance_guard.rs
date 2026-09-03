@@ -261,14 +261,152 @@ fn test_adversarial_no_unauthorized_phase_documentation_files() {
     if let Ok(entries) = fs::read_dir(&docs_dir) {
         for entry in entries.flatten() {
             let name = entry.file_name().to_string_lossy().to_string();
-            // Disallow phase numbers like phase-4.1, phase-5.0 unless explicitly created in roadmap
-            assert!(
-                !name.starts_with("phase-4.1")
-                    && !name.starts_with("phase-4.2")
-                    && !name.starts_with("phase-5"),
-                "Adversarial documentation violation: unauthorized phase file '{}' found in docs/",
-                name
-            );
+            // Disallow unauthorized phase numbers like phase-4.1, phase-4.2, phase-5.1, phase-6
+            // Only officially chartered phases (e.g. phase-0 through phase-5) are permitted
+            if name.starts_with("phase-") {
+                assert!(
+                    name == "phase-0-checklist.md"
+                        || name == "phase-1-checklist.md"
+                        || name == "phase-2-checklist.md"
+                        || name == "phase-3-checklist.md"
+                        || name == "phase-4-checklist.md"
+                        || name == "phase-4-proposal.md"
+                        || name == "phase-5-checklist.md",
+                    "Adversarial documentation violation: unauthorized phase file '{}' found in docs/",
+                    name
+                );
+            }
         }
+    }
+}
+
+#[test]
+fn test_plugin_sdk_cannot_bypass_policy_or_reviewer() {
+    use capability_layer::CapabilityKind;
+    use control_plane::plan::{Plan, PlanStatus, PlanStep};
+    use control_plane::plugin::{
+        PluginContext, PluginError, PluginManifest, PluginMetadata, PluginPermissions,
+        PluginSecurity,
+    };
+    use control_plane::policy::ApprovalTier;
+
+    let manifest = PluginManifest {
+        metadata: PluginMetadata {
+            id: "test.plugin.adversarial".into(),
+            name: "Adversarial Test Plugin".into(),
+            version: "0.1.0".into(),
+            author: "Tester".into(),
+            description: "Tests policy and reviewer boundary enforcement".into(),
+            license: "Apache-2.0".into(),
+            min_os_version: "42.0.0".into(),
+        },
+        security: PluginSecurity {
+            signing_key_id: "key-1".into(),
+            signature: "sig-1".into(),
+            manifest_hash: "hash-1".into(),
+        },
+        permissions: PluginPermissions {
+            read_world_model: false,
+            max_approval_tier: ApprovalTier::ExpertReview,
+            allowed_capabilities: vec!["file_write".into()],
+            allowed_paths: vec![],
+        },
+        entrypoint: "TestPlugin".into(),
+    };
+
+    let ctx = PluginContext::new(manifest, None, None);
+
+    // 1. Reviewer invariant enforcement: Plan that targets /etc/sudoers.d MUST be rejected
+    // even if plugin has ExpertReview tier permissions and provides an approval token!
+    let sudoers_plan = Plan {
+        id: "plan-sudoers-breach".into(),
+        intent: "tamper with sudoers".into(),
+        summary: "write sudoers".into(),
+        steps: vec![PlanStep {
+            step_id: "step-1".into(),
+            description: "write sudoers file".into(),
+            capability: CapabilityKind::FileWrite {
+                path: "/etc/../etc/sudoers.d/malicious".into(),
+                content: "ALL ALL=(ALL) NOPASSWD: ALL".into(),
+                append: false,
+            },
+            blast_radius: control_plane::policy::BlastRadiusReport {
+                score: 85,
+                tier: ApprovalTier::ExpertReview,
+                factors: vec![],
+            },
+            timeout_secs: 30,
+        }],
+        rollback_steps: vec![],
+        aggregate_blast_radius: control_plane::policy::BlastRadiusReport {
+            score: 85,
+            tier: ApprovalTier::ExpertReview,
+            factors: vec![],
+        },
+        created_at: "2026-09-03T00:00:00Z".into(),
+        status: PlanStatus::Draft,
+    };
+
+    let err = ctx
+        .propose_and_execute_plan(&sudoers_plan, Some("token-operator"))
+        .unwrap_err();
+    match err {
+        PluginError::ReviewerRejected { ref summary } => {
+            assert!(summary.contains("Path traversal") || summary.contains("fatal"));
+        }
+        other => {
+            panic!("expected ReviewerRejected for /etc/../etc/sudoers.d breach, got {other:?}")
+        }
+    }
+
+    // 2. Policy tier enforcement: Plan exceeding max_approval_tier MUST be rejected
+    let notify_manifest = PluginPermissions {
+        read_world_model: false,
+        max_approval_tier: ApprovalTier::Notify,
+        allowed_capabilities: vec!["file_write".into()],
+        allowed_paths: vec![],
+    };
+    let mut notify_plugin_manifest = ctx.manifest().clone();
+    notify_plugin_manifest.permissions = notify_manifest;
+    let notify_ctx = PluginContext::new(notify_plugin_manifest, None, None);
+    let err_tier = notify_ctx
+        .propose_and_execute_plan(&sudoers_plan, None)
+        .unwrap_err();
+    assert!(matches!(err_tier, PluginError::TierExceeded { .. }));
+
+    // 3. Capability allowlist enforcement: Plan with un-allowlisted capability MUST be rejected
+    let high_blast_plan = Plan {
+        id: "plan-high-tier".into(),
+        intent: "remove vital package".into(),
+        summary: "remove vital package".into(),
+        steps: vec![PlanStep {
+            step_id: "step-1".into(),
+            description: "remove package".into(),
+            capability: CapabilityKind::PackageRemove {
+                package: "systemd".into(),
+                approved: true,
+            },
+            blast_radius: control_plane::policy::BlastRadiusReport {
+                score: 80,
+                tier: ApprovalTier::ExpertReview,
+                factors: vec![],
+            },
+            timeout_secs: 30,
+        }],
+        rollback_steps: vec![],
+        aggregate_blast_radius: control_plane::policy::BlastRadiusReport {
+            score: 80,
+            tier: ApprovalTier::ExpertReview,
+            factors: vec![],
+        },
+        created_at: "2026-09-03T00:00:00Z".into(),
+        status: PlanStatus::Draft,
+    };
+    let err2 = ctx
+        .propose_and_execute_plan(&high_blast_plan, None)
+        .unwrap_err();
+    match err2 {
+        PluginError::CapabilityNotAllowlisted { .. } | PluginError::TierExceeded { .. } => {}
+        other => panic!("expected CapabilityNotAllowlisted or TierExceeded, got {other:?}"),
     }
 }

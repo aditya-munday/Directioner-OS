@@ -15,6 +15,7 @@ pub mod cockpit;
 pub mod code_engine;
 pub mod conversational;
 pub mod draft_validator;
+pub mod federation;
 pub mod health_model;
 pub mod hwcheck;
 pub mod implementer;
@@ -22,6 +23,7 @@ pub mod incident_response;
 pub mod localization;
 pub mod plan;
 pub mod planner;
+pub mod plugin;
 pub mod policy;
 pub mod remediation;
 pub mod reviewer;
@@ -44,6 +46,10 @@ pub use draft_validator::{
     CandidateCapabilityDraft, CandidatePlanDraft, CandidateRollbackDraft, CandidateStepDraft,
     DriftError, MAX_DRAFT_PAYLOAD_BYTES, PlanDraftValidator, ValidationError,
 };
+pub use federation::{
+    FederatedHealthSnapshot, FederatedPeerStatus, FederatedResourceSummary, FederationError,
+    FederationPeerClient, FederationPublisher, SignedFederatedSnapshot,
+};
 pub use health_model::{
     HealthEvidence, HealthModel, HealthModelConfig, HealthStatus, SubsystemHealth,
     SystemHealthReport,
@@ -56,6 +62,10 @@ pub use plan::{
     Plan, PlanExecutionReport, PlanStatus, PlanStep, RollbackStep, StepExecutionResult,
 };
 pub use planner::{Planner, PlannerConfig};
+pub use plugin::{
+    PluginContext, PluginError, PluginExtension, PluginManifest, PluginMetadata, PluginPermissions,
+    PluginRegistry, PluginSecurity, WorldModelAuditPlugin,
+};
 pub use policy::{ApprovalTier, BlastRadiusReport, PolicyEngine};
 pub use remediation::{RemediationAgent, RemediationConfig, RemediationError};
 pub use reviewer::{

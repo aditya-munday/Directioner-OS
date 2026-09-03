@@ -101,11 +101,15 @@ real hardware before it is proven in a disposable VM.
 - [x] Phase 4.4 Complete CLI Accessibility: full `--json` support across all 6 CLI tools (`ai-engineer`, `ai-worklog`, `ai-cockpit`, `ai-health`, `ai-worldmodel`, `ai-hwcheck`)
 - [x] Phase 4.5 Localization Scaffolding: `control_plane::localization::MessageCatalog`, dynamic parameter interpolation, multi-locale JSON catalogs, `docs/localization.md`
 - [x] Phase 4.6 Scored Benchmark Suite (32 Scenarios): 32/32 passing (100.0%) across planning, remediation, rollback, policy gates, conversational intake, hardware diagnostics, and telemetry
+- [x] Phase 5.1 Plugin SDK Architecture & Scaffolding: typed plugin manifests (`PluginManifest`), cryptographic signing verification, sandboxed execution context (`PluginContext`), mandatory 5-stage policy and reviewer gate, production reference plugin (`WorldModelAuditPlugin`)
+- [x] Phase 5.2 Governance Guard Extension: regression test suite proving plugins cannot bypass `PolicyEngine` or `Reviewer` (`test_plugin_sdk_cannot_bypass_policy_or_reviewer` in `tests/governance_guard.rs`)
+- [x] Phase 5.3 Multi-Machine Federation Architecture & Minimal Read-Only Prototype: LAN health snapshot gossip (`SignedFederatedSnapshot`), tamper-evident cryptographic digests, zero remote execution invariant (`docs/multi-machine-federation.md`)
+- [x] Phase 5.4 Internal Security Self-Audit & Audit Prep: comprehensive checklist across Capability and Safety layers, documented edge cases and hardening roadmap (`docs/security-self-audit.md`)
 
 ### Consolidated Deferred & Known-Incomplete Register
 See [`docs/deferred-items.md`](file:///home/aditya_munday/projects/Directioner-OS/docs/deferred-items.md) for the unified register of deferred capabilities across all phases.
 
-See `docs/phase-0-checklist.md`, `docs/phase-1-checklist.md`, `docs/phase-2-checklist.md`, `docs/phase-3-checklist.md`, and `docs/phase-4-checklist.md` for detailed tracking.
+See `docs/phase-0-checklist.md`, `docs/phase-1-checklist.md`, `docs/phase-2-checklist.md`, `docs/phase-3-checklist.md`, `docs/phase-4-checklist.md`, and `docs/phase-5-checklist.md` for detailed tracking.
 
 ## AI Engineer CLI Commands
 
