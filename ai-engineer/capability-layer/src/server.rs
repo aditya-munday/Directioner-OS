@@ -26,6 +26,18 @@ impl Default for ServerConfig {
         let mut uids = vec![current_uid];
         if current_uid != 0 {
             uids.push(0);
+        } else {
+            // When running as root (system daemon), also authorize primary local user (UID 1000)
+            uids.push(1000);
+        }
+        if let Ok(env_uids) = std::env::var("DIRECTIONER_ALLOWED_UIDS") {
+            for part in env_uids.split(',') {
+                if let Ok(uid) = part.trim().parse::<u32>()
+                    && !uids.contains(&uid)
+                {
+                    uids.push(uid);
+                }
+            }
         }
         Self { allowed_uids: uids }
     }
@@ -55,7 +67,6 @@ impl Server {
         let path = path.as_ref();
         if let Some(parent) = path.parent() {
             std::fs::create_dir_all(parent)?;
-            let _ = std::fs::set_permissions(parent, std::fs::Permissions::from_mode(0o700));
         }
         if path.exists() {
             std::fs::remove_file(path)?;
