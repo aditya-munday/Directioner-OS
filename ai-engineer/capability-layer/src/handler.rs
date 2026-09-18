@@ -42,6 +42,8 @@ pub struct Handler {
     pub killswitch: KillSwitch,
     /// Active handler configuration.
     pub config: HandlerConfig,
+    /// Optional directory to prioritize when resolving binary paths.
+    custom_bin_dir: Option<std::path::PathBuf>,
 }
 
 impl Handler {
@@ -57,6 +59,95 @@ impl Handler {
             audit,
             killswitch,
             config,
+            custom_bin_dir: None,
+        }
+    }
+
+    /// Overrides binary resolution directory (useful for testing mock commands).
+    pub fn with_custom_bin_dir(mut self, dir: impl Into<std::path::PathBuf>) -> Self {
+        self.custom_bin_dir = Some(dir.into());
+        self
+    }
+
+    fn which(&self, bin: &str) -> Option<std::path::PathBuf> {
+        if let Some(ref dir) = self.custom_bin_dir {
+            let candidate = dir.join(bin);
+            if candidate.exists() {
+                return Some(candidate);
+            }
+        }
+        which(bin)
+    }
+
+    /// Executes an external command within a dedicated process group, registering its PGID
+    /// with the killswitch and actively polling for killswitch activation every 10ms.
+    /// If the killswitch is engaged, the process group is immediately terminated via `SIGKILL`.
+    pub fn run_command(
+        &self,
+        cmd: &mut std::process::Command,
+    ) -> std::io::Result<std::process::Output> {
+        use std::os::unix::process::CommandExt;
+        cmd.process_group(0);
+        cmd.stdout(std::process::Stdio::piped());
+        cmd.stderr(std::process::Stdio::piped());
+
+        let mut child = cmd.spawn()?;
+        let pgid = child.id();
+        KillSwitch::register_process_group(pgid);
+
+        let mut stdout_handle = child.stdout.take().map(|mut out| {
+            std::thread::spawn(move || {
+                let mut buf = Vec::new();
+                let _ = std::io::Read::read_to_end(&mut out, &mut buf);
+                buf
+            })
+        });
+        let mut stderr_handle = child.stderr.take().map(|mut err| {
+            std::thread::spawn(move || {
+                let mut buf = Vec::new();
+                let _ = std::io::Read::read_to_end(&mut err, &mut buf);
+                buf
+            })
+        });
+
+        loop {
+            match child.try_wait()? {
+                Some(status) => {
+                    KillSwitch::unregister_process_group(pgid);
+                    let stdout = stdout_handle
+                        .take()
+                        .and_then(|h| h.join().ok())
+                        .unwrap_or_default();
+                    let stderr = stderr_handle
+                        .take()
+                        .and_then(|h| h.join().ok())
+                        .unwrap_or_default();
+                    return Ok(std::process::Output {
+                        status,
+                        stdout,
+                        stderr,
+                    });
+                }
+                None => {
+                    if self.killswitch.is_engaged() {
+                        if let Some(pid) = rustix::process::Pid::from_raw(pgid as i32) {
+                            let _ = rustix::process::kill_process_group(
+                                pid,
+                                rustix::process::Signal::KILL,
+                            );
+                        }
+                        KillSwitch::unregister_process_group(pgid);
+                        let _ = child.wait();
+                        drop(stdout_handle);
+                        drop(stderr_handle);
+                        return Err(std::io::Error::new(
+                            std::io::ErrorKind::Interrupted,
+                            "subprocess terminated by killswitch",
+                        ));
+                    }
+                    std::thread::sleep(std::time::Duration::from_millis(10));
+                }
+            }
         }
     }
 
@@ -215,15 +306,33 @@ impl Handler {
         if !path.starts_with(self.scope.root()) {
             return Err(CapError::Denied(format!("path escapes work scope: {raw}")));
         }
+        // Verify that no component from the scoped root to the target is a symlink
+        let mut check_path = self.scope.root().to_path_buf();
+        if let Ok(rel) = path.strip_prefix(self.scope.root()) {
+            for comp in rel.components() {
+                check_path.push(comp);
+                if let Ok(meta) = std::fs::symlink_metadata(&check_path)
+                    && meta.file_type().is_symlink()
+                {
+                    return Err(CapError::Denied(format!(
+                        "symlinks not permitted in scope: {raw}"
+                    )));
+                }
+            }
+        }
         if let Some(parent) = path.parent() {
             std::fs::create_dir_all(parent).map_err(|e| CapError::Internal(e.to_string()))?;
         }
         use std::io::Write;
-        let mut f = std::fs::OpenOptions::new()
+        use std::os::unix::fs::OpenOptionsExt;
+        let mut options = std::fs::OpenOptions::new();
+        options
             .create(true)
             .write(true)
             .truncate(!append)
             .append(append)
+            .custom_flags(rustix::fs::OFlags::NOFOLLOW.bits() as i32);
+        let mut f = options
             .open(&path)
             .map_err(|e| CapError::Internal(e.to_string()))?;
         f.write_all(content.as_bytes())
@@ -313,11 +422,9 @@ impl Handler {
         }
 
         // 2. Fast rpm database query (rpm -q <package>)
-        if let Some(rpm) = which("rpm") {
-            let is_installed = std::process::Command::new(&rpm)
-                .arg("-q")
-                .arg(package)
-                .output()
+        if let Some(rpm) = self.which("rpm") {
+            let is_installed = self
+                .run_command(std::process::Command::new(&rpm).arg("-q").arg(package))
                 .map(|c| c.status.success())
                 .unwrap_or(false);
             if is_installed {
@@ -331,20 +438,21 @@ impl Handler {
         }
 
         if let Some(bin) = ostree {
-            let out = std::process::Command::new(&bin)
-                .arg("install")
-                .arg("-y")
-                .arg(package)
-                .output()
+            let out = self
+                .run_command(
+                    std::process::Command::new(&bin)
+                        .arg("install")
+                        .arg("-y")
+                        .arg(package),
+                )
                 .map_err(|e| CapError::Internal(e.to_string()))?;
             let stderr = String::from_utf8_lossy(&out.stderr);
             let stdout = String::from_utf8_lossy(&out.stdout);
             let combined = format!("{stderr} {stdout}").to_lowercase();
             if out.status.success() {
                 // Attempt live layering without reboot if supported by system
-                let live_applied = std::process::Command::new(&bin)
-                    .arg("apply-live")
-                    .output()
+                let live_applied = self
+                    .run_command(std::process::Command::new(&bin).arg("apply-live"))
                     .map(|o| o.status.success())
                     .unwrap_or(false);
 
@@ -375,11 +483,13 @@ impl Handler {
                 )))
             }
         } else if let Some(bin) = dnf {
-            let out = std::process::Command::new(&bin)
-                .arg("install")
-                .arg("-y")
-                .arg(package)
-                .output()
+            let out = self
+                .run_command(
+                    std::process::Command::new(&bin)
+                        .arg("install")
+                        .arg("-y")
+                        .arg(package),
+                )
                 .map_err(|e| CapError::Internal(e.to_string()))?;
             if out.status.success() {
                 Ok(json!({
@@ -410,8 +520,9 @@ impl Handler {
                 "approval gate not cleared (approved=false) for package.remove {package}"
             )));
         }
-        let ostree = which("rpm-ostree");
-        let dnf = which("dnf5").or_else(|| which("dnf"));
+
+        let ostree = self.which("rpm-ostree");
+        let dnf = self.which("dnf5").or_else(|| self.which("dnf"));
 
         if self.config.dry_run {
             let cmd = if ostree.is_some() || dnf.is_none() {
@@ -430,8 +541,12 @@ impl Handler {
 
         // On ostree/bootc, base packages baked into the image cannot be layered-uninstalled
         if ostree.is_some() {
-            let is_layered = which("rpm-ostree")
-                .and_then(|bin| std::process::Command::new(bin).arg("status").output().ok())
+            let is_layered = self
+                .which("rpm-ostree")
+                .and_then(|bin| {
+                    self.run_command(std::process::Command::new(bin).arg("status"))
+                        .ok()
+                })
                 .map(|o| {
                     let s = String::from_utf8_lossy(&o.stdout);
                     s.contains(&format!("LayeredPackages: {package}"))
@@ -450,20 +565,21 @@ impl Handler {
         }
 
         if let Some(bin) = ostree {
-            let out = std::process::Command::new(&bin)
-                .arg("uninstall")
-                .arg("-y")
-                .arg(package)
-                .output()
+            let out = self
+                .run_command(
+                    std::process::Command::new(&bin)
+                        .arg("uninstall")
+                        .arg("-y")
+                        .arg(package),
+                )
                 .map_err(|e| CapError::Internal(e.to_string()))?;
             let stderr = String::from_utf8_lossy(&out.stderr);
             let stdout = String::from_utf8_lossy(&out.stdout);
             let combined = format!("{stderr} {stdout}").to_lowercase();
             if out.status.success() {
                 // Attempt dynamic live unlayering without reboot
-                let live_unlayered = std::process::Command::new(&bin)
-                    .arg("apply-live")
-                    .output()
+                let live_unlayered = self
+                    .run_command(std::process::Command::new(&bin).arg("apply-live"))
                     .map(|o| o.status.success())
                     .unwrap_or(false);
 
@@ -495,11 +611,13 @@ impl Handler {
                 )))
             }
         } else if let Some(bin) = dnf {
-            let out = std::process::Command::new(&bin)
-                .arg("remove")
-                .arg("-y")
-                .arg(package)
-                .output()
+            let out = self
+                .run_command(
+                    std::process::Command::new(&bin)
+                        .arg("remove")
+                        .arg("-y")
+                        .arg(package),
+                )
                 .map_err(|e| CapError::Internal(e.to_string()))?;
             if out.status.success() {
                 Ok(json!({
@@ -521,11 +639,13 @@ impl Handler {
     }
 
     fn cap_service_status(&self, unit: &str) -> std::result::Result<Value, CapError> {
-        if let Some(sysctl) = which("systemctl") {
-            let out = std::process::Command::new(&sysctl)
-                .arg("is-active")
-                .arg(unit)
-                .output()
+        if let Some(sysctl) = self.which("systemctl") {
+            let out = self
+                .run_command(
+                    std::process::Command::new(&sysctl)
+                        .arg("is-active")
+                        .arg(unit),
+                )
                 .map_err(|e| CapError::Internal(e.to_string()))?;
             let state = String::from_utf8_lossy(&out.stdout).trim().to_string();
             Ok(json!({ "unit": unit, "state": state }))
@@ -561,11 +681,9 @@ impl Handler {
                 "would_run": format!("systemctl restart {unit}"),
             }));
         }
-        if let Some(sysctl) = which("systemctl") {
-            let out = std::process::Command::new(&sysctl)
-                .arg("restart")
-                .arg(unit)
-                .output()
+        if let Some(sysctl) = self.which("systemctl") {
+            let out = self
+                .run_command(std::process::Command::new(&sysctl).arg("restart").arg(unit))
                 .map_err(|e| CapError::Internal(e.to_string()))?;
             if out.status.success() {
                 Ok(json!({ "unit": unit, "restarted": true }))
@@ -602,11 +720,9 @@ impl Handler {
                 "would_run": format!("systemctl stop {unit}"),
             }));
         }
-        if let Some(sysctl) = which("systemctl") {
-            let out = std::process::Command::new(&sysctl)
-                .arg("stop")
-                .arg(unit)
-                .output()
+        if let Some(sysctl) = self.which("systemctl") {
+            let out = self
+                .run_command(std::process::Command::new(&sysctl).arg("stop").arg(unit))
                 .map_err(|e| CapError::Internal(e.to_string()))?;
             if out.status.success() {
                 Ok(json!({ "unit": unit, "stopped": true }))
@@ -631,10 +747,13 @@ impl Handler {
                 "boot slot pin unapproved by policy".into(),
             ));
         }
-        if let Some(ostree) = which("ostree") {
-            let mut out = std::process::Command::new(&ostree)
-                .args(["admin", "pin", &slot.to_string()])
-                .output()
+        if let Some(ostree) = self.which("ostree") {
+            let mut out = self
+                .run_command(std::process::Command::new(&ostree).args([
+                    "admin",
+                    "pin",
+                    &slot.to_string(),
+                ]))
                 .map_err(|e| CapError::Internal(e.to_string()))?;
             if !out.status.success() {
                 let stderr = String::from_utf8_lossy(&out.stderr);
@@ -642,17 +761,19 @@ impl Handler {
                     || stderr.contains("staged deployment")
                 {
                     // Discard unbooted staged deployment leftover from prior tests so deployment can be pinned
-                    if let Some(rpm_ostree) = which("rpm-ostree") {
-                        let _ = std::process::Command::new(&rpm_ostree)
-                            .args(["cleanup", "-p"])
-                            .output();
-                        let _ = std::process::Command::new(&rpm_ostree)
-                            .arg("cancel")
-                            .output();
+                    if let Some(rpm_ostree) = self.which("rpm-ostree") {
+                        let _ = self.run_command(
+                            std::process::Command::new(&rpm_ostree).args(["cleanup", "-p"]),
+                        );
+                        let _ =
+                            self.run_command(std::process::Command::new(&rpm_ostree).arg("cancel"));
                     }
-                    out = std::process::Command::new(&ostree)
-                        .args(["admin", "pin", &slot.to_string()])
-                        .output()
+                    out = self
+                        .run_command(std::process::Command::new(&ostree).args([
+                            "admin",
+                            "pin",
+                            &slot.to_string(),
+                        ]))
                         .map_err(|e| CapError::Internal(e.to_string()))?;
                 }
             }
@@ -674,17 +795,15 @@ impl Handler {
     }
 
     fn cap_bootc_rollback(&self) -> Result<Value> {
-        if let Some(bootc) = which("bootc") {
-            let out = std::process::Command::new(&bootc)
-                .arg("rollback")
-                .output()
+        if let Some(bootc) = self.which("bootc") {
+            let out = self
+                .run_command(std::process::Command::new(&bootc).arg("rollback"))
                 .map_err(|e| CapError::Internal(e.to_string()))?;
             if out.status.success() {
                 Ok(json!({ "rollback_invoked": true, "mechanism": "bootc" }))
-            } else if let Some(ostree) = which("ostree") {
-                let out2 = std::process::Command::new(&ostree)
-                    .args(["admin", "switch", "1"])
-                    .output()
+            } else if let Some(ostree) = self.which("ostree") {
+                let out2 = self
+                    .run_command(std::process::Command::new(&ostree).args(["admin", "switch", "1"]))
                     .map_err(|e| CapError::Internal(e.to_string()))?;
                 if out2.status.success() {
                     Ok(json!({ "rollback_invoked": true, "mechanism": "ostree switch" }))
@@ -700,10 +819,9 @@ impl Handler {
                     String::from_utf8_lossy(&out.stderr)
                 )))
             }
-        } else if let Some(ostree) = which("ostree") {
-            let out = std::process::Command::new(&ostree)
-                .args(["admin", "switch", "1"])
-                .output()
+        } else if let Some(ostree) = self.which("ostree") {
+            let out = self
+                .run_command(std::process::Command::new(&ostree).args(["admin", "switch", "1"]))
                 .map_err(|e| CapError::Internal(e.to_string()))?;
             if out.status.success() {
                 Ok(json!({ "rollback_invoked": true, "mechanism": "ostree switch" }))
@@ -776,11 +894,13 @@ impl Handler {
         }
 
         // Apply runtime sysctl
-        if let Some(sysctl) = which("sysctl") {
-            let out = std::process::Command::new(&sysctl)
-                .arg("-w")
-                .arg(format!("{key}={value}"))
-                .output()
+        if let Some(sysctl) = self.which("sysctl") {
+            let out = self
+                .run_command(
+                    std::process::Command::new(&sysctl)
+                        .arg("-w")
+                        .arg(format!("{key}={value}")),
+                )
                 .map_err(|e| CapError::Internal(e.to_string()))?;
             if !out.status.success() {
                 return Err(CapError::Internal(format!(
@@ -853,14 +973,14 @@ impl Handler {
             }));
         }
 
-        if let Some(modprobe) = which("modprobe") {
+        if let Some(modprobe) = self.which("modprobe") {
             let mut cmd = std::process::Command::new(&modprobe);
             cmd.arg(module);
             for a in args {
                 cmd.arg(a);
             }
-            let out = cmd
-                .output()
+            let out = self
+                .run_command(&mut cmd)
                 .map_err(|e| CapError::Internal(e.to_string()))?;
             if out.status.success() {
                 Ok(json!({ "module": module, "loaded": true }))
@@ -966,11 +1086,9 @@ impl Handler {
             }
         }
 
-        if let Some(modprobe) = which("modprobe") {
-            let out = std::process::Command::new(&modprobe)
-                .arg("-r")
-                .arg(module)
-                .output()
+        if let Some(modprobe) = self.which("modprobe") {
+            let out = self
+                .run_command(std::process::Command::new(&modprobe).arg("-r").arg(module))
                 .map_err(|e| CapError::Internal(e.to_string()))?;
             if out.status.success() {
                 Ok(json!({ "module": module, "unloaded": true }))

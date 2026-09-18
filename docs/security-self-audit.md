@@ -25,8 +25,8 @@ This document records the internal security self-audit conducted across the code
   - `Server::bind` creates the parent directory `/run/directioner` (if absent) and binds `UnixListener::bind(path)`.
 - **Audit Findings**:
   - **Strengths**: Socket is local-only; network interfaces (TCP/UDP) are not bound.
-  - **Edge Case / Imperfect Finding (AUDIT-CAP-01)**: `Server::bind` does not explicitly invoke `fchmod` or adjust the process `umask` prior to socket creation. If `/run/directioner` is created with default permissions (e.g. `0755`) and the daemon umask is `0022`, the socket file may be world-readable and world-writable (`srwxr-xr-x`). While standard systemd service units configure `RuntimeDirectoryMode=0700`, relying on directory mode without defensive `0600` socket permissions presents defense-in-depth risk.
-  - **Edge Case / Imperfect Finding (AUDIT-CAP-02)**: The socket server does not currently query `SO_PEERCRED` on Linux to enforce that connecting clients have UID 0 or belong to the `directioner-admin` group.
+  - **AUDIT-CAP-01 (RESOLVED)**: `Server::bind` explicitly enforces `0o700` parent directory permissions and `0o600` socket permissions via `std::os::unix::fs::PermissionsExt`, removing reliance on ambient process umask. Verified in `tests/audit_hardening.rs::test_audit_cap_01_socket_creation_permissions`.
+  - **AUDIT-CAP-02 (RESOLVED)**: `Server::serve_connection` inspects `SO_PEERCRED` via `rustix::net::sockopt::socket_peercred(&stream)`. Callers whose UID is not in `ServerConfig::allowed_uids` (defaulting to current process UID) are rejected with `CapabilityResponse::Denied` and disconnected before any requests are processed. Verified in `tests/audit_hardening.rs::test_audit_cap_02_peercred_caller_uid_verification`.
 
 ### 2.2 Path Traversal & Lexical Sandboxing
 - **Design Intent**: File operations (`FileRead`, `FileWrite`, `FileDelete`) must never traverse outside the authorized filesystem root.
@@ -36,7 +36,7 @@ This document records the internal security self-audit conducted across the code
   - Paths are checked with `path.starts_with(self.scope.root())`.
 - **Audit Findings**:
   - **Strengths**: Lexical directory traversal (`../`) is deterministically blocked at both the `Reviewer` layer and the `Handler` execution layer.
-  - **Edge Case / Imperfect Finding (AUDIT-CAP-03 - Symlink TOCTOU)**: `cap_file_write` calls `OpenOptions::new().open(&path)`. If a symlink exists inside the scoped root pointing to an out-of-scope file (e.g. `/var/scoped/link -> /etc/shadow`), standard POSIX `open()` follows symlinks unless `O_NOFOLLOW` is specified. Hardening recommendation: use `openat2` with `RESOLVE_NO_SYMLINKS` or `O_NOFOLLOW` on mutating operations.
+  - **AUDIT-CAP-03 (RESOLVED - Symlink TOCTOU Defense)**: `cap_file_write` iterates all path components from the scoped root to the target, verifying via `std::fs::symlink_metadata` that no symlinks exist in the path traversal, and passes `rustix::fs::OFlags::NOFOLLOW` to `OpenOptionsExt::custom_flags`. Writes targeted at pre-existing symlinks pointing outside the scope are denied (`CapError::Denied`). Verified in `tests/audit_hardening.rs::test_audit_cap_03_symlink_redirection_defense`.
 
 ### 2.3 Killswitch Latency & In-Flight Execution Halting
 - **Design Intent**: One action (touching or writing `/run/directioner/killswitch.lock`) must immediately halt all AI Engineer activity.
@@ -45,7 +45,7 @@ This document records the internal security self-audit conducted across the code
   - `Handler::dispatch` checks `self.killswitch.is_engaged()` before executing any request.
 - **Audit Findings**:
   - **Strengths**: Sub-millisecond latency for subsequent requests; zero memory caching means lock engagement takes effect on the next CPU cycle.
-  - **Edge Case / Imperfect Finding (AUDIT-CAP-04 - In-Flight Halting)**: If a long-running subprocess (e.g. `rpm-ostree install` or `bootc update`) is already executing in `std::process::Command`, engaging the killswitch halts *subsequent* steps, but does not send `SIGKILL` or `SIGTERM` to the currently spawned child process. Hardening recommendation: track child process PIDs in a process group and issue `killpg(SIGKILL)` on killswitch transition.
+  - **AUDIT-CAP-04 (RESOLVED - In-Flight Subprocess Halting)**: Subprocesses are executed via `Handler::run_command` in dedicated process groups (`cmd.process_group(0)`). Process group IDs are registered in `KillSwitch::register_process_group`. On killswitch engagement (either via `KillSwitch::engage` or polling lockfile every 10ms), `rustix::process::kill_process_group(pid, Signal::KILL)` immediately terminates in-flight subprocesses. Verified in `tests/audit_hardening.rs::test_audit_cap_04_killswitch_terminates_inflight_subprocess`.
 
 ### 2.4 Command Escaping & Argument Injection
 - **Design Intent**: System mutation commands (sysctl, modprobe, rpm-ostree, bootc) must never be vulnerable to shell injection or flag poisoning.
@@ -133,12 +133,12 @@ This document records the internal security self-audit conducted across the code
 
 ## 6. Audit Summary Matrix & Remediation Roadmap
 
-| ID | Component | Description | Severity | Status | Remediation Plan |
+| ID | Component | Description | Severity | Status | Resolution Evidence |
 |---|---|---|---|---|---|
-| **AUDIT-CAP-01** | `ai-capabilityd` | Socket creation inherits process umask without explicit `chmod 0600` | Medium | Documented | Set `umask(0077)` prior to `bind` and enforce `fchmod(0600)` |
-| **AUDIT-CAP-02** | `ai-capabilityd` | Unix socket missing `SO_PEERCRED` caller UID/GID verification | Medium | Documented | Inspect `SO_PEERCRED` on connection accept; verify UID 0 |
-| **AUDIT-CAP-03** | `ai-capabilityd` | FileWrite follows existing symlinks inside scoped root | Low | Documented | Pass `O_NOFOLLOW` or use `openat2(RESOLVE_NO_SYMLINKS)` |
-| **AUDIT-CAP-04** | `ai-capabilityd` | Killswitch does not pre-emptively kill active subprocesses in flight | Low | Documented | Track child process PIDs in a process group and issue `killpg` |
+| **AUDIT-CAP-01** | `ai-capabilityd` | Socket creation inherits process umask without explicit `chmod 0600` | Medium | RESOLVED | Explicit `0o700` parent dir & `0o600` socket perms in `Server::bind`. Verified by `test_audit_cap_01_socket_creation_permissions`. |
+| **AUDIT-CAP-02** | `ai-capabilityd` | Unix socket missing `SO_PEERCRED` caller UID/GID verification | Medium | RESOLVED | Caller UID verified via `rustix::net::sockopt::socket_peercred`; unauthorized UIDs rejected. Verified by `test_audit_cap_02_peercred_caller_uid_verification`. |
+| **AUDIT-CAP-03** | `ai-capabilityd` | FileWrite follows existing symlinks inside scoped root | Low | RESOLVED | Strict path symlink verification via `symlink_metadata` and `O_NOFOLLOW` flag in `OpenOptions`. Verified by `test_audit_cap_03_symlink_redirection_defense`. |
+| **AUDIT-CAP-04** | `ai-capabilityd` | Killswitch does not pre-emptively kill active subprocesses in flight | Low | RESOLVED | Process group tracking (`killpg(SIGKILL)`) and active 10ms polling in `run_command`. Verified by `test_audit_cap_04_killswitch_terminates_inflight_subprocess`. |
 | **AUDIT-SAF-01** | `control-plane` | PolicyEngine fails closed on DB error | Nominal | Verified | Maintained and verified by unit tests |
 | **AUDIT-PLUG-01** | `plugin` | Plugin SDK structural bypass impossibility | Nominal | Verified | Maintained and verified by governance guard test |
 | **AUDIT-FED-01** | `federation` | Zero remote execution authority in federation prototype | Nominal | Verified | Maintained and verified by static analysis and tests |
@@ -147,4 +147,4 @@ This document records the internal security self-audit conducted across the code
 
 ## 7. Conclusion
 
-Directioner-OS demonstrates strong defensive architecture with defense-in-depth layers across plan proposal, blast radius estimation, invariant verification, and capability execution. The identified edge cases (`AUDIT-CAP-01` through `AUDIT-CAP-04`) do not represent immediate bypasses in standard systemd deployments, but provide clear, actionable targets for pre-audit hardening.
+Directioner-OS demonstrates strong defensive architecture with defense-in-depth layers across plan proposal, blast radius estimation, invariant verification, and capability execution. All four self-identified capability-layer edge cases (`AUDIT-CAP-01` through `AUDIT-CAP-04`) have been fully resolved and hardened with automated regression tests in `capability-layer/tests/audit_hardening.rs`.

@@ -15,13 +15,44 @@ pub enum KillSwitchState {
     Disengaged,
 }
 
+use parking_lot::Mutex;
+
+static ACTIVE_PGIDS: Mutex<Vec<u32>> = Mutex::new(Vec::new());
+
 /// KillSwitch controller managing lockfile state on disk.
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct KillSwitch {
     lock_file: PathBuf,
 }
 
 impl KillSwitch {
+    /// Registers an active child process group ID.
+    pub fn register_process_group(pgid: u32) {
+        let mut list = ACTIVE_PGIDS.lock();
+        if !list.contains(&pgid) {
+            list.push(pgid);
+        }
+    }
+
+    /// Unregisters an active child process group ID upon completion.
+    pub fn unregister_process_group(pgid: u32) {
+        let mut list = ACTIVE_PGIDS.lock();
+        list.retain(|&id| id != pgid);
+    }
+
+    /// Terminates all currently registered child process groups via `killpg(SIGKILL)`.
+    pub fn terminate_active_processes() {
+        let pgs = {
+            let mut list = ACTIVE_PGIDS.lock();
+            std::mem::take(&mut *list)
+        };
+        for pgid in pgs {
+            if let Some(pid) = rustix::process::Pid::from_raw(pgid as i32) {
+                let _ = rustix::process::kill_process_group(pid, rustix::process::Signal::KILL);
+            }
+        }
+    }
+
     /// Creates a new KillSwitch instance referencing the target lockfile path.
     pub fn new(path: impl AsRef<Path>) -> Self {
         Self {
@@ -34,7 +65,7 @@ impl KillSwitch {
         Ok(Self::new(path))
     }
 
-    /// Engages the killswitch by atomically writing the lockfile.
+    /// Engages the killswitch by atomically writing the lockfile and terminating active subprocesses.
     pub fn engage(&mut self) -> io::Result<()> {
         if let Some(parent) = self.lock_file.parent() {
             std::fs::create_dir_all(parent)?;
@@ -46,6 +77,8 @@ impl KillSwitch {
             .open(&self.lock_file)?;
         f.write_all(ENGAGED.as_bytes())?;
         f.sync_all()?;
+
+        Self::terminate_active_processes();
         Ok(())
     }
 

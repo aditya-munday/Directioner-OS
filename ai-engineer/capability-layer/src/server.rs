@@ -1,6 +1,6 @@
 //! Unix-socket JSON-lines server for ai-capabilityd.
 
-use std::io::{BufRead, BufReader, Write};
+use std::io::{BufRead, BufReader, Read, Write};
 use std::os::unix::net::{UnixListener, UnixStream};
 use std::path::Path;
 use std::sync::Arc;
@@ -13,24 +13,60 @@ use crate::{CapabilityRequest, CapabilityResponse};
 /// Thread-safe reference-counted pointer to the Capability [`Handler`].
 pub type SharedHandler = Arc<Mutex<Handler>>;
 
+/// Configuration settings for the Capability [`Server`].
+#[derive(Debug, Clone)]
+pub struct ServerConfig {
+    /// Authorized caller UIDs allowed to connect to the Unix domain socket.
+    pub allowed_uids: Vec<u32>,
+}
+
+impl Default for ServerConfig {
+    fn default() -> Self {
+        let current_uid = rustix::process::getuid().as_raw();
+        let mut uids = vec![current_uid];
+        if current_uid != 0 {
+            uids.push(0);
+        }
+        Self { allowed_uids: uids }
+    }
+}
+
 /// Unix domain socket server dispatching capability requests to the [`Handler`].
 pub struct Server {
     listener: UnixListener,
     handler: SharedHandler,
+    config: ServerConfig,
 }
 
 impl Server {
-    /// Binds a Unix domain socket at the specified path and initializes the server.
+    /// Binds a Unix domain socket at the specified path and initializes the server with default configuration.
     pub fn bind(path: impl AsRef<Path>, handler: SharedHandler) -> std::io::Result<Self> {
+        Self::bind_with_config(path, handler, ServerConfig::default())
+    }
+
+    /// Binds a Unix domain socket at the specified path and initializes the server with explicit configuration.
+    pub fn bind_with_config(
+        path: impl AsRef<Path>,
+        handler: SharedHandler,
+        config: ServerConfig,
+    ) -> std::io::Result<Self> {
+        use std::os::unix::fs::PermissionsExt;
+
         let path = path.as_ref();
         if let Some(parent) = path.parent() {
             std::fs::create_dir_all(parent)?;
+            let _ = std::fs::set_permissions(parent, std::fs::Permissions::from_mode(0o700));
         }
         if path.exists() {
             std::fs::remove_file(path)?;
         }
         let listener = UnixListener::bind(path)?;
-        Ok(Self { listener, handler })
+        std::fs::set_permissions(path, std::fs::Permissions::from_mode(0o600))?;
+        Ok(Self {
+            listener,
+            handler,
+            config,
+        })
     }
 
     /// Listens for incoming Unix socket connections and handles requests sequentially.
@@ -38,7 +74,7 @@ impl Server {
         for stream in self.listener.incoming() {
             match stream {
                 Ok(stream) => {
-                    if let Err(e) = handle_conn(stream, &self.handler) {
+                    if let Err(e) = handle_conn(stream, &self.handler, &self.config) {
                         eprintln!("connection error: {e}");
                     }
                 }
@@ -49,7 +85,58 @@ impl Server {
     }
 }
 
-fn handle_conn(mut stream: UnixStream, handler: &SharedHandler) -> std::io::Result<()> {
+fn handle_conn(
+    mut stream: UnixStream,
+    handler: &SharedHandler,
+    config: &ServerConfig,
+) -> std::io::Result<()> {
+    // AUDIT-CAP-02: Enforce caller UID verification via SO_PEERCRED
+    let peer_uid = match rustix::net::sockopt::socket_peercred(&stream) {
+        Ok(ucred) => ucred.uid.as_raw(),
+        Err(e) => {
+            eprintln!("failed to query SO_PEERCRED on incoming connection: {e}");
+            let err_resp = CapabilityResponse::Denied {
+                request_id: "auth".into(),
+                reason: format!("unable to verify caller identity via SO_PEERCRED: {e}"),
+                audit_seq: 0,
+            };
+            let mut out = serde_json::to_vec(&err_resp).map_err(std::io::Error::other)?;
+            out.push(b'\n');
+            let _ = stream.write_all(&out);
+            let _ = stream.flush();
+            let _ = stream.shutdown(std::net::Shutdown::Both);
+            return Ok(());
+        }
+    };
+
+    if !config.allowed_uids.contains(&peer_uid) {
+        eprintln!(
+            "rejecting connection: caller UID {peer_uid} not in allowed_uids {:?}",
+            config.allowed_uids
+        );
+        let denied_resp = CapabilityResponse::Denied {
+            request_id: "auth".into(),
+            reason: format!(
+                "caller UID {peer_uid} is not authorized to connect to ai-capabilityd (allowed: {:?})",
+                config.allowed_uids
+            ),
+            audit_seq: 0,
+        };
+        let mut out = serde_json::to_vec(&denied_resp).map_err(std::io::Error::other)?;
+        out.push(b'\n');
+        let _ = stream.write_all(&out);
+        let _ = stream.flush();
+        // Drain unread bytes so kernel doesn't issue ECONNRESET when socket is closed
+        let _ = stream.set_nonblocking(true);
+        let mut drain = [0u8; 1024];
+        while let Ok(n) = stream.read(&mut drain) {
+            if n == 0 {
+                break;
+            }
+        }
+        let _ = stream.shutdown(std::net::Shutdown::Both);
+        return Ok(());
+    }
     let mut reader = BufReader::new(stream.try_clone()?);
     let mut line = String::new();
     loop {
