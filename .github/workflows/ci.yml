@@ -393,7 +393,7 @@ jobs:
           # Phase 3.0.4: Tier 2 Kernel Parameter Tuning & Module Loading In-Guest Verification (Spec §4)
           # ------------------------------------------------------------------------------------------------
           echo '==> assertion 10: Phase 3.0.4 Tier 2 kernel sysctl tuning + module remediation + refcount guard'
-          ssh_cmd 'sudo mkdir -p /tmp/live-scope && sudo systemd-run --setenv=PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin --unit=live-capabilityd /var/lib/ai-bin/ai-capabilityd --socket /tmp/live-cap.sock --audit-log /var/log/live-worklog.jsonl --lock-file /tmp/live-killswitch.lock --work-root /tmp/live-scope --exec 2>/dev/null || true'
+          ssh_cmd 'sudo mkdir -p /tmp/live-scope && sudo systemd-run --setenv=PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin --unit=live-capabilityd /var/lib/ai-bin/ai-capabilityd --socket /tmp/live-cap.sock --audit-log /var/log/live-worklog.jsonl --lock-file /tmp/live-killswitch.lock --work-root /tmp/live-scope --exec --allowed-uids 1000 2>/dev/null || true'
           for i in $(seq 1 20); do
             if ssh_cmd 'sudo chmod 666 /tmp/live-cap.sock /var/log/live-worklog.jsonl 2>/dev/null && test -S /tmp/live-cap.sock'; then
               echo "ai-capabilityd live socket ready for Assertion 10"
