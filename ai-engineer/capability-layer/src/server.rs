@@ -20,12 +20,28 @@ pub struct ServerConfig {
     pub allowed_uids: Vec<u32>,
 }
 
+impl ServerConfig {
+    /// Parses a comma-separated string of UIDs and appends unique parsed values to `uids`.
+    pub fn parse_uids_into(raw: &str, uids: &mut Vec<u32>) {
+        for part in raw.split(',') {
+            if let Ok(uid) = part.trim().parse::<u32>()
+                && !uids.contains(&uid)
+            {
+                uids.push(uid);
+            }
+        }
+    }
+}
+
 impl Default for ServerConfig {
     fn default() -> Self {
         let current_uid = rustix::process::getuid().as_raw();
         let mut uids = vec![current_uid];
         if current_uid != 0 {
             uids.push(0);
+        }
+        if let Ok(env_uids) = std::env::var("DIRECTIONER_ALLOWED_UIDS") {
+            Self::parse_uids_into(&env_uids, &mut uids);
         }
         Self { allowed_uids: uids }
     }
@@ -55,7 +71,6 @@ impl Server {
         let path = path.as_ref();
         if let Some(parent) = path.parent() {
             std::fs::create_dir_all(parent)?;
-            let _ = std::fs::set_permissions(parent, std::fs::Permissions::from_mode(0o700));
         }
         if path.exists() {
             std::fs::remove_file(path)?;
@@ -187,5 +202,25 @@ fn process_line(line: &str, handler: &SharedHandler) -> CapabilityResponse {
             message: e.to_string(),
             audit_seq: 0,
         },
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_server_config_parse_uids_into() {
+        let mut uids = vec![0];
+        ServerConfig::parse_uids_into("1000, 1001, invalid, 1002, 1000", &mut uids);
+        assert_eq!(uids, vec![0, 1000, 1001, 1002]);
+    }
+
+    #[test]
+    fn test_server_config_default_contains_current_and_root() {
+        let config = ServerConfig::default();
+        let current_uid = rustix::process::getuid().as_raw();
+        assert!(config.allowed_uids.contains(&current_uid));
+        assert!(config.allowed_uids.contains(&0));
     }
 }

@@ -16,6 +16,7 @@ struct Args {
     work_root: PathBuf,
     dry_run: bool,
     approval_required: bool,
+    allowed_uids: Vec<u32>,
 }
 
 impl Args {
@@ -27,6 +28,7 @@ impl Args {
             work_root: PathBuf::from("/home"),
             dry_run: true,
             approval_required: true,
+            allowed_uids: Vec::new(),
         };
         let mut it = std::env::args().skip(1);
         while let Some(arg) = it.next() {
@@ -43,12 +45,19 @@ impl Args {
                 "--work-root" => {
                     args.work_root = it.next().ok_or("--work-root needs a value")?.into();
                 }
+                "--allowed-uid" | "--allowed-uids" => {
+                    let val = it.next().ok_or("--allowed-uid needs a value")?;
+                    capability_layer::server::ServerConfig::parse_uids_into(
+                        &val,
+                        &mut args.allowed_uids,
+                    );
+                }
                 "--exec" => args.dry_run = false,
                 "--auto-approve" => args.approval_required = false,
                 "--help" | "-h" => {
                     println!(
                         "ai-capabilityd --socket PATH --audit-log PATH --lock-file PATH \
-                         --work-root PATH [--exec] [--auto-approve]"
+                         --work-root PATH [--exec] [--auto-approve] [--allowed-uids UID,UID...]"
                     );
                     std::process::exit(0);
                 }
@@ -112,7 +121,14 @@ fn main() {
     };
     let handler = Arc::new(Mutex::new(Handler::new(scope, audit, killswitch, config)));
 
-    let server = match Server::bind(&args.socket, handler.clone()) {
+    let mut server_config = capability_layer::server::ServerConfig::default();
+    for u in args.allowed_uids {
+        if !server_config.allowed_uids.contains(&u) {
+            server_config.allowed_uids.push(u);
+        }
+    }
+
+    let server = match Server::bind_with_config(&args.socket, handler.clone(), server_config) {
         Ok(s) => s,
         Err(e) => {
             eprintln!("error: cannot bind {}: {e}", args.socket.display());

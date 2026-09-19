@@ -59,6 +59,8 @@ install -m 0644 image/configs/systemd/ai-killswitch.service %{buildroot}%{_unitd
 
 # Install default configuration
 install -m 0644 image/configs/ai-engineer/self-healing.toml %{buildroot}%{_sysconfdir}/ai-engineer/self-healing.toml
+mkdir -p %{buildroot}%{_sysconfdir}/default
+install -m 0644 image/configs/ai-engineer/ai-capabilityd.default %{buildroot}%{_sysconfdir}/default/ai-capabilityd
 
 %post
 %systemd_post ai-capabilityd.service
@@ -82,6 +84,7 @@ install -m 0644 image/configs/ai-engineer/self-healing.toml %{buildroot}%{_sysco
 %{_unitdir}/ai-killswitch.service
 %dir %{_sysconfdir}/ai-engineer
 %config(noreplace) %{_sysconfdir}/ai-engineer/self-healing.toml
+%config(noreplace) %{_sysconfdir}/default/ai-capabilityd
 %dir %{_sharedstatedir}/ai-engineer
 
 %changelog

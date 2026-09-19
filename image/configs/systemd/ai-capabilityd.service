@@ -6,6 +6,10 @@ After=local-fs.target
 
 [Service]
 Type=simple
+# Shipped default: explicitly authorize root (UID 0) and primary desktop user (UID 1000).
+# Administrators on multi-user or enterprise directory systems can override this via /etc/default/ai-capabilityd.
+Environment="DIRECTIONER_ALLOWED_UIDS=1000"
+EnvironmentFile=-/etc/default/ai-capabilityd
 ExecStart=/usr/bin/ai-capabilityd \
     --socket /run/ai-capabilityd/ai-capabilityd.sock \
     --audit-log /var/lib/ai-engineer/worklog.jsonl \
