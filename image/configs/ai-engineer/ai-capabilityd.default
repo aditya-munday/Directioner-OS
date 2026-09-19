@@ -1,0 +1,7 @@
+# /etc/default/ai-capabilityd
+# Directioner-OS Capability Layer Daemon Configuration
+#
+# Comma-separated list of additional user IDs authorized to connect to ai-capabilityd over Unix domain socket.
+# By default, Directioner-OS authorizes the primary interactive desktop user (UID 1000).
+# In multi-user setups or enterprise environments (e.g. SSSD/LDAP with UIDs >= 10000), specify authorized UIDs below.
+DIRECTIONER_ALLOWED_UIDS=1000

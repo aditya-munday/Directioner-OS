@@ -254,7 +254,7 @@ jobs:
 
           # Start ai-capabilityd in LIVE mode (dry_run: false) inside the VM using systemd-run
           ssh_cmd 'sudo mkdir -p /tmp/live-scope'
-          ssh_cmd 'sudo systemd-run --setenv=PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin --unit=live-capabilityd /var/lib/ai-bin/ai-capabilityd --socket /tmp/live-cap.sock --audit-log /var/log/live-worklog.jsonl --lock-file /tmp/live-killswitch.lock --work-root /tmp/live-scope --exec'
+          ssh_cmd 'sudo systemd-run --setenv=PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin --unit=live-capabilityd /var/lib/ai-bin/ai-capabilityd --socket /tmp/live-cap.sock --audit-log /var/log/live-worklog.jsonl --lock-file /tmp/live-killswitch.lock --work-root /tmp/live-scope --exec --allowed-uids 1000'
 
           # Wait up to 10 seconds for socket to become ready
           ready=""

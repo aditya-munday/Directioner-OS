@@ -47,11 +47,10 @@ impl Args {
                 }
                 "--allowed-uid" | "--allowed-uids" => {
                     let val = it.next().ok_or("--allowed-uid needs a value")?;
-                    for part in val.split(',') {
-                        if let Ok(u) = part.trim().parse::<u32>() {
-                            args.allowed_uids.push(u);
-                        }
-                    }
+                    capability_layer::server::ServerConfig::parse_uids_into(
+                        &val,
+                        &mut args.allowed_uids,
+                    );
                 }
                 "--exec" => args.dry_run = false,
                 "--auto-approve" => args.approval_required = false,
