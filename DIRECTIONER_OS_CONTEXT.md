@@ -1,64 +1,32 @@
-# Directioner-OS: Complete Technical & Brand Context Guide
+# Directioner-OS: Complete Technical Architecture & System Overview
 
 > *"The differentiator is not that the OS can talk. It is that the OS employs an engineer."*
 
-This document provides complete architectural, operational, security, and design context for **Directioner-OS**. It is specifically structured for AI agents, designers, and frontend engineers building the official web application, product showcase, and interactive documentation for Directioner-OS.
+---
+
+## 1. Project Overview & Foundation
+
+**Directioner-OS** is an AI-native Linux operating system constructed by layering configuration, packaging, and custom Rust services on top of a stock Fedora bootc (OSTree) image. 
+
+### Core Legal & Engineering Rule
+We **never fork or patch Fedora's own source code**. All modifications exist exclusively as layered configurations, systemd units, custom RPM packages, and dedicated control-plane services. This follows the identical technical and legal model used by distributions like Bazzite, Nobara, and Pop!_OS, as well as proprietary driver packaging on Linux.
+
+### Business & Operational Model
+- **Base OS**: Free and closed-source base operating system distribution.
+- **AI Integration**: AI-driven control-plane capabilities become paid after a defined usage rate limit. *(Note: Cloud billing and entitlement infrastructure are not yet built; see Section 7).*
 
 ---
 
-## 1. Executive Summary & Core Philosophy
+## 2. Architecture: What Actually Exists Today (Verified in Code & CI)
 
-### What is Directioner-OS?
-**Directioner-OS** is an AI-native Linux operating system derived from Fedora (via `bootc` and `ostree`) designed from the kernel up to host a resident, multi-agent **AI Engineer** subsystem. Rather than treating AI as an external chatbot or a shell wrapper that blindly executes generated `bash` commands with root privileges, Directioner-OS integrates AI as a **capability-scoped, auditable, first-class citizen of the operating system control plane**.
-
-### The Core Problem It Solves
-Traditional attempts to bring AI into operating systems suffer from two fatal extremes:
-1. **The Toy Chatbot**: A desktop assistant that can answer questions or generate text, but cannot safely interact with system configuration, kernel parameters, service daemons, or package dependencies.
-2. **The Unguarded Agent**: An LLM given raw root shell access (`bash -c`, `sudo`). When it hallucinates, misunderstands context, or encounters unexpected package conflicts, it irreversibly corrupts the filesystem, removes critical system packages, or opens security vulnerabilities.
-
-### The Directioner-OS Solution
-Directioner-OS solves this through **Deterministic Safety & User Sovereignty**:
-- **Zero Arbitrary Shell Execution**: Agents and control-plane models are physically unable to run raw bash or arbitrary shell strings. All system interactions are strictly typed Remote Procedure Calls (RPC) dispatched over a local Unix domain socket.
-- **The 5-Stage Safety Pipeline**: Every intent must pass through `Planner` → `PolicyEngine` (quantitative blast-radius scoring) → `Reviewer` (independent safety invariants) → `Implementer` (typed capability dispatch) → `Auditor` (append-only cryptographic worklog).
-- **Physical / File Killswitch**: A lockfile mechanism (`ai-killswitch`) verifies locks on every single capability request. When engaged, all mutations halt sub-millisecond, and active subprocesses are instantly terminated via `killpg(SIGKILL)`.
-- **Atomic Rollbacks & Immutable Roots**: Built on Fedora `bootc` (OSTree). The OS base is immutable. If a failure occurs, the OS automatically rolls back to a pinned good boot slot below user-space using hardware watchdog timers and Greenboot.
-
----
-
-## 2. Brand Positioning & Target Audience
-
-### Taglines & Brand Voice
-- **Primary Tagline**: *"The AI-Native Operating System Built on User Sovereignty and Provable Safety."*
-- **Secondary Tagline**: *"An Operating System That Employs an Engineer, Not Just a Chatbot."*
-- **Key Mottos**:
-  - *"Deterministic by Design, Autonomous by Permission."*
-  - *"Every Action Audited Before Execution."*
-  - *"Quantitative Blast Radius, Never Blind Trust."*
-  - *"Immutable Roots, Self-Healing Branches."*
-
-### Brand Voice & Persona
-- **Tone**: High-precision engineering, authoritative, transparent, deterministic, telemetry-driven.
-- **Avoid**: Generic AI buzzwords, sci-fi magic, vague promises of "superintelligence."
-- **Emphasize**: Formal verification, blast-radius scoring, atomic transactions, live rollback guarantees, audit streams, kernel refcount safety, and uncompromising respect for the user's ultimate authority.
-
-### Target Audience
-1. **Linux Power Users & System Administrators**: Engineers who want automated diagnostics and maintenance but will never give an uncontrolled AI root privileges.
-2. **Infrastructure & Cloud Engineers**: Developers managing fleet systems who require deterministic immutable rollbacks, declarative state, and auditability.
-3. **Rust & Systems Programmers**: Developers who appreciate memory safety, strict typed RPC interfaces, and zero-overhead performance.
-4. **AI Systems Researchers**: Teams studying safe multi-agent execution, grounded tool use, and closed-loop control planes.
-
----
-
-## 3. The 6-Phase Architectural Anatomy
-
-Directioner-OS is built across 6 rigorous phases (Phases 0 through 5), fully implemented, tested, and machine-verified in CI under disposable QEMU virtual machines.
+Every component described in this section is implemented in the repository, covered by unit/integration tests, and verified in automated CI runs under headless QEMU virtual machines.
 
 ```
 ┌─────────────────────────────────────────────────────────────────────────────┐
 │                             USER / OPERATOR                                 │
-│          Interactive Shell, `ai-engineer` CLI, `ai-cockpit` Dashboard       │
+│        Interactive Shell, `ai-engineer` CLI, `ai-cockpit` Terminal HUD      │
 └──────────────────────────────────────┬──────────────────────────────────────┘
-                                       │ Intent / Repair Request
+                                       │ Intent / Diagnostic Query
                                        ▼
 ┌─────────────────────────────────────────────────────────────────────────────┐
 │                      SAFETY KERNEL & CONTROL PLANE                          │
@@ -71,11 +39,11 @@ Directioner-OS is built across 6 rigorous phases (Phases 0 through 5), fully imp
 │                                                     │                       │
 │                                    Approved Steps   ▼                       │
 │   ┌──────────────┐     ┌───────────────────────────────────┐                │
-│   │ WORK MODEL   │ <── │           IMPLEMENTER             │                │
+│   │ WORLD MODEL  │ <── │           IMPLEMENTER             │                │
 │   │ SQLite Graph │     │     Step-by-step dispatcher       │                │
 │   └──────────────┘     └─────────────────┬─────────────────┘                │
 └──────────────────────────────────────────┼──────────────────────────────────┘
-                                           │ Unix Domain Socket (/run/ai-capabilityd.sock)
+                                           │ Unix Domain Socket (/run/ai-capabilityd/ai-capabilityd.sock)
                                            │ Typed JSON-Lines RPC
                                            ▼
 ┌─────────────────────────────────────────────────────────────────────────────┐
@@ -83,8 +51,8 @@ Directioner-OS is built across 6 rigorous phases (Phases 0 through 5), fully imp
 │                                                                             │
 │   ┌─────────────────────────────────────────────────────────────────────┐   │
 │   │                 ai-capabilityd (Passive Daemon)                     │   │
-│   │  • SO_PEERCRED UID Check    • Explicit 0600 Permissions             │   │
-│   │  • ScopedPath Sandbox       • Subprocess Group (SIGKILL) Killswitch │   │
+│   │  • SO_PEERCRED UID Verification  • Explicit 0600 Permissions        │   │
+│   │  • ScopedPath Sandbox            • Process Group SIGKILL Killswitch │   │
 │   └──────────┬──────────────────────────────────────────────┬───────────┘   │
 │              │                                              │               │
 │              ▼                                              ▼               │
@@ -98,200 +66,152 @@ Directioner-OS is built across 6 rigorous phases (Phases 0 through 5), fully imp
 
 ---
 
-### Phase 0: Immutable Base & Passive Capability Daemon
-- **Base OS**: Fedora 42 bootc (OSTree). The root filesystem is read-only and deployed as an immutable container image.
-- **Privileged Capability Daemon (`ai-capabilityd`)**: A minimal, isolated Rust daemon that is the *only* component allowed to modify system state. It does not think, plan, or make decisions; it strictly executes validated, typed capabilities.
-- **Socket Hardening (AUDIT-CAP-01 & CAP-02)**: Listens on `/run/ai-capabilityd/ai-capabilityd.sock`. Enforces strict `0o600` permissions on the socket node while preserving parent directory permissions (`/tmp` 1777 mode intact). Inspects `SO_PEERCRED` on every connection; default root daemon strictly authorizes only UID 0 (root) with explicit day-one desktop user access via `/etc/default/ai-capabilityd` (`DIRECTIONER_ALLOWED_UIDS=1000`).
-- **Hardware / File Killswitch (`ai-killswitch`)**: Checks `/run/ai-capabilityd/ai-capabilityd.lock` on every operation. Engages in < 1ms. Immediately halts all execution and terminates active child subprocesses via dedicated process groups (`killpg(SIGKILL)`).
-- **Append-Only Work Log (`ai-worklog`)**: Cryptographic JSON-Lines audit stream recording every capability request, parameters, caller UID, and outcome before execution begins.
+### Phase 0: Immutable Base, Capability Daemon & Killswitch
+- **Base OS Image**: Fedora 42 bootc with SELinux in Enforcing mode. Defined in [`image/Containerfile`](image/Containerfile), packaged via `bootc-image-builder` into a bootable QCOW2 image, and verified via automated QEMU headless VM boots in GitHub Actions CI.
+- **Privileged Capability Daemon (`ai-capabilityd`)**:
+  - Passive Unix domain socket listener at `/run/ai-capabilityd/ai-capabilityd.sock`.
+  - Dispatches ~18 strictly typed `CapabilityKind` variants (file reads/writes within sandbox, package dry-run/install/remove, service status/restart/stop, kernel sysctl tuning, kernel module load/unload, boot slot pinning, and bootc rollback).
+  - **Socket Permissions (AUDIT-CAP-01)**: Explicitly sets `0o600` permissions on the socket file node upon binding, overriding ambient umask without altering parent directory permissions (`/tmp` mode `1777` preserved).
+  - **Peer Credential Verification (AUDIT-CAP-02)**: Queries `SO_PEERCRED` on every incoming connection. When running as root, `ServerConfig::default()` strictly authorizes only UID 0 by default. Day-one desktop usability is provided via `DIRECTIONER_ALLOWED_UIDS=1000` in [`image/configs/systemd/ai-capabilityd.service`](image/configs/systemd/ai-capabilityd.service) and `/etc/default/ai-capabilityd`.
+- **Append-Only Work Log (`ai-worklog`)**: Cryptographic JSON-Lines audit stream (`/var/lib/ai-engineer/worklog.jsonl` or `/var/log/live-worklog.jsonl`). Every request, caller UID, parameters, and outcome are logged before execution.
+- **Hardware / File Killswitch (`ai-killswitch`)**:
+  - Non-caching lockfile mechanism (`/run/ai-capabilityd/ai-capabilityd.lock`).
+  - Child subprocesses spawned by the daemon are placed in dedicated process groups (`cmd.process_group(0)`).
+  - The daemon polls the lockfile every 10ms during command execution. When engaged, it immediately terminates in-flight subprocesses via `killpg(SIGKILL)`.
+  - **Real Tested Timing**: Subprocess termination verified at **~20ms** in live tests (verified in [`ai-engineer/capability-layer/tests/audit_hardening.rs::test_audit_cap_04_killswitch_terminates_inflight_subprocess`](ai-engineer/capability-layer/tests/audit_hardening.rs)).
 
 ---
 
 ### Phase 1: Resident AI Engineer Subsystem & Policy Pipeline
-- **Role Separation**:
-  - **Planner**: Synthesizes a structured, multi-step plan from an intent, generating an exact **compensating rollback step** for every forward mutation.
-  - **PolicyEngine**: Quantitatively scores the **blast radius** (0 to 100) based on target paths, service criticality, reverse package dependencies, and crate dispersion.
-  - **Reviewer**: An independent adversarial safety pass. Verifies strict invariants (no edits to `/etc/sudoers.d`, no stopping `systemd-udevd` or `dbus`, no path traversal, complete rollback coverage).
-  - **Implementer**: Dispatches steps one at a time over the Unix socket. If any step fails, it halts immediately and dispatches the compensating rollback steps in reverse order.
-  - **Auditor**: Re-reads the worklog to verify ground-truth execution.
-- **The 4-Tier Approval Gate**:
-  - **Tier 0: Auto** (Score 0–15): Low-risk read-only or sandboxed user operations.
-  - **Tier 1: Notify** (Score 16–35): Minor mutations; logged and executed with desktop notification.
-  - **Tier 2: Confirm** (Score 36–60): Modifying standard services or configurations; requires explicit interactive user confirmation.
-  - **Tier 3: Expert Review** (Score 61+): Touches vital daemons, kernel parameters, or high-dependency packages; displays full technical blast-radius breakdown.
+- **Separation of Duties**:
+  - **Planner**: Converts high-level user intent into an ordered sequence of typed capability steps, automatically computing an exact **compensating rollback step** for every mutating operation.
+  - **PolicyEngine**: Calculates quantitative **blast radius** scores (`0` to `100`) based on target filesystem paths, service criticality, reverse package dependencies, and crate dispersion.
+  - **Reviewer**: Independent adversarial safety auditor. Enforces hard red lines: blocks modifications to `/etc/sudoers.d`, prevents stopping critical daemons (`systemd-udevd`, `dbus`, `sshd`), blocks path traversal (`..`), checks for symlink redirections, and verifies 100% rollback coverage.
+  - **Implementer**: Connects to `ai-capabilityd` over the Unix socket and dispatches steps one at a time. If any step fails or verification rejects the outcome, execution immediately halts and executes compensating rollback steps in reverse order.
+  - **Auditor**: Re-reads the worklog to independently confirm execution integrity.
+- **The 4 Autonomy Tiers**:
+  - **Tier 0: Auto** (Score 0–15): Low-risk read-only diagnostics or isolated cache cleanup. Executed silently.
+  - **Tier 1: Notify** (Score 16–35): Minor mutations. Executed with a desktop notification.
+  - **Tier 2: Confirm** (Score 36–60): Standard service or configuration mutations. Pauses for interactive user confirmation.
+  - **Tier 3: Expert Review** (Score 61–100): High-impact actions (vital daemons, kernel parameters, core packages). Requires explicit administrator approval with full blast-radius breakdown.
 - **3-Depth Explanations (`ai-engineer explain`)**:
-  - **Depth 1 (Executive)**: High-level plain English summary for non-technical users.
-  - **Depth 2 (Technical)**: Step-by-step action sequence with unified diffs and service impacts.
-  - **Depth 3 (Full Diagnostic)**: Complete dependency tree, reverse dependencies, rollback projections, and formal blast-radius breakdown.
+  - **Depth 1**: Executive plain-English summary.
+  - **Depth 2**: Technical step sequence with unified file diffs and affected units.
+  - **Depth 3**: Full diagnostic graph with reverse dependencies, blast radius metrics, and rollback projections.
+- **Benchmark Suite (`ai-benchmark`)**: Scored test harness verifying 12 real-world system maintenance tasks (12/12 passing, 100.0%).
 
 ---
 
 ### Phase 2: World Model & Operational Cockpit
-- **World Model (`ai-worldmodel`)**: Embedded SQLite database (`worldmodel.db`) maintaining real-time awareness of system state:
+- **World Model (`ai-worldmodel`)**: Embedded SQLite database (`worldmodel.db`) providing sub-10ms offline system state intelligence:
   - Synchronized package inventory and reverse dependencies via DNF5 line protocol (`PROVIDENAME` / `PROVIDEVERSION`).
-  - Systemd service unit snapshots and diff tracking (`failed-since`).
-  - Offline sub-10ms query speeds.
-- **Operational Cockpit (`ai-cockpit`)**: Real-time terminal dashboard with ANSI telemetry, health scoring, active alerts, and structured JSON output.
-- **Workspace Symbol Graph & Diagnostic Repair**:
-  - Incremental AST indexing of Rust and system codebases across crate boundaries.
-  - `ai-engineer diagnose`: Ingests compiler diagnostic errors (rustc, gcc), localizes root causes, and generates targeted unified diff patches.
-  - `ai-engineer fix`: Safely applies localized patches within the `ScopedPath` sandbox, refusing execution if ambiguity exists.
+  - Real-time systemd unit state snapshots and diff tracking (`failed-since`).
+  - Stored compatibility profiles for Proton/Wine applications.
+- **Operational Cockpit (`ai-cockpit`)**: Real-time ANSI terminal dashboard and `--json` exporter reporting CPU load, memory utilization, World Model sync status, active alerts, and live Work Log tails.
+- **Symbol Graph & Diagnostic Repair**:
+  - Incremental AST symbol indexer for Rust and workspace projects.
+  - `ai-engineer diagnose`: Ingests compiler diagnostic errors (rustc/gcc), localizes root causes across crate boundaries, and generates targeted unified diff patches.
+  - `ai-engineer fix`: Validates patches within `ScopedPath` boundaries, refusing execution if compiler suggestions are ambiguous or absent.
 
 ---
 
 ### Phase 3: Closed-Loop Resilience & Self-Healing
-- **Multi-Tier Automated Remediation**:
-  - **Tier 0**: Passive telemetry observation and health scoring.
-  - **Tier 1 (Autonomous Boot Watchdog)**: Hardware/GRUB2 watchdog countdown (3 attempts) integrated with Greenboot. If a new deployment fails required service milestones, the system automatically falls back to the pinned good OSTree boot slot below user-space.
-  - **Tier 2 (Controlled Kernel Remediation)**: Runtime/persistent sysctl tuning (`KernelParamSet`), allowlisted kernel module loading/unloading (`KernelModuleLoad`/`KernelModuleUnload`) with kernel refcount protection and rollback caching.
-  - **Tier 3**: Service restart and crashloop recovery.
-  - **Tier 4**: Package unlayering and rollbacks.
-- **Self-Healing Circuit Breakers & Safeguards**:
-  - **Persistent Failure Budget**: Locks out remediation after 3 consecutive failures to prevent reboot thrashing.
-  - **Global Velocity Throttle**: Maximum 5 automated actions per hour.
-  - **Anti-Flap Filter**: Suppresses transient blips (requires sustained failure for 30s before triggering).
-  - **Guaranteed Disabled-By-Default**: Ships with `self_healing.enabled = false` in `/etc/ai-engineer/self-healing.toml`.
-  - **Tier Ceiling**: Autonomous loop is capped at the Notify tier; operations requiring Confirm or Expert Review are strictly held for user approval.
+- **Tier 1 Boot Recovery (Real Hardware/Watchdog Mechanism)**:
+  - Uses GRUB2 boot-counting (`boot_counter=3`) and Greenboot required health checks (`01_directioner_milestone.sh`).
+  - Deployment 0 is pinned via `boot_slot.pin`.
+  - If a newly staged deployment fails to achieve system milestones on reboot, Greenboot exhausts its retry counter and GRUB2 **automatically falls back to the pinned good deployment below user-space**.
+  - Verified under live QEMU VM testing with SELinux Enforcing (Assertion 9 in CI).
+- **Tier 2 Controlled Remediation**:
+  - Runtime and persistent sysctl tuning (`KernelParamSet`).
+  - Dynamic kernel module loading and unloading (`KernelModuleLoad`/`KernelModuleUnload`) with kernel refcount protection (`ModuleRefcountNonZero` guard) and pre-captured rollback state.
+- **Self-Healing Engine (Phase 3.1)**:
+  - Closed-loop event monitor with multi-layer circuit breakers, per-entity attempt limits (max 3 consecutive attempts), global velocity throttling (max 5 actions/hour), and 30-second anti-flap suppression.
+  - **Guaranteed Disabled by Default**: Ships with `enabled = false` in `/etc/ai-engineer/self-healing.toml`.
+  - **Tier Ceiling**: Autonomous execution is strictly capped at the Notify tier; Confirm and Expert Review proposals are held for user confirmation.
 
 ---
 
-### Phase 4: Hardware Diagnostic & Application Compatibility
-- **Hardware Compatibility Inspector (`ai-hwcheck`)**:
-  - Read-only audit of PCI WiFi chipsets (Broadcom BCM43xx, Realtek, Intel).
-  - USB biometric sensors (distinguishing standard `libfprint` from vendor-proprietary `libfprint-tod`).
-  - ACPI sleep/wake validation (`s2idle` vs deep S3, NVMe Autonomous Power State Transitions).
-- **Proton/Wine Game & App Compatibility (`ai-worldmodel compat`)**:
-  - Schema v3 compatibility database tracking custom runners, DXVK/VKD3D overrides, and environment flags for Windows applications running on Linux.
+### Phase 4: Conversational Operator & Diagnostic Tooling
+- **Conversational Operator (`ai-engineer ask` / `ai-engineer chat`)**:
+  - Natural language intent parsing into structured multi-step plans.
+  - Grounded by a 4-layer `PlanDraftValidator` and evaluated by `PolicyEngine`/`Reviewer`.
+  - **STRICTLY DRAFT-ONLY**: Ends at a printed preview. **No execution dispatch exists or is authorized**. Wiring `PlanExecutionGate` to `CapabilityClient` or `Implementer` is physically omitted from the code.
+- **Hardware Diagnostic Tool (`ai-hwcheck`)**:
+  - **DIAGNOSTIC-ONLY**: Inspects and reports system hardware status without modifying drivers or guaranteeing out-of-the-box operation.
+  - Inspects PCI WiFi chipsets (Broadcom BCM43xx, Realtek, Intel).
+  - Inspects USB biometric fingerprint sensors (checks `libfprint` vs proprietary `libfprint-tod`).
+  - Inspects ACPI sleep/wake capabilities (`s2idle` vs S3, NVMe APST status).
+- **Application Compatibility Profiles (`ai-worldmodel compat`)**: SQLite-backed tracker for Proton/Wine environment overrides (DXVK, VKD3D).
 
 ---
 
-### Phase 5: Sandboxed Ecosystem & Read-Only Federation
+### Phase 5: Plugin SDK & Federation
 - **Plugin SDK**:
-  - Cryptographically signed manifests (`PluginManifest`) verified via canonical SHA-256 digests.
-  - Sandboxed execution context (`PluginContext`): third-party plugins have zero direct access to capabilities; every action is routed through the same 5-stage policy and reviewer gate.
+  - Manifest format (`PluginManifest`) with SHA-256 canonical hash verification.
+  - Sandboxed execution context (`PluginContext`): structurally routes third-party capabilities through the same 5-stage policy and reviewer gate. Plugins have zero direct access to raw capability handles.
 - **Multi-Machine Federation**:
-  - Cryptographic LAN health snapshots (`SignedFederatedSnapshot`).
-  - Read-only telemetry exchange across multiple machines on a local network.
-  - **Zero Remote Execution**: No remote capability dispatch, no remote shell, no inbound mutation sockets.
+  - Read-only LAN telemetry exchange (`SignedFederatedSnapshot`).
+  - **Zero Remote Execution**: No remote capability dispatch, no remote shell, and no inbound mutating sockets exist in the network protocol.
 
 ---
 
-## 4. Key Security Invariants (Audited & Machine-Verified)
+## 3. Absolute Operational & Security Invariants
 
-| Invariant | Implementation Mechanism | Verification |
-|---|---|---|
-| **No Conversational Execution Dispatch** | The conversational module (`conversational.rs`) is cryptographically sealed to draft preview only. Execution dispatch is physically omitted from the code. | Machine-verified by `tests/conversational.rs` and `tests/governance_guard.rs` |
-| **No Shell Breakouts** | Direct `execve` invocation via `std::process::Command`. Zero calls to `/bin/sh` or `/bin/bash` in `capability-layer`. | Machine-verified by static analysis and test suite |
-| **Socket Transport Hardening** | Explicit `0o600` permissions on socket node; `SO_PEERCRED` caller UID whitelist (default [0] on root daemon). | `test_audit_cap_01` & `test_audit_cap_02` |
-| **Symlink Redirection Defense** | Path traversal verification via `symlink_metadata` and `O_NOFOLLOW` flag on all file write operations. | `test_audit_cap_03_symlink_redirection_defense` |
-| **Instant Subprocess Halting** | Process group tracking (`cmd.process_group(0)`); lockfile poll triggers immediate `killpg(SIGKILL)`. | `test_audit_cap_04_killswitch_terminates_inflight_subprocess` |
-| **Immutable Boot Slot Recovery** | Automatic fallback to pinned OSTree deployment via GRUB2 boot counter and Greenboot watchdog. | Live QEMU VM smoke test in CI |
+These boundaries are enforced across the codebase and verified by automated tests:
 
----
-
-## 5. UI/UX Design System for the Website
-
-When designing the web application for Directioner-OS, follow these aesthetic and interactive guidelines to create an interface that feels like a high-precision, state-of-the-art developer product:
-
-### 1. Visual Style & Theme
-- **Theme**: Dark-Tech, Aerospace Telemetry, and Swiss Precision Typography.
-- **Background**: Deep Obsidian `#0A0B0E`, Slate Void `#101216`, with subtle radial mesh gradients in cyan and violet.
-- **Surfaces**: Glassmorphism cards with `backdrop-filter: blur(12px)`, hairline borders (`1px solid rgba(255, 255, 255, 0.08)`), and subtle ambient glows.
-- **Accents**:
-  - **Nominal / Health / Verified**: Electric Emerald (`#00F5A0`) and Neon Cyan (`#00D2FF`).
-  - **Warning / Blast Radius / Confirm**: Cybernetic Amber (`#FFB800`).
-  - **Critical / Killswitch / Refusal**: Laser Crimson (`#FF3B30`).
-  - **Typography Primary**: Polar White (`#FFFFFF`).
-  - **Typography Muted**: Monospace Silver (`#8B949E`).
-
-### 2. Typography
-- **Display / Headings**: Modern Geometric Sans (e.g., *Outfit*, *Space Grotesk*, or *Inter Display*), tight tracking (`-0.03em`), bold weights.
-- **Body / Documentation**: Clean Neutral Sans (*Inter* or *Roboto*), optimized line-height (`1.6`).
-- **Telemetry / Code / Terminal**: High-legibility Monospace (*JetBrains Mono*, *Fira Code*), tabular numbers enabled.
-
-### 3. Recommended Interactive Website Components
-To give visitors a stunning, tactile experience of the OS, the website should feature:
-
-1. **Interactive 5-Stage Policy Pipeline Simulator**:
-   - Allows the user to select an example intent (e.g., *"Tune TCP BBR congestion control"*, *"Remove systemd-udevd"*, or *"Patch compiler error in crate"*).
-   - Animates the intent flowing through **Planner → PolicyEngine → Reviewer → Implementer → Auditor**.
-   - Shows how dangerous intents (like removing `systemd-udevd`) turn red and trigger a **Hard Refusal** at the Reviewer stage.
-
-2. **3-Depth Explanation Toggle**:
-   - An interactive slider or 3-tab switch allowing visitors to view the same system change at:
-     - **Depth 1 (Simple)**: "Updated network congestion algorithm to BBR."
-     - **Depth 2 (Technical)**: Unified diff showing `/etc/sysctl.d/99-bbr.conf` + sysctl reload status.
-     - **Depth 3 (Full Diagnostic)**: Complete blast radius score (22/100, Tier 1 Notify), kernel refcount check, and reverse rollback projection.
-
-3. **Live Hardware Killswitch Demo**:
-   - A realistic physical-style toggle switch.
-   - When engaged, all running simulated processes immediately flash red and freeze with `[SIGKILL: HALTED IN 0.4ms]`, demonstrating the non-caching lockfile mechanism.
-
-4. **Live Terminal / Cockpit Telemetry Preview**:
-   - An interactive terminal window simulating `ai-cockpit` output.
-   - Displays real-time CPU telemetry, memory, SQLite World Model status (2,418 packages indexed), and recent Work Log entries.
-
-5. **A/B Boot-Slot Pinning Visualizer**:
-   - An animated schematic showing active deployment vs staged deployment, demonstrating how Greenboot automatically rolls back to the pinned deployment if a boot milestone fails.
+1. **No Conversational Execution Dispatch**: `ai-engineer ask` and `ai-engineer chat` are draft-only. They cannot dispatch mutations to `ai-capabilityd`.
+2. **Zero Arbitrary Shell Execution**: The Capability Layer invokes binaries directly via `std::process::Command` argument arrays. Zero calls to `/bin/sh` or `/bin/bash` exist in capability execution.
+3. **Restricted Files Boundary**: Six core safety files are permanently protected and may not be modified without explicit instruction:
+   - `ai-engineer/safety-kernel/src/policy.rs`
+   - `ai-engineer/safety-kernel/src/reviewer.rs`
+   - `ai-engineer/safety-kernel/src/self_healing.rs`
+   - `ai-engineer/safety-kernel/src/incident_response.rs`
+   - `ai-engineer/control-plane/src/conversational.rs`
+   - `ai-engineer/capability-layer/src/lib.rs` (`CapabilityKind` enum)
+4. **Symlink TOCTOU Defense**: `cap_file_write` verifies that no symlink components exist in the target path traversal and sets `O_NOFOLLOW` on file creation.
+5. **Passive Capability Daemon**: `ai-capabilityd` never initiates actions or decides policy; it strictly executes validated, pre-approved requests received over its Unix socket.
 
 ---
 
-## 6. Project Directory Sitemap
+## 4. Current Test & Verification Evidence
 
-```
-Directioner-OS/
-├── image/                             # Bootable Fedora bootc OS image definition
-│   ├── Containerfile                  # Layered atop quay.io/fedora/fedora-bootc:42
-│   ├── build.sh                       # Local podman/bootc-image-builder build script
-│   └── configs/
-│       ├── systemd/                   # System services (ai-capabilityd, ai-killswitch)
-│       ├── ai-engineer/               # Default configs (self-healing.toml, ai-capabilityd.default)
-│       └── greenboot/                 # Required health check scripts for automatic rollback
-├── ai-engineer/                       # Rust Workspace (Core Intelligence & Safety)
-│   ├── capability-layer/              # ai-capabilityd daemon, Server, Handler, ScopedPath, KillSwitch
-│   ├── control-plane/                 # Planner, PolicyEngine, Reviewer, Implementer, Conversational
-│   ├── world-model/                   # SQLite state engine, DNF5/systemd sync adapters, ai-worldmodel
-│   ├── worklog-cli/                   # Append-only audit stream CLI (ai-worklog)
-│   ├── benchmark-suite/               # Scored benchmark test runner (ai-benchmark)
-│   └── Cargo.toml                     # Workspace root
-├── packaging/                         # Fedora RPM spec files and packaging automation
-│   ├── rpm/directioner-ai-engineer.spec
-│   └── build-rpm.sh
-├── docs/                              # Architecture specs, security self-audits, phase checklists
-│   ├── security-self-audit.md         # Full internal security audit (CAP-01 through 04)
-│   ├── multi-machine-federation.md    # LAN peer telemetry & cryptographic snapshot spec
-│   └── phase-5-checklist.md           # Roadmap tracking and phase verification logs
-├── vm-test/                           # QEMU disposable VM smoke test scripts
-└── .github/workflows/                 # CI pipeline: Build image → qcow2 → Headless VM test
-```
+All claims in Section 2 are backed by real, automated tests:
+
+- **Workspace Rust Test Suite**: 100% passing across all workspace crates:
+  ```bash
+  cargo test --workspace
+  ```
+  Verified: 23 capability tests, 4 audit hardening tests, 5 integration tests, 3 live package unlayering tests, 13 reviewer defensive tests, 7 self-healing tests, 4 performance profile tests, 10 governance guard tests, and 5 cockpit permutation tests.
+- **CI Headless VM Smoke Test**: Every push to `main` and release PR executes a full headless QEMU VM boot verifying all 10 live assertions:
+  - Assertion 1: MOTD and base bootc status
+  - Assertion 2: SELinux Enforcing mode
+  - Assertion 3: Systemd unit initialization
+  - Assertion 4: Worklog append-only stream integrity
+  - Assertion 5: Killswitch engagement and release
+  - Assertion 6: World Model DNF5 and systemctl synchronization
+  - Assertion 7: Real live compensating rollback execution in guest VM
+  - Assertion 8: In-guest benchmark suite execution (12/12 scenarios pass)
+  - Assertion 9: Genuine A/B boot-slot pinning and Greenboot watchdog automatic recovery
+  - Assertion 10: Tier 2 kernel parameter tuning and module refcount protection
 
 ---
 
-## 7. How to Pull, Build, and Run Directioner-OS Locally
+## 5. Local VM Run Guide: How to Boot Directioner-OS
 
-For visitors or developers wanting to test the operating system themselves:
+Follow these steps to build and boot the verified image locally:
 
 ### Prerequisites
-- Linux host with KVM enabled (`/dev/kvm`)
-- `podman` (or `docker`) installed
-- `qemu-system-x86_64`
+- Linux host with hardware virtualization enabled (`/dev/kvm`).
+- `podman` and `qemu-system-x86_64` installed.
 
-### 1. Clone and Test Core Subsystems
+### 1. Build the OS Container Image
 ```bash
-git clone https://github.com/aditya-munday/Directioner-OS.git
-cd Directioner-OS/ai-engineer
-cargo test --workspace
-```
-
-### 2. Build the Bootable OS Container Image
-```bash
-cd Directioner-OS
 sudo podman build -t directioner-os:latest -f image/Containerfile image/
 ```
 
-### 3. Generate the Bootable QCOW2 Disk Image
-Using `bootc-image-builder`:
+### 2. Generate the QCOW2 Disk Image
 ```bash
+mkdir -p ./output
 sudo podman run \
   --rm \
   --privileged \
@@ -303,7 +223,7 @@ sudo podman run \
   directioner-os:latest
 ```
 
-### 4. Boot Headlessly in QEMU VM
+### 3. Boot Headlessly in QEMU
 ```bash
 qemu-system-x86_64 \
   -m 4096 \
@@ -315,19 +235,78 @@ qemu-system-x86_64 \
   -nographic
 ```
 
-Log in via SSH:
+### 4. Interactive Access
+Once booted, connect via SSH:
 ```bash
 ssh -p 2222 ci@localhost
+```
+From the interactive guest shell, the core tools are immediately available:
+```bash
+# View operational telemetry
+/var/lib/ai-bin/ai-cockpit --db /tmp/wm.sqlite --audit /var/log/live-worklog.jsonl
+
+# Inspect system health
+/var/lib/ai-bin/ai-health --db /tmp/wm.sqlite --worklog /var/log/live-worklog.jsonl status
+
+# Inspect hardware diagnostics
+/var/lib/ai-bin/ai-hwcheck --json
+
+# Read audit stream
+/var/lib/ai-bin/ai-worklog --log /var/log/live-worklog.jsonl tail --lines 20
 ```
 
 ---
 
-## 8. Summary Checklist for Web Agent
+## 6. Repository Layout Reference
 
-When assembling the website:
-- [ ] Highlight the core thesis: *"The differentiator is not that the OS can talk. It is that the OS employs an engineer."*
-- [ ] Emphasize the **5-Stage Gate** and **Quantitative Blast-Radius Scoring**.
-- [ ] Include the interactive **Killswitch** and **3-Depth Explanation** demonstrations.
-- [ ] Maintain the sleek **Dark-Tech / Aerospace Telemetry** design system.
-- [ ] Link out to GitHub: `https://github.com/aditya-munday/Directioner-OS`.
-- [ ] Document the local QEMU build and run workflow cleanly.
+```
+Directioner-OS/
+├── image/                             # Base bootc container & systemd configurations
+│   ├── Containerfile                  # Layered configuration on fedora-bootc:42
+│   ├── build.sh                       # Local build helper script
+│   └── configs/
+│       ├── systemd/                   # ai-capabilityd.service, ai-killswitch.service
+│       ├── ai-engineer/               # self-healing.toml, ai-capabilityd.default
+│       └── greenboot/                 # 01_directioner_milestone.sh watchdog script
+├── ai-engineer/                       # Core Rust workspace
+│   ├── capability-layer/              # ai-capabilityd daemon, server, handler, killswitch
+│   ├── control-plane/                 # Planner, PolicyEngine, Reviewer, Implementer, Conversational
+│   ├── world-model/                   # SQLite state engine, DNF5/systemctl sync adapters
+│   ├── worklog-cli/                   # ai-worklog audit reader CLI
+│   ├── benchmark-suite/               # ai-benchmark test harness
+│   └── Cargo.toml                     # Workspace root manifest
+├── packaging/                         # Packaging automation
+│   ├── rpm/directioner-ai-engineer.spec
+│   └── build-rpm.sh
+├── docs/                              # Project specifications and audit logs
+│   ├── incident-log.md                # Record of safety incidents and remediations
+│   ├── security-self-audit.md         # CAP-01 through CAP-04 audit records
+│   └── phase-*-checklist.md           # Original roadmap milestones
+├── vm-test/                           # QEMU smoke test scripts executed during CI
+└── .github/workflows/ci.yml           # Automated CI pipeline
+```
+
+---
+
+## 7. NOT YET BUILT — FUTURE VISION
+
+The following items are **conceptual roadmap targets and design ideas**. They **DO NOT EXIST** in the current codebase, are not built into any binary, and must never be represented as current system capabilities:
+
+1. **Aria Voice Assistant & Spatial UI**:
+   - Concept: A voice-driven multimodal assistant using openWakeWord, Silero VAD, streaming STT/TTS, and a transparent overlay window ("Canvas Mode") to render contextual graphs.
+   - Status: **Not yet built.** No voice pipeline, audio capture daemon, transparent overlay compositor, or spatial window manager exists in the repository.
+2. **De-Fedora-ification / Custom Distribution Identity**:
+   - Concept: Replacing upstream base branding, logos, and default artwork with a standalone visual identity.
+   - Status: **Not yet built.** The system currently builds directly on top of `quay.io/fedora/fedora-bootc:42`.
+3. **Automated Biometric Fingerprint Setup**:
+   - Concept: 1-click biometric enrollment and automated vendor driver patching.
+   - Status: **Not yet built.** Hardware inspection is diagnostic-only via `ai-hwcheck`; no automated driver installation or PAM biometric integration exists.
+4. **Desktop Environment & Display Tuning**:
+   - Concept: Custom "Aether" glassmorphic desktop environment, native 120Hz/VRR display compositor, and zero-drain sleep automation.
+   - Status: **Not yet built.** Directioner-OS currently runs as a headless server/workstation base; no custom desktop shell or display compositor is present.
+5. **Commercial Cloud Billing & Entitlements**:
+   - Concept: User accounts, token rate-limiting, and paid subscription tiers for advanced cloud-augmented AI planning.
+   - Status: **Not yet built.** The system operates purely locally with zero account or billing infrastructure.
+6. **Native AI-First App Suite**:
+   - Concept: First-party file manager, system settings panel, and process manager designed with native AI telemetry integration.
+   - Status: **Not yet built.** Telemetry is currently accessed via CLI tools (`ai-cockpit`, `ai-health`, `ai-worklog`).
