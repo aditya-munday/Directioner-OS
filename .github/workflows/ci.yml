@@ -420,7 +420,8 @@ jobs:
         if: success()
         run: |
           sudo apt-get update && sudo apt-get install -y zstd
-          echo "==> Compressing disk.qcow2 with zstd..."
+          echo "==> Setting permissions and compressing disk.qcow2 with zstd..."
+          sudo chmod -R a+rwX image/output
           zstd -T0 -3 image/output/qcow2/disk.qcow2 -o image/output/qcow2/directioner-os-disk.qcow2.zst
           ls -lh image/output/qcow2/directioner-os-disk.qcow2.zst
       - name: Upload bootable QCOW2 image artifact
