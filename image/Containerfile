@@ -38,13 +38,14 @@ RUN chmod 755 /etc/greenboot/check/required.d/01_directioner_milestone.sh \
     && systemctl enable greenboot-healthcheck.service directioner-milestone.service
 
 # ------------------------------------------------------------------
-# Phase 0 bundle (once ai-capabilityd etc. are packaged as RPMs):
-#   COPY configs/systemd/ /usr/lib/systemd/system/  (or ship an RPM)
-#   RUN dnf install -y ai-capabilityd ai-worklog \
-#       && systemctl enable ai-capabilityd.service \
-#       && dnf clean all
-# The services are distributed as layered RPMs, not baked patches.
+# Phase 0: Native AI Engineer Control Plane Binaries & Systemd Units
 # ------------------------------------------------------------------
+COPY bin/ /usr/bin/
+COPY configs/systemd/ai-capabilityd.service /usr/lib/systemd/system/ai-capabilityd.service
+COPY configs/systemd/ai-killswitch.service /usr/lib/systemd/system/ai-killswitch.service
+COPY configs/ai-engineer/ai-capabilityd.default /etc/default/ai-capabilityd
 
-# bootc images should not carry metadata-only layers; keep this file minimal
-# until the Phase 0 RPMs exist.
+RUN mkdir -p /var/lib/ai-engineer /etc/ai-engineer /var/lib/ai-bin \
+    && chmod 755 /usr/bin/ai-* 2>/dev/null || true \
+    && for b in /usr/bin/ai-*; do [ -f "$b" ] && ln -sf "$b" "/var/lib/ai-bin/$(basename "$b")"; done || true \
+    && systemctl enable ai-capabilityd.service

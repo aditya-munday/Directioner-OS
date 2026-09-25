@@ -36,8 +36,21 @@ fi
 echo "==> using engine: $ENGINE"
 
 if [[ "$CLEAN" == "true" ]]; then
-    rm -rf output
+    rm -rf output bin
 fi
+
+# Stage AI Engineer control plane release binaries into bin/
+mkdir -p bin
+if [[ "$CLEAN" == "true" ]] || [[ ! -f "../ai-engineer/target/release/ai-capabilityd" ]]; then
+    echo "==> Building AI Engineer release workspace..."
+    (cd ../ai-engineer && cargo build --release --workspace)
+fi
+echo "==> Staging release binaries into image/bin/..."
+for b in ai-worldmodel ai-benchmark ai-capabilityd ai-worklog ai-killswitch ai-engineer ai-health ai-cockpit ai-hwcheck; do
+    if [[ -f "../ai-engineer/target/release/$b" ]]; then
+        cp "../ai-engineer/target/release/$b" bin/
+    fi
+done
 
 echo "==> building $IMAGE_TAG"
 "$ENGINE" build -t "$IMAGE_TAG" -f Containerfile .
@@ -50,22 +63,59 @@ fi
 # bootc-image-builder runs as a container (guide §1.4). It needs
 # privileges to assemble the disk image.
 mkdir -p output
-if "$ENGINE" info --format '{{.Host.Security.Rootless}}' 2>/dev/null; then
-    sudo "$ENGINE" run --rm --privileged \
-        --security-opt label=type:unconfined_t \
-        -v "$(pwd)/output":/output \
-        -v /var/lib/containers/storage:/var/lib/containers/storage \
-        quay.io/centos-bootc/bootc-image-builder:latest \
-        --type qcow2 "$IMAGE_TAG"
-else
-    echo "==> container engine is rootful; running bootc-image-builder directly" >&2
-    "$ENGINE" run --rm --privileged \
-        --security-opt label=type:unconfined_t \
-        -v "$(pwd)/output":/output \
-        -v /var/lib/containers/storage:/var/lib/containers/storage \
-        quay.io/centos-bootc/bootc-image-builder:latest \
-        --type qcow2 "$IMAGE_TAG"
+
+# If config.toml does not exist, auto-generate one with the operator's SSH public key
+CONFIG_ARG=()
+CONFIG_MOUNT=()
+if [[ ! -f "config.toml" ]]; then
+    echo "==> Checking for SSH public key to inject into config.toml..."
+    USER_KEY=""
+    if [[ -n "${SSH_PUBKEY:-}" ]]; then
+        USER_KEY="$SSH_PUBKEY"
+    elif [[ -f "${HOME}/.ssh/id_ed25519.pub" ]]; then
+        USER_KEY="$(cat "${HOME}/.ssh/id_ed25519.pub")"
+    elif [[ -f "${HOME}/.ssh/id_rsa.pub" ]]; then
+        USER_KEY="$(cat "${HOME}/.ssh/id_rsa.pub")"
+    elif [[ -f "../vm-test/ci_key.pub" ]]; then
+        USER_KEY="$(cat "../vm-test/ci_key.pub")"
+    fi
+
+    if [[ -n "$USER_KEY" ]]; then
+        cat > config.toml <<EOF
+[[customizations.user]]
+name = "directioner"
+key = "${USER_KEY}"
+groups = ["wheel"]
+EOF
+        echo "==> Injected user 'directioner' with SSH key into config.toml"
+    else
+        echo "==> warning: No SSH public key found; image will build with default bootc user config." >&2
+    fi
 fi
 
-echo "==> done. Boot the result in a VM:"
-echo "    qemu-system-x86_64 -m 4096 -enable-kvm -drive file=output/qcow2/disk.qcow2,format=qcow2"
+if [[ -f "config.toml" ]]; then
+    CONFIG_MOUNT=(-v "$(pwd)/config.toml":/config.toml:ro)
+    CONFIG_ARG=(--config /config.toml)
+fi
+
+RUN_PREFIX=""
+if "$ENGINE" info --format '{{.Host.Security.Rootless}}' 2>/dev/null; then
+    RUN_PREFIX="sudo"
+fi
+
+$RUN_PREFIX "$ENGINE" run --rm --privileged \
+    --security-opt label=type:unconfined_t \
+    -v "$(pwd)/output":/output \
+    "${CONFIG_MOUNT[@]}" \
+    -v /var/lib/containers/storage:/var/lib/containers/storage \
+    quay.io/centos-bootc/bootc-image-builder:latest \
+    --type qcow2 --rootfs xfs "${CONFIG_ARG[@]}" "$IMAGE_TAG"
+
+echo "==> Done. Boot the result in a VM:"
+echo "    qemu-system-x86_64 -machine accel=kvm -cpu host -m 4096 -smp 4 \\"
+echo "      -drive file=output/qcow2/disk.qcow2,format=qcow2,if=virtio \\"
+echo "      -netdev user,id=n0,hostfwd=tcp:127.0.0.1:2222-:22 -device virtio-net-pci,netdev=n0 \\"
+echo "      -display none -serial mon:stdio"
+echo ""
+echo "    Connect via SSH from another terminal:"
+echo "    ssh -p 2222 directioner@127.0.0.1"
