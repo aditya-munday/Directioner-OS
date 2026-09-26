@@ -11,6 +11,7 @@ target/
 # Image build output
 image/output/
 image/*.qcow2
+image/bin/ai-*
 packaging/rpmbuild/
 
 # Editor / OS

@@ -14,7 +14,6 @@ ExecStart=/usr/bin/ai-capabilityd \
     --socket /run/ai-capabilityd/ai-capabilityd.sock \
     --audit-log /var/lib/ai-engineer/worklog.jsonl \
     --lock-file /run/ai-capabilityd/ai-capabilityd.lock \
-    --do-not-touch /etc/ai-engineer/do-not-touch.list \
     --work-root /home
 RuntimeDirectory=ai-capabilityd
 # Capability Layer needs privilege to perform package/service/file operations.

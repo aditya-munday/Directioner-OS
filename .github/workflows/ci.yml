@@ -56,6 +56,10 @@ jobs:
       - name: build release binaries
         working-directory: ai-engineer
         run: cargo build --release --workspace
+      - name: Stage release binaries into image/bin
+        run: |
+          mkdir -p image/bin
+          cp ai-engineer/target/release/ai-* image/bin/
       - name: Install dependencies (podman, qemu)
         run: |
           sudo apt-get update
@@ -176,14 +180,12 @@ jobs:
           ssh_cmd 'command -v bootc && bootc --version' \
             || { echo 'FAIL: bootc not usable'; exit 1; }
 
-          echo '==> assertion 4: deploy release binaries to /var/lib/ai-bin in the booted VM'
-          ssh_cmd "sudo mkdir -p /var/lib/ai-bin"
-          for b in ai-worldmodel ai-benchmark ai-capabilityd ai-worklog ai-engineer ai-health ai-cockpit ai-hwcheck; do
-            BIN_PATH="ai-engineer/target/release/$b"
-            echo "deploying binary: $BIN_PATH -> /var/lib/ai-bin/$b"
-            scp $SCP_OPTS "$BIN_PATH" ci@127.0.0.1:/tmp/$b
-            ssh_cmd "sudo cp /tmp/$b /var/lib/ai-bin/$b && sudo chmod 755 /var/lib/ai-bin/$b && sudo chcon -t bin_t /var/lib/ai-bin/$b 2>/dev/null || true"
+          echo '==> assertion 4: verify baked release binaries in guest filesystem'
+          for b in ai-worldmodel ai-benchmark ai-capabilityd ai-worklog ai-killswitch ai-engineer ai-health ai-cockpit ai-hwcheck; do
+            ssh_cmd "test -x /usr/bin/$b" || { echo "FAIL: /usr/bin/$b missing or not executable"; exit 1; }
+            ssh_cmd "test -x /var/lib/ai-bin/$b" || { echo "FAIL: /var/lib/ai-bin/$b symlink missing"; exit 1; }
           done
+          echo "Verified all 9 control plane binaries pre-installed and executable in guest."
 
           echo '==> assertion 5: run ai-worldmodel sync (rpm + systemctl) for real, inside the VM'
           sync_out=$(ssh_cmd '/var/lib/ai-bin/ai-worldmodel --db /tmp/wm.sqlite sync 2>&1')
@@ -414,6 +416,21 @@ jobs:
           ssh_cmd 'python3 /tmp/test_phase3_self_healing.py'
 
           echo '==> END TO END PASS (Phase 3.0.1, 3.0.2, 3.0.3, 3.0.4, 3.1 Boot Mechanics + Health Model + Self-Healing Verified)'
+      - name: Compress bootable QCOW2 image
+        if: success()
+        run: |
+          sudo apt-get update && sudo apt-get install -y zstd
+          echo "==> Setting permissions and compressing disk.qcow2 with zstd..."
+          sudo chmod -R a+rwX image/output
+          zstd -T0 -3 image/output/qcow2/disk.qcow2 -o image/output/qcow2/directioner-os-disk.qcow2.zst
+          ls -lh image/output/qcow2/directioner-os-disk.qcow2.zst
+      - name: Upload bootable QCOW2 image artifact
+        if: success()
+        uses: actions/upload-artifact@v4
+        with:
+          name: directioner-os-disk-qcow2
+          path: image/output/qcow2/directioner-os-disk.qcow2.zst
+          retention-days: 14
       - name: Print console log on failure
         if: failure()
         run: |
