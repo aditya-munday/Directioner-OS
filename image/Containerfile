@@ -43,6 +43,7 @@ RUN chmod 755 /etc/greenboot/check/required.d/01_directioner_milestone.sh \
 COPY bin/ /usr/bin/
 COPY configs/systemd/ai-capabilityd.service /usr/lib/systemd/system/ai-capabilityd.service
 COPY configs/systemd/ai-killswitch.service /usr/lib/systemd/system/ai-killswitch.service
+COPY configs/systemd/serial-getty@ttyS0.service.d/ /usr/lib/systemd/system/serial-getty@ttyS0.service.d/
 COPY configs/ai-engineer/ai-capabilityd.default /etc/default/ai-capabilityd
 
 RUN mkdir -p /var/lib/ai-engineer /etc/ai-engineer /var/lib/ai-bin \

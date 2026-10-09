@@ -2,14 +2,18 @@ import json
 import socket
 import sys
 
+_req_counter = 0
+
 
 def send_cap(cap, is_rb=False):
+    global _req_counter
+    _req_counter += 1
     s = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
     s.settimeout(180.0)
     s.connect("/tmp/live-cap.sock")
     req = {
         "api_version": 1,
-        "id": "live-rb",
+        "id": f"live-cap-{_req_counter}",
         "requester": "vm-smoke",
         "token": "tok-vm",
         "is_rollback": is_rb,
@@ -65,3 +69,41 @@ r5 = send_cap(
 print("r5 package_remove rb:", r5, flush=True)
 if r5.get("status") != "success":
     sys.exit(f"package_remove rb failed: {r5}")
+
+# --- Protected-unit denial assertions (5d) ---
+# A live (--exec) daemon MUST deny restart and stop of sshd.service even when
+# approved:true is set. The protection is hardcoded in HandlerConfig and is
+# independent of dry-run mode.
+
+r6 = send_cap(
+    {"capability": "service_restart", "unit": "sshd.service", "approved": True}
+)
+print("r6 service_restart sshd.service (live):", r6, flush=True)
+if r6.get("status") != "denied":
+    sys.exit(
+        f"FAIL: live daemon must deny restart of sshd.service, got: {r6}"
+    )
+
+r7 = send_cap(
+    {"capability": "service_stop", "unit": "sshd.service", "approved": True}
+)
+print("r7 service_stop sshd.service (live):", r7, flush=True)
+if r7.get("status") != "denied":
+    sys.exit(
+        f"FAIL: live daemon must deny stop of sshd.service, got: {r7}"
+    )
+
+# Canary: an unprotected unit with approved:true MUST succeed (confirms daemon
+# is live and functional, not generally broken).
+r8 = send_cap(
+    {
+        "capability": "service_restart",
+        "unit": "canary-rollback.service",
+        "approved": True,
+    }
+)
+print("r8 service_restart canary-rollback.service (live):", r8, flush=True)
+if r8.get("status") != "success":
+    sys.exit(
+        f"FAIL: live daemon failed canary restart (daemon not in live mode?): {r8}"
+    )

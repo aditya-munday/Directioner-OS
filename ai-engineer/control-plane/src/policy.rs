@@ -49,6 +49,26 @@ impl ApprovalTier {
     }
 }
 
+/// Helper for protected-unit matching that normalises the SSH service naming gap
+/// between Debian/Ubuntu (`ssh.service`) and Fedora (`sshd.service`), as well as
+/// the `ssh`/`sshd` bare forms, so that all four forms match the same protected
+/// entry.
+fn unit_ssh_normalized(p: &str, unit: &str) -> bool {
+    let u = unit.trim();
+    let p = p.trim();
+    if p == u {
+        return true;
+    }
+    let p_base = p.strip_suffix(".service").unwrap_or(p);
+    let u_base = u.strip_suffix(".service").unwrap_or(u);
+    if p_base == u_base {
+        return true;
+    }
+    let is_p_ssh = p_base == "ssh" || p_base == "sshd";
+    let is_u_ssh = u_base == "ssh" || u_base == "sshd";
+    is_p_ssh && is_u_ssh
+}
+
 /// Detailed evaluation breakdown of an action's blast radius.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct BlastRadiusReport {
@@ -281,11 +301,12 @@ impl PolicyEngine {
             CapabilityKind::ServiceRestart { unit, .. } => {
                 let protected = [
                     "ssh.service",
+                    "sshd.service",
                     "systemd-udevd.service",
                     "dbus.service",
                     "firewalld.service",
                 ];
-                if protected.iter().any(|p| unit == p) {
+                if protected.iter().any(|p| unit_ssh_normalized(p, unit)) {
                     score += 90;
                     factors.push(format!(
                         "Unit '{unit}' is a protected/critical system daemon; restart may disconnect or destabilize machine"
@@ -331,11 +352,12 @@ impl PolicyEngine {
             CapabilityKind::ServiceStop { unit, .. } => {
                 let protected = [
                     "ssh.service",
+                    "sshd.service",
                     "systemd-udevd.service",
                     "dbus.service",
                     "firewalld.service",
                 ];
-                if protected.iter().any(|p| unit == p) {
+                if protected.iter().any(|p| unit_ssh_normalized(p, unit)) {
                     score += 95;
                     factors.push(format!(
                         "Unit '{unit}' is a protected/critical system daemon; stopping it will destabilize the machine"
@@ -778,5 +800,61 @@ mod tests {
         // Base score 30 + 10 (>3 steps) + 25 (3 crates) = 65 (Confirm tier)
         assert_eq!(rep4.score, 65);
         assert_eq!(rep4.tier, ApprovalTier::Confirm);
+    }
+
+    #[test]
+    fn test_policy_evaluates_protected_unit_variants() {
+        let test_units = [
+            "ssh.service",
+            "ssh",
+            "sshd.service",
+            "sshd",
+            "systemd-udevd.service",
+            "systemd-udevd",
+            "dbus.service",
+            "dbus",
+            "firewalld.service",
+            "firewalld",
+        ];
+
+        for unit in test_units {
+            // Test ServiceRestart
+            let rep_restart = PolicyEngine::evaluate_capability(
+                &CapabilityKind::ServiceRestart {
+                    unit: unit.into(),
+                    approved: true,
+                },
+                None,
+            );
+            assert!(
+                rep_restart.score >= 90,
+                "Policy score for restart of '{unit}' should be >= 90 (got {})",
+                rep_restart.score
+            );
+            assert_eq!(
+                rep_restart.tier,
+                ApprovalTier::ExpertReview,
+                "Restart of '{unit}' must require ExpertReview"
+            );
+
+            // Test ServiceStop
+            let rep_stop = PolicyEngine::evaluate_capability(
+                &CapabilityKind::ServiceStop {
+                    unit: unit.into(),
+                    approved: true,
+                },
+                None,
+            );
+            assert!(
+                rep_stop.score >= 95,
+                "Policy score for stop of '{unit}' should be >= 95 (got {})",
+                rep_stop.score
+            );
+            assert_eq!(
+                rep_stop.tier,
+                ApprovalTier::ExpertReview,
+                "Stop of '{unit}' must require ExpertReview"
+            );
+        }
     }
 }

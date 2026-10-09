@@ -26,7 +26,16 @@ impl Default for HandlerConfig {
     fn default() -> Self {
         Self {
             approval_required: true,
-            protected_units: vec!["ssh.service".into(), "systemd-udevd.service".into()],
+            // Protected units. Matching is normalised so that `ssh`, `ssh.service`, `sshd` and
+            // `sshd.service` all match the same protected entry, because Fedora uses the
+            // `sshd.service` OpenSSH unit name while Debian/Ubuntu use `ssh.service`.
+            protected_units: vec![
+                "ssh.service".into(),
+                "sshd.service".into(),
+                "systemd-udevd.service".into(),
+                "dbus.service".into(),
+                "firewalld.service".into(),
+            ],
             dry_run: true,
         }
     }
@@ -67,6 +76,27 @@ impl Handler {
     pub fn with_custom_bin_dir(mut self, dir: impl Into<std::path::PathBuf>) -> Self {
         self.custom_bin_dir = Some(dir.into());
         self
+    }
+
+    /// Returns `true` when `unit` matches the protected-unit list, using normalised
+    /// names so that `ssh`, `sshd`, `ssh.service` and `sshd.service` are all treated the
+    /// same — Fedora names that unit `sshd.service`, Debian/Ubuntu `ssh.service`.
+    pub fn is_protected(&self, unit: &str) -> bool {
+        let u = unit.trim();
+        let u_base = u.strip_suffix(".service").unwrap_or(u);
+        let is_u_ssh = u_base == "ssh" || u_base == "sshd";
+        self.config.protected_units.iter().any(|p| {
+            let p_trim = p.trim();
+            if p_trim == u {
+                return true;
+            }
+            let p_base = p_trim.strip_suffix(".service").unwrap_or(p_trim);
+            if p_base == u_base {
+                return true;
+            }
+            let is_p_ssh = p_base == "ssh" || p_base == "sshd";
+            is_p_ssh && is_u_ssh
+        })
     }
 
     fn which(&self, bin: &str) -> Option<std::path::PathBuf> {
@@ -664,7 +694,7 @@ impl Handler {
         unit: &str,
         approved: bool,
     ) -> std::result::Result<Value, CapError> {
-        if self.config.protected_units.iter().any(|u| u == unit) {
+        if self.is_protected(unit) {
             return Err(CapError::Denied(format!(
                 "unit is on the protected/do-not-touch list: {unit}"
             )));
@@ -703,7 +733,7 @@ impl Handler {
     }
 
     fn cap_service_stop(&self, unit: &str, approved: bool) -> std::result::Result<Value, CapError> {
-        if self.config.protected_units.iter().any(|u| u == unit) {
+        if self.is_protected(unit) {
             return Err(CapError::Denied(format!(
                 "unit is on the protected/do-not-touch list: {unit}"
             )));
@@ -1358,17 +1388,45 @@ mod tests {
     #[test]
     fn service_restart_respects_protected_list() {
         let dir = tempfile::tempdir().unwrap();
-        let mut h = handler(dir.path(), HandlerConfig::default());
-        let (_, resp) = h
-            .execute(&req(
-                "p7",
-                CapabilityKind::ServiceRestart {
-                    unit: "ssh.service".into(),
-                    approved: true,
-                },
-            ))
-            .unwrap();
-        assert!(matches!(resp, CapabilityResponse::Denied { .. }));
+
+        let units = [
+            ("ssh.service", "Debian/Ubuntu ssh.service"),
+            ("ssh", "bare ssh"),
+            ("sshd.service", "Fedora sshd.service"),
+            ("sshd", "bare sshd"),
+            ("systemd-udevd.service", "systemd-udevd with suffix"),
+            ("systemd-udevd", "bare systemd-udevd"),
+            ("dbus.service", "dbus with suffix"),
+            ("dbus", "bare dbus"),
+            ("firewalld.service", "firewalld with suffix"),
+            ("firewalld", "bare firewalld"),
+        ];
+
+        // Test in both dry-run mode and live (--exec) mode.
+        for dry_run in [true, false] {
+            let mode = if dry_run { "dry-run" } else { "live (--exec)" };
+            let config = HandlerConfig {
+                dry_run,
+                ..HandlerConfig::default()
+            };
+            let mut h = handler(dir.path(), config);
+
+            for (name, label) in &units {
+                let (_, resp) = h
+                    .execute(&req(
+                        name,
+                        CapabilityKind::ServiceRestart {
+                            unit: (*name).into(),
+                            approved: true,
+                        },
+                    ))
+                    .unwrap();
+                assert!(
+                    matches!(resp, CapabilityResponse::Denied { .. }),
+                    "{label} in {mode} mode should have been denied as a protected unit"
+                );
+            }
+        }
     }
 
     #[test]
@@ -1447,19 +1505,48 @@ mod tests {
     #[test]
     fn service_stop_respects_protected_list_and_approval() {
         let dir = tempfile::tempdir().unwrap();
-        let mut h = handler(dir.path(), HandlerConfig::default());
 
-        // Protected unit denied
-        let (_, resp) = h
-            .execute(&req(
-                "srv_stop_prot",
-                CapabilityKind::ServiceStop {
-                    unit: "ssh.service".into(),
-                    approved: true,
-                },
-            ))
-            .unwrap();
-        assert!(matches!(resp, CapabilityResponse::Denied { .. }));
+        let units = [
+            ("ssh.service", "Debian/Ubuntu ssh.service"),
+            ("ssh", "bare ssh"),
+            ("sshd.service", "Fedora sshd.service"),
+            ("sshd", "bare sshd"),
+            ("systemd-udevd.service", "systemd-udevd with suffix"),
+            ("systemd-udevd", "bare systemd-udevd"),
+            ("dbus.service", "dbus with suffix"),
+            ("dbus", "bare dbus"),
+            ("firewalld.service", "firewalld with suffix"),
+            ("firewalld", "bare firewalld"),
+        ];
+
+        // Test in both dry-run mode and live (--exec) mode.
+        for dry_run in [true, false] {
+            let mode = if dry_run { "dry-run" } else { "live (--exec)" };
+            let config = HandlerConfig {
+                dry_run,
+                ..HandlerConfig::default()
+            };
+            let mut h = handler(dir.path(), config);
+
+            for (name, label) in &units {
+                let (_, resp) = h
+                    .execute(&req(
+                        name,
+                        CapabilityKind::ServiceStop {
+                            unit: (*name).into(),
+                            approved: true,
+                        },
+                    ))
+                    .unwrap();
+                assert!(
+                    matches!(resp, CapabilityResponse::Denied { .. }),
+                    "{label} in {mode} mode should have been denied as a protected unit"
+                );
+            }
+        }
+
+        // Unapproved service stop of an unprotected unit is denied
+        let mut h = handler(dir.path(), HandlerConfig::default());
 
         // Unapproved denied
         let (_, resp) = h

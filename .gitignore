@@ -26,4 +26,9 @@ local-state/
 __pycache__/
 *.pyc
 
+# Local investigation & prompt artifacts
+vmware-forensics/
+yourprompt.txt
+.freebuff/
+
 # NOTE: Cargo.lock is committed for this application workspace (reproducible builds).
