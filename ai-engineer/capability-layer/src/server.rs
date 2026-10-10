@@ -70,9 +70,16 @@ pub struct Server {
     listener: UnixListener,
     handler: SharedHandler,
     config: ServerConfig,
+    active_connections: Arc<std::sync::atomic::AtomicUsize>,
 }
 
 impl Server {
+    /// Returns the count of currently active in-flight connections.
+    pub fn active_connections(&self) -> usize {
+        self.active_connections
+            .load(std::sync::atomic::Ordering::SeqCst)
+    }
+
     /// Binds a Unix domain socket at the specified path and initializes the server with default configuration.
     pub fn bind(path: impl AsRef<Path>, handler: SharedHandler) -> std::io::Result<Self> {
         Self::bind_with_config(path, handler, ServerConfig::default())
@@ -99,22 +106,125 @@ impl Server {
             listener,
             handler,
             config,
+            active_connections: Arc::new(std::sync::atomic::AtomicUsize::new(0)),
         })
     }
 
-    /// Listens for incoming Unix socket connections and handles requests sequentially.
+    /// Listens for incoming Unix socket connections and handles requests concurrently up to configured limits.
     pub fn serve(&self) -> std::io::Result<()> {
         for stream in self.listener.incoming() {
             match stream {
-                Ok(stream) => {
-                    if let Err(e) = handle_conn(stream, &self.handler, &self.config) {
-                        eprintln!("connection error: {e}");
+                Ok(mut stream) => {
+                    let active = self
+                        .active_connections
+                        .fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+                    if active >= self.config.max_concurrent_connections {
+                        self.active_connections
+                            .fetch_sub(1, std::sync::atomic::Ordering::SeqCst);
+                        let err_resp = CapabilityResponse::Error {
+                            request_id: "conn-limit".into(),
+                            message: format!(
+                                "server connection limit of {} exceeded",
+                                self.config.max_concurrent_connections
+                            ),
+                            audit_seq: 0,
+                        };
+                        if let Ok(mut out) = serde_json::to_vec(&err_resp) {
+                            out.push(b'\n');
+                            let _ = stream.write_all(&out);
+                            let _ = stream.flush();
+                        }
+                        let _ = stream.shutdown(std::net::Shutdown::Both);
+                        continue;
                     }
+
+                    let handler = self.handler.clone();
+                    let config = self.config.clone();
+                    let counter = self.active_connections.clone();
+
+                    std::thread::spawn(move || {
+                        struct ConnGuard(Arc<std::sync::atomic::AtomicUsize>);
+                        impl Drop for ConnGuard {
+                            fn drop(&mut self) {
+                                self.0.fetch_sub(1, std::sync::atomic::Ordering::SeqCst);
+                            }
+                        }
+                        let _guard = ConnGuard(counter);
+                        if let Err(e) = handle_conn(stream, &handler, &config) {
+                            eprintln!("connection error: {e}");
+                        }
+                    });
                 }
                 Err(e) => eprintln!("accept error: {e}"),
             }
         }
         Ok(())
+    }
+}
+
+/// Errors encountered while reading framed requests over the socket wire.
+#[derive(Debug)]
+pub enum ReadFrameError {
+    /// Underlying I/O error.
+    Io(std::io::Error),
+    /// Request exceeded the configured wire maximum size before newline delimiter.
+    PayloadTooLarge {
+        /// Maximum allowed payload size.
+        max_bytes: usize,
+    },
+    /// Per-connection read timeout elapsed.
+    Timeout,
+}
+
+fn read_bounded_line<R: BufRead>(
+    reader: &mut R,
+    line: &mut String,
+    max_bytes: usize,
+) -> Result<usize, ReadFrameError> {
+    line.clear();
+    let mut total_read = 0;
+    loop {
+        let available = match reader.fill_buf() {
+            Ok(buf) => buf,
+            Err(e)
+                if e.kind() == std::io::ErrorKind::TimedOut
+                    || e.kind() == std::io::ErrorKind::WouldBlock =>
+            {
+                return Err(ReadFrameError::Timeout);
+            }
+            Err(e) => return Err(ReadFrameError::Io(e)),
+        };
+
+        if available.is_empty() {
+            return Ok(total_read);
+        }
+
+        if let Some(pos) = available.iter().position(|&b| b == b'\n') {
+            let chunk_len = pos + 1;
+            if total_read + chunk_len > max_bytes {
+                reader.consume(chunk_len);
+                return Err(ReadFrameError::PayloadTooLarge { max_bytes });
+            }
+            let chunk_str = std::str::from_utf8(&available[..chunk_len]).map_err(|e| {
+                ReadFrameError::Io(std::io::Error::new(std::io::ErrorKind::InvalidData, e))
+            })?;
+            line.push_str(chunk_str);
+            reader.consume(chunk_len);
+            total_read += chunk_len;
+            return Ok(total_read);
+        } else {
+            let chunk_len = available.len();
+            if total_read + chunk_len > max_bytes {
+                reader.consume(chunk_len);
+                return Err(ReadFrameError::PayloadTooLarge { max_bytes });
+            }
+            let chunk_str = std::str::from_utf8(available).map_err(|e| {
+                ReadFrameError::Io(std::io::Error::new(std::io::ErrorKind::InvalidData, e))
+            })?;
+            line.push_str(chunk_str);
+            reader.consume(chunk_len);
+            total_read += chunk_len;
+        }
     }
 }
 
@@ -170,23 +280,60 @@ fn handle_conn(
         let _ = stream.shutdown(std::net::Shutdown::Both);
         return Ok(());
     }
+
+    // Set per-connection read timeout to mitigate slowloris attacks
+    if let Err(e) = stream.set_read_timeout(Some(config.read_timeout)) {
+        eprintln!("warning: failed to set stream read timeout: {e}");
+    }
+
     let mut reader = BufReader::new(stream.try_clone()?);
     let mut line = String::new();
     loop {
-        line.clear();
-        let n = reader.read_line(&mut line)?;
-        if n == 0 {
-            break;
+        match read_bounded_line(&mut reader, &mut line, config.max_request_bytes) {
+            Ok(0) => break,
+            Ok(_) => {
+                let trimmed = line.trim();
+                if trimmed.is_empty() {
+                    continue;
+                }
+                let response = process_line(trimmed, handler);
+                let mut out = serde_json::to_vec(&response).map_err(std::io::Error::other)?;
+                out.push(b'\n');
+                stream.write_all(&out)?;
+                stream.flush()?;
+            }
+            Err(ReadFrameError::PayloadTooLarge { max_bytes }) => {
+                let err_resp = CapabilityResponse::Error {
+                    request_id: "?".into(),
+                    message: format!(
+                        "request payload exceeds maximum allowed size of {max_bytes} bytes"
+                    ),
+                    audit_seq: 0,
+                };
+                let mut out = serde_json::to_vec(&err_resp).map_err(std::io::Error::other)?;
+                out.push(b'\n');
+                let _ = stream.write_all(&out);
+                let _ = stream.flush();
+                let _ = stream.shutdown(std::net::Shutdown::Both);
+                return Ok(());
+            }
+            Err(ReadFrameError::Timeout) => {
+                let err_resp = CapabilityResponse::Error {
+                    request_id: "?".into(),
+                    message: format!("connection read timed out after {:?}", config.read_timeout),
+                    audit_seq: 0,
+                };
+                let mut out = serde_json::to_vec(&err_resp).map_err(std::io::Error::other)?;
+                out.push(b'\n');
+                let _ = stream.write_all(&out);
+                let _ = stream.flush();
+                let _ = stream.shutdown(std::net::Shutdown::Both);
+                return Ok(());
+            }
+            Err(ReadFrameError::Io(e)) => {
+                return Err(e);
+            }
         }
-        let line = line.trim();
-        if line.is_empty() {
-            continue;
-        }
-        let response = process_line(line, handler);
-        let mut out = serde_json::to_vec(&response).map_err(std::io::Error::other)?;
-        out.push(b'\n');
-        stream.write_all(&out)?;
-        stream.flush()?;
     }
     Ok(())
 }
