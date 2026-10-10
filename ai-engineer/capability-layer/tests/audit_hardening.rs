@@ -68,6 +68,7 @@ fn test_audit_cap_02_peercred_caller_uid_verification() {
     let current_uid = rustix::process::getuid().as_raw();
     let unauthorized_config = ServerConfig {
         allowed_uids: vec![99999],
+        ..ServerConfig::default()
     };
     let server = Server::bind_with_config(&sock_path, handler.clone(), unauthorized_config)
         .expect("Failed to bind server socket");
@@ -127,6 +128,7 @@ fn test_audit_cap_02_peercred_caller_uid_verification() {
     let sock_path_auth = dir.path().join("audit_test_cap02_auth.sock");
     let authorized_config = ServerConfig {
         allowed_uids: vec![current_uid],
+        ..ServerConfig::default()
     };
     let server_auth = Server::bind_with_config(&sock_path_auth, handler, authorized_config)
         .expect("Failed to bind authorized server socket");

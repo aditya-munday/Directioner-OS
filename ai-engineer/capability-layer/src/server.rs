@@ -13,11 +13,24 @@ use crate::{CapabilityRequest, CapabilityResponse};
 /// Thread-safe reference-counted pointer to the Capability [`Handler`].
 pub type SharedHandler = Arc<Mutex<Handler>>;
 
+/// Default maximum request payload size: 64 KiB (TODO 001).
+pub const DEFAULT_MAX_REQUEST_BYTES: usize = 64 * 1024;
+/// Default per-connection read timeout: 5 seconds (TODO 001).
+pub const DEFAULT_READ_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(5);
+/// Default maximum concurrent active connections: 64 (TODO 001).
+pub const DEFAULT_MAX_CONCURRENT_CONNECTIONS: usize = 64;
+
 /// Configuration settings for the Capability [`Server`].
 #[derive(Debug, Clone)]
 pub struct ServerConfig {
     /// Authorized caller UIDs allowed to connect to the Unix domain socket.
     pub allowed_uids: Vec<u32>,
+    /// Maximum allowed request frame size in bytes before allocation rejection (default 64 KiB).
+    pub max_request_bytes: usize,
+    /// Per-connection read timeout (default 5 seconds).
+    pub read_timeout: std::time::Duration,
+    /// Maximum concurrent active connections handled by the server (default 64).
+    pub max_concurrent_connections: usize,
 }
 
 impl ServerConfig {
@@ -43,7 +56,12 @@ impl Default for ServerConfig {
         if let Ok(env_uids) = std::env::var("DIRECTIONER_ALLOWED_UIDS") {
             Self::parse_uids_into(&env_uids, &mut uids);
         }
-        Self { allowed_uids: uids }
+        Self {
+            allowed_uids: uids,
+            max_request_bytes: DEFAULT_MAX_REQUEST_BYTES,
+            read_timeout: DEFAULT_READ_TIMEOUT,
+            max_concurrent_connections: DEFAULT_MAX_CONCURRENT_CONNECTIONS,
+        }
     }
 }
 
