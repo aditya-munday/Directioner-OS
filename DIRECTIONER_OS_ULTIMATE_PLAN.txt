@@ -1,0 +1,2931 @@
+================================================================================
+DIRECTIONER-OS  --  ULTIMATE LONG-RUN PLAN  v2   (500 TODOs, 760+ written subtasks)
+================================================================================
+Owner: Aditya.  For the agent that builds DIRECTIONER-OS (Antigravity IDE).
+ONE file: rules, architecture, backend asks, waves, and all 500 TODOs.
+v2 changes vs v1: 50 -> 500 TODOs; added the three-track architecture (OS +
+CLI + Aria + Beyonders backend), full Fedora->Directioner rebrand, GUI, account
+and cloud, Aria/AI-engineer integration surfaces, backend requirements (M),
+one-task-per-session rhythm (3 issues / 3 commits / 3 PRs), WAITING-ON-REPOS gate.
+
+--------------------------------------------------------------------------------
+A. READ THIS FIRST
+--------------------------------------------------------------------------------
+A1. This file is a PLAN, not evidence. In Wave 0 re-verify every claim with
+    real commands and paste the output. If the repo disagrees, the repo wins.
+A2. YOUR JOB IS THE OS ONLY. Directioner-CLI (the AI engineer), Aria (voice
+    assistant) and beyonders-platform-backend are built by OTHER agents in
+    OTHER repos. You do not build them. You build the OS so that they plug in
+    deeply: packaging, contracts, brokers, policy, sockets, UI hooks, account,
+    storage client, branding. When their repos are handed to you later you BIND
+    to them (WAITING-ON-REPOS tasks). Until then you build against the
+    contracts in Section N with fakes/mocks, labeled as mocks.
+A3. ONE TASK PER SESSION. Do exactly one TODO (all its subtasks), deliver the
+    3 issues / 3 commits / 3 PRs (D1), write the closing report, then STOP and
+    end the conversation. Do not start the next task. The next task starts only
+    when Aditya types "next". "next" is NOT a merge instruction and NOT an
+    OWNER-AUTH instruction (B3, B6).
+A4. Aditya said the backend info would be provided; the planning chat did NOT
+    receive it. Section M therefore lists what the OS NEEDS from the backend
+    (requests), not claims about what the backend already does. Verify against
+    the real backend repo when it arrives.
+
+--------------------------------------------------------------------------------
+B. PERMANENT BOUNDARIES (never expire; "keep going"/"next" never overrides)
+--------------------------------------------------------------------------------
+B1.  No conversational execution dispatch. The conversational operator stays
+     DRAFT-ONLY. Wiring any natural-language/voice path to execution needs the
+     exact named authorization phrase from Aditya referencing the governance-
+     guard comment above run_conversational_preview() in ai-engineer.rs.
+B2.  Restricted files - no edits without an exact named instruction:
+       policy.rs, reviewer.rs, self_healing.rs, incident_response.rs,
+       conversational.rs, and the CapabilityKind enum.
+     Find real paths with `git ls-files`. A check against a non-existent path
+     proves nothing (this happened). New code goes in NEW files/crates.
+B3.  NEVER merge. A merge needs a standalone typed instruction from Aditya.
+B4.  No publishing, no public servers/listeners, no domains, no real API keys
+     or secrets in the repo, ever. Endpoints come from config, not code.
+B5.  No fabrication. Never state a result you did not observe. If an
+     instruction would make you state something false, flag the conflict.
+B6.  Vague words ("continue", "go on", "next", "finish it") are not
+     authorization for gated items. A "stop" also covers fixing red CI.
+B7.  Never weaken a safety control: SELinux Enforcing; kill-switch immediate
+     SIGKILL; socket 0600 + SO_PEERCRED; self-healing ships DISABLED.
+B8.  No invented phases; no "final"/"sealing"/"complete" documents.
+B9.  CLI and Aria NEVER talk to ai-capabilityd directly. They talk to the
+     Intent Broker (N3), which turns intents into drafts that enter the
+     existing pipeline (Planner -> Policy -> Reviewer -> Implementer ->
+     Verifier). The Broker has no execution right of its own for system scope.
+B10. Aria/CLI "can do anything" is delivered as: a typed, tiered, auditable
+     intent catalog (Domain 12). User-scope actions (alarm, open app, volume)
+     run via a user-session helper with its own allowlist. Destructive or
+     privileged actions (delete files, change system settings, root work) are
+     Confirm-tier or higher and go through the pipeline. There is NO raw
+     shell, NO "run arbitrary command", NO silent bulk delete. A spoken "yes"
+     confirms exactly ONE plan, shown on screen with its blast radius.
+     Wiring broker->execution is OWNER-AUTH (B1).
+B11. BACKEND PROXY RULE: the OS never ships or stores third-party AI provider
+     keys (no Gemini/Groq/smallest.ai/etc. keys on the device). All AI, STT,
+     TTS traffic goes: device -> device token -> Beyonders backend -> providers.
+     Rebrand aliases (Heital/Eternal/Infernal) live on the backend side.
+B12. FEDORA TRADEMARK: Fedora code/packages are redistributable; the Fedora
+     NAME and LOGOS are not. Rebrand = replace branding packages (fedora-
+     release/fedora-logos/etc.) with Directioner-owned equivalents, remove
+     Fedora marks, never imply Fedora endorsement. Keep upstream license
+     notices. "No Fedora source forks": branding is done by packages/config,
+     not by patching upstream source. The KERNEL, glibc, systemd etc. remain
+     upstream builds; `uname`/package names may still say fc42 unless rebuilt
+     - state that honestly (TODO 52).
+B13. "Closed source" covers Directioner's OWN code only. Packaged GPL/LGPL
+     components keep their source obligations (offer/mirror). Legal review of
+     this is OWNER-AUTH (TODO 497). Never write "all closed-source" in docs.
+B14. Privacy by default: telemetry OFF, cloud sync OFF, voice cloud OFF until
+     the user opts in with a clear preview of what leaves the device.
+B15. Never delete/overwrite user data as part of testing outside a VM.
+
+--------------------------------------------------------------------------------
+C. GATE TAGS
+--------------------------------------------------------------------------------
+OPEN              Implement on a branch, open PRs.
+SPLIT             Part OPEN, part gated; subtasks carry their own tag.
+RESEARCH-FIRST    Memo with evidence first; no code until Aditya approves.
+DESIGN-FIRST      Design doc first; no code until Aditya approves.
+OWNER-AUTH        Needs Aditya's exact named instruction. Prepare, then stop.
+WAITING-ON-REPOS  Needs the CLI / Aria / backend repo handed over. Until then
+                  do only the mock-based half and say so.
+BACKEND-ASK       Needs a backend feature listed in Section M. Build the OS
+                  client against a mock; mark as mocked in PR (B5).
+
+--------------------------------------------------------------------------------
+D. PER-TASK RHYTHM (replaces v1 "2 open PRs" rule)
+--------------------------------------------------------------------------------
+D1. Every TODO produces, at minimum:
+      3 ISSUES  (#1 spec/design, #2 implementation, #3 verification+follow-ups)
+      3 COMMITS (tests-first, implementation, docs/evidence) - more are fine
+      3 PRs     (PR-1 tests/scaffold, PR-2 implementation, PR-3 docs+evidence)
+    PRs are stacked on branch plan/<NNN>-<slug>-{1,2,3}. Max 3 open PRs per
+    task and ONE task at a time. Never merge (B3). If a TODO is memo-only,
+    the three PRs are: outline, memo, review-fixes (still 3 issues, 3 commits).
+D2. Commit trailers/PR footers use the attribution lines the harness provides.
+D3. Closing report (last message of the session): task id, 3 issue links, 3 PR
+    links, commit list, commands run with pasted output, tests added, what is
+    NOT verified, mocks used, risks, and the exact line "STOPPED. Say 'next'
+    for TODO <NNN+1>." Then end the conversation.
+D4. No polling, no cron, no waiting loops on CI or on Aditya.
+D5. Evidence bar: pasted literal output, not summaries.
+D6. CI is expensive (20-45 min image job): run cargo test locally first, batch
+    pushes, push early so work never lives on one machine only.
+D7. Test conveniences (ci user, committed key, passwordless sudo, --exec)
+    never ship in release images (TODO 31).
+D8. If you cannot finish a subtask, say so plainly; partial+honest beats
+    complete+false. Order of work inside the 500 follows Section H, not numbers.
+
+--------------------------------------------------------------------------------
+E. BANNED WORDS (unless a named test proves it)
+--------------------------------------------------------------------------------
+"guaranteed", "mathematically", "formally verified", "zero telemetry",
+"sandboxed", "tamper-proof", "unhackable", "CIS compliant", "zero-downtime",
+"military-grade", "100% safe", "unlimited", "godmode", "can do anything",
+"works with every app". Use measured language: "tested by X", "X of Y".
+
+--------------------------------------------------------------------------------
+F. KNOWN CORRECTIONS
+--------------------------------------------------------------------------------
+F1. Work Log is NOT cryptographically tamper-evident today (TODO 19/20).
+F2. Earlier "zero diff on safety-kernel/" checks may have used non-existent paths.
+F3. Latest handoff claims (PR #14, CI run 37915676199, sshd-denial asserts)
+    are UNVERIFIED.
+F4. VMware serial-getty fix unverified in VMware; Hyper-V/real HW untested.
+F5. ai-hwcheck is diagnostic-only.
+F6. Cloud AI backends tested with mocks only.
+F7. Federation is read-only with NO network transport.
+F8. Task A (ssh/sshd normalization, branch vmware-findings-20260928) review
+    items: reviewer.rs ServiceRestart arm mis-indented (cargo fmt); helper
+    duplicated 3x; tests only in handler.rs/dry-run; bare `systemd-udevd` may
+    not match Reviewer Fatal exact-string check.
+F9. Task B (KDE Plasma image variant) is blocked until Task A is approved.
+F10. Aria and the CLI are UNBUILT or unseen from the OS side. Nothing here
+     claims they exist or work.
+
+--------------------------------------------------------------------------------
+G. CURRENT-STATE SNAPSHOT (verify in Wave 0)
+--------------------------------------------------------------------------------
+Fedora 42 bootc image; config + packages + Rust services. ai-capabilityd on
+/run/ai-capabilityd/ai-capabilityd.sock (0600, SO_PEERCRED allowlist), dry-run
+default, live mutation only via separate --exec instance + approved:true.
+Control plane Planner->Policy(0-100, Auto/Notify/Confirm/ExpertReview)->
+Reviewer->Implementer(reverse rollback)->Verifier. Work Log, SQLite World Model,
+Health Model, ai-cockpit, kill-switch, self-healing (DISABLED), Tier-1 boot
+recovery, Tier-2 sysctl/module caps, PlanDraftValidator, plugin SDK, read-only
+federation, ai-hwcheck. CI: cargo test + QEMU TCG smoke test.
+
+--------------------------------------------------------------------------------
+H. WAVES (4-5 months; one task per session means ~20-30 sessions/week of
+   attention - Aditya chooses the pace by typing "next")
+--------------------------------------------------------------------------------
+WAVE 0  Verify: PR #14, CI run, real paths, Task A, restricted-file diff.
+WAVE 1  Foundations (OPEN): Domains 1-2 OPEN items, 31, 34, 43, 47, 051-060
+        (rebrand inventory), 101-110 (account design), 151-160 (client lib).
+WAVE 2  Contracts + mocks: Section N contracts, accountd/cloudd/intentd
+        skeletons against mocks, rebrand packages, theming.
+WAVE 3  GUI + intent catalog (user-scope first), installer, updates.
+WAVE 4  Memos/designs approval pass (RESEARCH/DESIGN-FIRST items).
+WAVE 5  WAITING-ON-REPOS binding: inventory read-only first, then packaging,
+        then contract conformance tests against the real CLI/Aria/backend.
+WAVE 6  OWNER-AUTH items as Aditya names them.
+WAVE 7  Hardening, chaos, soak, compliance, release engineering, docs, handover.
+Aditya may reorder; the agent never reorders on its own.
+
+--------------------------------------------------------------------------------
+I. TASK INDEX BY DOMAIN
+--------------------------------------------------------------------------------
+ D1  001-010 Capability daemon / IPC                 (detailed)
+ D2  011-020 Safety kernel / Work Log                (detailed)
+ D3  021-030 Incident / self-healing                 (detailed)
+ D4  031-040 Image / bootc / virtualization          (detailed)
+ D5  041-050 CI / testing / release                  (detailed)
+ D6  051-100 Fedora -> Directioner rebrand + base OS identity
+ D7  101-150 Directioner Account / global login / entitlements
+ D8  151-200 Backend proxy client + cloud storage + sync
+ D9  201-250 AI Engineer (Directioner-CLI) OS integration surface
+ D10 251-310 Aria OS integration surface + Intent Broker
+ D11 311-370 Desktop GUI (Fedora-based) + AI experience layer
+ D12 371-420 System actions catalog (alarms, apps, files, settings, a11y)
+ D13 421-455 Security, privacy, trust
+ D14 456-480 Installer, updates, repos, release engineering
+ D15 481-492 Hardware, drivers, power, performance
+ D16 493-500 Legal, QA, docs, handover
+NOTE: v1 numbered the first 50 as "TODO 1..50". They are the same as 001..050.
+Cross-references like "TODO 31" mean 031.
+
+================================================================================
+J. THE TODOs   (format: NNN [GATE] title (depends) / subtasks / V=verify)
+================================================================================
+Original 50 (detailed form) follow immediately, unchanged from v1.
+
+================================================================================
+DOMAIN 1 - CAPABILITY DAEMON / IPC  (TODOs 1-10)
+================================================================================
+
+TODO 1 - Wire limits on the socket protocol            Gate: OPEN  STATUS: DONE
+Area: ai-capabilityd IPC   Depends: Wave 0
+[DONE 2026-10-10]
+ ✓ 1.1 Documented framing: newline-delimited JSON, no prior size cap.
+ ✓ 1.2 64 KiB hard frame limit (read_bounded_line) in server.rs.
+ ✓ 1.3 5s read timeout per connection via set_read_timeout.
+ ✓ 1.4 64 max concurrent connections; excess get structured error JSON.
+ ✓ 1.5 Structured errors (not panics) for oversize / timeout cases.
+[VERIFIED] Stress tests in tests/wire_limits_stress.rs: 10MB garbage, slow client, 64+ idle conns — all pass.
+[PRs] plan/001-wire-limits-{1,2,3} (#19, #20, #21)
+
+TODO 2 - Subprocess timeouts                            Gate: OPEN  STATUS: DONE
+Area: Implementer   Depends: 1
+[DONE 2026-10-10]
+ ✓ 2.1 run_command() in handler.rs is the single choke-point for all subprocess spawns.
+ ✓ 2.2 Deadline = Instant::now() + timeout.min(MAX_SUBPROCESS_TIMEOUT); 10ms poll loop.
+ ✓ 2.3 On timeout: SIGKILL process group, unregister PGID, return ErrorKind::TimedOut.
+ ✓ 2.4 Kill-switch path unchanged: immediate SIGKILL, ErrorKind::Interrupted, no grace period.
+ ✓ 2.5 subprocess_timeout in HandlerConfig (default 30s, hard-clamped to 300s).
+[VERIFIED] 9/9 tests pass: slow_subprocess_is_killed_on_timeout, killswitch_fires_before_timeout, etc.
+[PRs] plan/002-subprocess-timeouts-1 (PR 1/3)
+
+TODO 3 - D-Bus interface study                          Gate: RESEARCH-FIRST  STATUS: SKIPPED
+Area: IPC   Depends: 1
+[SKIPPED 2026-10-10 — RESEARCH-FIRST gate, recommendation: do nothing]
+ 3.1 ✓ D-Bus adds: introspection, signals, on-demand activation, SELinux label, standard tooling.
+ 3.2 ✓ Costs: dbus-broker in trust chain, new AVC rules, +12 crates (zbus), broker relay vs kernel-direct SO_PEERCRED.
+ 3.3 ✓ zbus vs raw socket: raw socket wins — fewer deps, no broker, already implemented.
+ 3.4 ✓ D-Bus GetConnectionCredentials gives UID/PID/SELinux label but passes through broker.
+ 3.5 ✓ Recommendation: KEEP Unix socket. Reconsider only when Aria/CLI explicitly chooses D-Bus.
+[NO CODE] Gate cleared. Reconsider at TODO 251-310 (Aria OS integration).
+
+TODO 4 - Sequencing and idempotency                     Gate: DESIGN-FIRST  STATUS: DESIGN-PENDING
+Area: Implementer   Depends: 2
+[DESIGN-PENDING — awaiting Aditya approval]
+ 4.1 id field = idempotency key; 60s dedup window; in-memory BTreeMap; returns Replayed response.
+ 4.2 Safe (Ping/FileRead/Status/ModuleLoad): re-execute freely. Unsafe (Write/Restart/Rollback): must use key.
+ 4.3 Sequential per-connection; no global ordering across connections; no cross-step auto-rollback.
+ 4.4 After restart: in-memory dedup gone; Implementer must check audit log before reissuing Unsafe steps.
+ 4.5 Additive Replayed response variant; id already exists; no wire format break.
+[OPEN QUESTIONS] Dedup window duration, Replayed response payload, cross-connection lock, SQLite persistence?
+[NO CODE until Aditya approves design]
+
+TODO 5 - Atomic file operations                         Gate: OPEN
+Area: Implementer   Depends: Wave 0
+[TODO]
+ 5.1 Find every file write the daemon performs (config, lockfile, logs).
+ 5.2 Convert to write-temp + fsync + rename in same directory.
+ 5.3 fsync the parent directory after rename.
+ 5.4 Keep O_NOFOLLOW symlink defense on all opens.
+ 5.5 Add a helper in one place; remove ad-hoc writes.
+[VERIFY] Kill -9 during write leaves old or new file, never a torn file.
+[TEST] Crash-injection test with a fault hook (test-only, not shipped).
+
+TODO 6 - Transitive unit-dependency graph               Gate: SPLIT
+Area: Policy inputs   Depends: 12
+[TODO]
+ 6.1 [OPEN] Read-only tool: given a unit, list what Requires/Wants/After it
+     via systemctl show. No mutation.
+ 6.2 [OPEN] Build a graph and detect if stopping unit X would stop a
+     protected unit (ssh, dbus, firewalld, systemd-udevd).
+ 6.3 [OPEN] Unit tests with fixture unit files.
+ 6.4 [OWNER-AUTH] Feed the graph into PolicyEngine blast radius.
+ 6.5 [OWNER-AUTH] Feed it into Reviewer red-line checks.
+[VERIFY] 6.1-6.3 only until Aditya authorizes 6.4-6.5 (policy.rs/reviewer.rs).
+
+TODO 7 - sd_notify and socket activation                Gate: OPEN
+Area: systemd integration   Depends: Wave 0
+[TODO]
+ 7.1 Add Type=notify with READY=1 only after socket is bound and chmod 0600.
+ 7.2 Add WATCHDOG=1 heartbeats with a sane WatchdogSec.
+ 7.3 Evaluate socket activation; keep 0600 and peercred identical.
+ 7.4 Make sure stop/restart sends STOPPING=1.
+ 7.5 Update the unit file; keep ProtectSystem=strict behavior documented.
+[VERIFY] systemctl status shows ready; kill -STOP triggers watchdog restart.
+[TEST] Integration test in QEMU smoke job.
+
+TODO 8 - Bounded output and secret scrubbing            Gate: OPEN
+Area: Work Log / responses   Depends: Wave 0
+[TODO]
+ 8.1 Cap captured subprocess stdout/stderr per call (e.g. 64 KiB, truncate
+     with a marker).
+ 8.2 Add a scrubber for obvious secrets (tokens, private key blocks, password=)
+     before anything is logged or returned.
+ 8.3 Make scrubber patterns data, not scattered regexes.
+ 8.4 Log "output truncated/scrubbed" so truncation is visible, not silent.
+ 8.5 Do not claim the scrubber is complete; document it as best-effort.
+[VERIFY] Feed a fake key block and a 10 MB output; check log and response.
+[TEST] Table-driven scrubber tests, including false-positive cases.
+
+TODO 9 - Privilege reduction                            Gate: RESEARCH-FIRST
+Area: daemon hardening   Depends: 7
+[TODO]
+ 9.1 Memo: which capabilities the daemon needs (CAP_SYS_ADMIN? narrower?).
+ 9.2 Memo: split into unprivileged front + privileged helper, with tradeoffs.
+ 9.3 Memo: systemd sandbox directives usable without breaking rpm-ostree.
+ 9.4 Honest note: ProtectSystem=strict currently blocks real rpm-ostree work.
+ 9.5 Recommendation + migration path; no code.
+[VERIFY] Every directive cited against systemd.exec docs.
+
+TODO 10 - Interrupted-sequence detection                Gate: DESIGN-FIRST
+Area: Implementer / Work Log   Depends: 4
+[TODO]
+ 10.1 Design: on startup, detect a plan that started but never finished.
+ 10.2 Detection ONLY. No auto-resume, no auto-rollback.
+ 10.3 Surface to ai-cockpit and Work Log as "interrupted, needs human".
+ 10.4 Define what evidence is recorded per step to make this possible.
+ 10.5 Edge cases: reboot mid-plan, daemon crash, kill-switch triggered.
+[VERIFY] Design approved before code.
+
+================================================================================
+DOMAIN 2 - SAFETY KERNEL / WORK LOG  (TODOs 11-20)
+================================================================================
+
+TODO 11 - Policy property tests                         Gate: OPEN
+Area: tests (control-plane/tests)   Depends: Wave 0
+[TODO]
+ 11.1 Add proptest as dev-dependency only.
+ 11.2 Property: blast radius is always 0..=100.
+ 11.3 Property: higher-risk inputs never produce a LOWER tier.
+ 11.4 Property: Phase-3 kernel/boot actions never fall below the Notify floor.
+ 11.5 Property: protected units never reach Auto tier.
+ 11.6 Tests live in control-plane/tests; do NOT edit policy.rs (B2).
+[VERIFY] 10k+ cases pass; paste seed and count. If a property fails, report
+ it - do not "fix" policy.rs.
+
+TODO 12 - Unit-name normalization crate                 Gate: SPLIT
+Area: shared lib   Depends: Task A review
+[TODO]
+ 12.1 [OPEN] New crate unit-name: trim, strip .service, ssh/sshd alias, case.
+ 12.2 [OPEN] Exhaustive tests: "ssh", "sshd", "ssh.service", " sshd.service ",
+      "systemd-udevd", "systemd-udevd.service", templated units "x@y.service".
+ 12.3 [OPEN] Fix bare `systemd-udevd` handling in the test matrix.
+ 12.4 [OWNER-AUTH] Replace the three duplicated helpers in handler.rs,
+      policy.rs, reviewer.rs with the crate.
+ 12.5 [OPEN] Document that until 12.4 the three copies must stay in sync.
+[VERIFY] One crate, three call sites (after auth), identical results.
+
+TODO 13 - Extended protected units                      Gate: OWNER-AUTH
+Area: policy lists   Depends: 12
+[TODO]
+ 13.1 Decide list: ssh/sshd, dbus.service, dbus-broker.service (alias),
+      firewalld, systemd-udevd, systemd-journald, NetworkManager?, others.
+ 13.2 Resolve alias chains (dbus.service -> dbus-broker.service) via systemctl.
+ 13.3 Make handler default list match policy/reviewer lists (currently differ).
+ 13.4 One source of truth for the list.
+ 13.5 Document each unit and WHY it is protected.
+[VERIFY] Aditya names the list; then implement and test.
+
+TODO 14 - Signed single-use approval tokens             Gate: DESIGN-FIRST
+Area: approvals   Depends: 4
+[TODO]
+ 14.1 Design: token bound to one plan hash, one UID, short expiry, single use.
+ 14.2 Key storage and rotation design (no keys in repo - B4).
+ 14.3 State explicitly: tokens do NOT authorize conversational execution (B1).
+ 14.4 Replay and downgrade attack analysis.
+ 14.5 Interaction with approved:true flag and --exec instance.
+[VERIFY] Design review before code.
+
+TODO 15 - Network-stack confirmation                    Gate: OWNER-AUTH
+Area: policy   Depends: 13
+[TODO]
+ 15.1 Propose: actions touching NetworkManager/firewalld/interfaces require
+      Confirm tier minimum.
+ 15.2 Include lock-out scenarios (remote SSH session drops).
+ 15.3 Propose a "dead-man" auto-revert for network changes.
+ 15.4 Wait for Aditya's named instruction before touching policy.rs.
+ 15.5 Write tests first, in control-plane/tests.
+[VERIFY] Prepared PR only; no merge.
+
+TODO 16 - openat2 path resolution                       Gate: OPEN
+Area: file capabilities   Depends: 5
+[TODO]
+ 16.1 Replace path-string checks with openat2 + RESOLVE_BENEATH/NO_SYMLINKS.
+ 16.2 Keep O_NOFOLLOW behavior; fall back safely if kernel lacks openat2.
+ 16.3 Cover TOCTOU: resolve once, operate on the fd.
+ 16.4 Add traversal tests: "..", symlink swap, bind mounts.
+ 16.5 Document kernel version requirements.
+[VERIFY] Race test: swap a path to a symlink mid-operation; operation fails.
+
+TODO 17 - Circuit breakers and rate limits              Gate: OPEN
+Area: daemon   Depends: 1
+[TODO]
+ 17.1 Per-UID request rate limit with token bucket.
+ 17.2 Per-capability failure breaker: N failures -> open for cool-down.
+ 17.3 Breaker state visible in ai-cockpit and Work Log.
+ 17.4 Breaker NEVER blocks the kill-switch or read-only status calls.
+ 17.5 Config with conservative defaults.
+[VERIFY] Hammer test; kill-switch still instant while limited.
+[TEST] Breaker state-machine tests.
+
+TODO 18 - Compile-time invariants                       Gate: SPLIT
+Area: types   Depends: 12
+[TODO]
+ 18.1 [OPEN] Newtype for UnitName so raw strings cannot reach policy checks.
+ 18.2 [OPEN] Type-state for plan lifecycle (Draft -> Reviewed -> Approved).
+ 18.3 [OWNER-AUTH] Any change inside restricted files / CapabilityKind enum.
+ 18.4 [OPEN] Static assertions for constants (e.g. floor <= Notify tier).
+ 18.5 [OPEN] Document which invariants are compile-time vs runtime.
+[VERIFY] Intentionally-wrong code fails to compile (trybuild tests).
+
+TODO 19 - Hash-chained Work Log                         Gate: DESIGN-FIRST -> OPEN
+Area: ai-worklog   Depends: Wave 0
+[TODO]
+ 19.1 Design: entry = hash(prev_hash || canonical_bytes). Genesis entry.
+ 19.2 Design: periodic checkpoint (hash anchored somewhere outside the log).
+ 19.3 State honestly what this detects (edit/delete in the middle) and what
+      it does not (wholesale replacement by root, truncation at the tail
+      without an external anchor).
+ 19.4 After design approval: implement chaining, backward-compatible reader.
+ 19.5 Migration of existing logs (mark pre-chain entries as unchained).
+[VERIFY] Flip one byte -> verifier reports first bad entry. See F1.
+
+TODO 20 - Offline Work Log verifier                     Gate: OPEN
+Area: tooling   Depends: 19
+[TODO]
+ 20.1 Standalone binary ai-worklog-verify, read-only, no daemon needed.
+ 20.2 Output: first broken index, count verified, count unchained.
+ 20.3 Exit codes usable in scripts and CI.
+ 20.4 Run it in the QEMU smoke job on the booted image's log.
+ 20.5 Document limits (see 19.3). Never say "tamper-proof" (E).
+[VERIFY] Good log passes; mutated, truncated and reordered logs are flagged
+ or honestly reported as undetectable.
+
+================================================================================
+DOMAIN 3 - INCIDENT RESPONSE / SELF-HEALING  (TODOs 21-30)
+================================================================================
+
+TODO 21 - Diagnosis state machines (read-only)          Gate: SPLIT
+Area: diagnostics   Depends: Wave 0
+[TODO]
+ 21.1 [OPEN] State machines for: failed unit, boot loop, disk full, OOM,
+      network loss. Read-only inputs only.
+ 21.2 [OPEN] Each state records evidence with timestamps.
+ 21.3 [OPEN] Output is a diagnosis report, never an action.
+ 21.4 [OWNER-AUTH] Wiring into incident_response.rs (restricted, B2).
+ 21.5 [OPEN] Fixture-driven tests from real journal samples.
+[VERIFY] Fixtures replay to expected diagnosis.
+
+TODO 22 - Evidence-gated rollback PROPOSALS             Gate: DESIGN-FIRST + OWNER-AUTH
+Area: incident response   Depends: 21, 23
+[TODO]
+ 22.1 Design: system PROPOSES an rpm-ostree rollback with attached evidence.
+ 22.2 NOTE: conflicts with the Phase 3 spec (Tier 1 = boot-watchdog only).
+      Needs a spec amendment approved by Aditya first.
+ 22.3 Proposal goes through the normal pipeline; never auto-executes.
+ 22.4 Define evidence threshold (e.g. N failed boots + failed units list).
+ 22.5 Write the amendment text; do not edit incident_response.rs.
+[VERIFY] Amendment approved BEFORE any implementation.
+
+TODO 23 - Post-reboot incident persistence              Gate: SPLIT
+Area: incident log   Depends: 19
+[TODO]
+ 23.1 [OPEN] Persist incident records under /var (survives bootc rollback).
+ 23.2 [OPEN] On boot, load and show "incident before last reboot".
+ 23.3 [OPEN] Bound disk use with rotation.
+ 23.4 [OWNER-AUTH] Hooks inside incident_response.rs.
+ 23.5 [OPEN] Hash-chain records (TODO 19 format).
+[VERIFY] Induce incident, reboot VM, record present and verified.
+
+TODO 24 - Conversational crate isolation                Gate: SPLIT
+Area: conversational operator   Depends: 18
+[TODO]
+ 24.1 [OPEN] Confirm by dependency graph that conversational code cannot reach
+      the Implementer (cargo tree, paste output).
+ 24.2 [OPEN] Add a CI check that fails if that dependency edge appears.
+ 24.3 [OWNER-AUTH] Move conversational.rs into its own crate.
+ 24.4 [OPEN] Keep PlanDraftValidator deny_unknown_fields with 4 layers.
+ 24.5 [OPEN] Test: drafted plans contain no execution flags.
+[VERIFY] CI guard demonstrably fails on a deliberate bad edge in a scratch branch.
+
+TODO 25 - Soak and leak testing                         Gate: OPEN
+Area: tests   Depends: Wave 0
+[TODO]
+ 25.1 24h soak script: steady request mix against dry-run daemon in a VM.
+ 25.2 Sample RSS, open FDs, thread count every minute.
+ 25.3 Fail if growth exceeds a threshold slope.
+ 25.4 Include connection churn and malformed requests.
+ 25.5 Store graphs/CSV as CI artifact (not committed).
+[VERIFY] Report with real numbers, including if it leaks.
+
+TODO 26 - Journal anomaly detection                     Gate: OPEN
+Area: self-healing inputs   Depends: Wave 0
+[TODO]
+ 26.1 Read-only journal reader (sd-journal), rate-limited.
+ 26.2 Baseline rate per unit; flag deviations.
+ 26.3 Pattern list as data (OOM-kill, segfault, I/O error, auth floods).
+ 26.4 Output goes to Health Model only; no actions.
+ 26.5 False-positive review on a real boot log.
+[VERIFY] Fixture replay; precision/recall stated honestly on small sample.
+
+TODO 27 - PSI pressure signals                          Gate: OPEN
+Area: health   Depends: Wave 0
+[TODO]
+ 27.1 Read /proc/pressure/{cpu,memory,io}.
+ 27.2 Add avg10/avg60/avg300 to the Health Model.
+ 27.3 Thresholds in config.
+ 27.4 Handle kernels without PSI (report "unavailable", not "healthy").
+ 27.5 Test with stress-ng inside a VM.
+[VERIFY] Induced pressure moves the health score.
+
+TODO 28 - Network blackhole detection                   Gate: SPLIT
+Area: diagnostics   Depends: 21
+[TODO]
+ 28.1 [OPEN] Local-only checks: link state, default route, gateway ARP, DNS
+      resolver reachability on LAN.
+ 28.2 [OPEN] Distinguish "no link", "no route", "no DNS", "no upstream".
+ 28.3 [RESEARCH-FIRST] Any external probe (which host, privacy implications).
+ 28.4 [OPEN] Never changes network config.
+ 28.5 [OPEN] Tests with network namespaces.
+[VERIFY] Each failure class reproduced in netns and classified correctly.
+
+TODO 29 - Coredump forensics                            Gate: OPEN
+Area: forensics   Depends: Wave 0
+[TODO]
+ 29.1 Read-only coredumpctl wrapper; extract signal, exe, backtrace summary.
+ 29.2 First fixture: the VMware agetty coredump (use the real bundle).
+ 29.3 Link crash to unit and to boot ID.
+ 29.4 Output a report; no auto-fix.
+ 29.5 Store reports under /var with rotation.
+[VERIFY] Fixture produces a stable summary.
+
+TODO 30 - Health scoring v2                             Gate: OPEN
+Area: Health Model   Depends: 26, 27
+[TODO]
+ 30.1 Unknown signal is NOT healthy; it lowers confidence explicitly.
+ 30.2 Separate score from confidence.
+ 30.3 Weighted components documented with rationale.
+ 30.4 Score is explainable: list top contributors.
+ 30.5 Back-compat: old consumers still get a number.
+[VERIFY] Missing inputs yield low confidence, not a perfect score.
+
+================================================================================
+DOMAIN 4 - IMAGE / BOOTC / VIRTUALIZATION  (TODOs 31-40)
+================================================================================
+
+TODO 31 - Containerfile hardening + release/test split  Gate: OPEN
+Area: image   Depends: Wave 0
+[TODO]
+ 31.1 Two build targets: `test` (ci user, key, sudo allowed) and `release`.
+ 31.2 Release target contains NONE of: ci user, committed public key,
+      passwordless sudo, --exec flags, test sockets.
+ 31.3 CI step that inspects the release image and fails if any of those exist.
+ 31.4 Pin base image by digest; document how to bump it.
+ 31.5 Remove unneeded packages; list what was removed and why.
+[VERIFY] Scan release qcow2/rootfs; paste the grep output proving absence (D6).
+
+TODO 32 - Kernel cmdline hardening                      Gate: RESEARCH-FIRST
+Area: boot   Depends: 31
+[TODO]
+ 32.1 Memo of candidate params (slab_nomerge, init_on_alloc, lockdown, etc.).
+ 32.2 Lockdown caveats: may break modules/hwcheck/tooling.
+ 32.3 VM vs bare-metal differences.
+ 32.4 Test plan in QEMU before any change.
+ 32.5 Recommendation with performance and compatibility costs.
+[VERIFY] Each param cited to kernel docs.
+
+TODO 33 - SELinux policy for the daemon                 Gate: RESEARCH-FIRST
+Area: MAC   Depends: 9
+[TODO]
+ 33.1 Memo: current domain of ai-capabilityd; what AVCs appear.
+ 33.2 Draft a confined domain with minimal allow rules.
+ 33.3 NEVER switch to permissive to "make it work" (B7).
+ 33.4 Plan for audit2allow review - every rule justified by hand.
+ 33.5 Test plan in Enforcing mode in QEMU.
+[VERIFY] AVC logs attached as evidence.
+
+TODO 34 - Hypervisor detection                          Gate: OPEN
+Area: platform   Depends: Wave 0
+[TODO]
+ 34.1 Use systemd-detect-virt + DMI + CPUID hypervisor bit.
+ 34.2 Expose result to World Model.
+ 34.3 Support: kvm, qemu, vmware, hyperv, virtualbox, none, unknown.
+ 34.4 Unknown is reported as unknown.
+ 34.5 Tests with recorded fixtures.
+[VERIFY] QEMU detected as qemu; VMware fixture as vmware.
+
+TODO 35 - Console arbitration + VMware agetty root cause Gate: OPEN
+Area: boot   Depends: 34, 29
+[TODO]
+ 35.1 Analyze the forensic bundle: why agetty crashed on VMware serial.
+ 35.2 Reproduce in QEMU if possible; otherwise state it cannot be reproduced.
+ 35.3 Make serial-getty enablement conditional on a real serial device.
+ 35.4 Document the fix as UNVERIFIED until Aditya tests in VMware (F4).
+ 35.5 Add a regression test in the QEMU smoke job.
+[VERIFY] State precisely what was and was not reproduced.
+
+TODO 36 - LUKS2 + TPM2 design                           Gate: DESIGN-FIRST
+Area: storage   Depends: 40
+[TODO]
+ 36.1 Design: encrypted /var and root on bootc with ostree.
+ 36.2 TPM2 PCR binding choices and re-seal after update.
+ 36.3 Recovery key handling.
+ 36.4 VM testing with swtpm.
+ 36.5 Failure modes: update breaks PCRs -> locked out. Mitigation.
+[VERIFY] Design approved before code.
+
+TODO 37 - Integrity tripwires                           Gate: RESEARCH-FIRST
+Area: detection   Depends: 31
+[TODO]
+ 37.1 Memo: ostree fsck, composefs, IMA, fs-verity options.
+ 37.2 What each detects and what it does not.
+ 37.3 Cost on boot time and I/O.
+ 37.4 Alerting path to Work Log (not remediation).
+ 37.5 Recommendation.
+[VERIFY] Sources cited; no "tamper-proof" language (E).
+
+TODO 38 - Ephemeral-root memo                           Gate: RESEARCH-FIRST
+Area: architecture   Depends: Wave 0
+[TODO]
+ 38.1 Evaluate tmpfs/overlay root with persistent /var.
+ 38.2 Interaction with bootc/ostree.
+ 38.3 Impact on rollback and on the Work Log.
+ 38.4 Likely outcome is REJECT; document why honestly.
+ 38.5 Keep a "revisit if" trigger list.
+[VERIFY] Memo only.
+
+TODO 39 - bootc staging verification + kexec memo       Gate: SPLIT
+Area: updates   Depends: 31
+[TODO]
+ 39.1 [OPEN] Script to verify a staged deployment before reboot (status, diff).
+ 39.2 [OPEN] Check greenboot health scripts run and roll back on failure.
+ 39.3 [OPEN] Test failed-boot rollback in QEMU with a deliberately bad image.
+ 39.4 [RESEARCH-FIRST] Memo on kexec-based fast reboot into the new deployment.
+ 39.5 [OPEN] Document boot counter behavior.
+[VERIFY] Bad image rolls back; log pasted.
+
+TODO 40 - First-boot provisioning                       Gate: DESIGN-FIRST
+Area: onboarding   Depends: 31
+[TODO]
+ 40.1 Design: user creation, hostname, keys, AI-engine opt-in (default off).
+ 40.2 No hardcoded credentials, ever.
+ 40.3 Ignition/cloud-init/kickstart comparison.
+ 40.4 How API keys are entered and stored (never in repo, B4).
+ 40.5 Offline-first behavior.
+[VERIFY] Design approved before code.
+
+================================================================================
+DOMAIN 5 - CI/CD / TESTING / RELEASE  (TODOs 41-50)
+================================================================================
+
+TODO 41 - Multi-node QEMU tests                         Gate: OPEN
+Area: CI   Depends: 47
+[TODO]
+ 41.1 Harness to boot 2-3 VMs on a virtual network.
+ 41.2 Test federation read-only queries between nodes (local only; no
+      transport exists yet - F7, so test only what is real).
+ 41.3 Test one node failing while others stay healthy.
+ 41.4 Collect serial logs as artifacts.
+ 41.5 Keep runtime under a CI budget.
+[VERIFY] Green run link and logs.
+
+TODO 42 - Failure-injection matrix                      Gate: OPEN
+Area: tests   Depends: 41
+[TODO]
+ 42.1 Matrix: kill daemon, fill disk, corrupt log, drop socket, clock jump.
+ 42.2 Each case has expected behavior written BEFORE running.
+ 42.3 Run in VM only.
+ 42.4 Results table in docs/ with pass/fail and notes.
+ 42.5 Failures become issues, not hidden.
+[VERIFY] Table with real outcomes.
+
+TODO 43 - Boot profiling                                Gate: OPEN
+Area: performance   Depends: Wave 0
+[TODO]
+ 43.1 Capture systemd-analyze blame/critical-chain per CI boot.
+ 43.2 Store as artifact and compare to previous run.
+ 43.3 Flag regressions over a threshold.
+ 43.4 Note QEMU TCG is slow; compare only like with like.
+ 43.5 Identify top 5 slow units.
+[VERIFY] Numbers from an actual run.
+
+TODO 44 - Chaos testing (VMs only)                      Gate: OPEN
+Area: validation   Depends: 42, 25
+[TODO]
+ 44.1 Random fault scheduler with seed printed.
+ 44.2 Faults: process kills, I/O errors, memory pressure, restarts.
+ 44.3 Invariant checks after each fault: socket 0600, policy unchanged,
+      log verifies, kill-switch works.
+ 44.4 Never run on a host; never on real hardware.
+ 44.5 Failing seeds saved for replay.
+[VERIFY] A failing seed reproduces.
+
+TODO 45 - Snapshot matrix                               Gate: OPEN
+Area: CI   Depends: 41
+[TODO]
+ 45.1 qcow2 snapshots at known states (fresh, post-update, post-incident).
+ 45.2 Tests start from snapshots to save time.
+ 45.3 Snapshot build is reproducible and documented.
+ 45.4 Cache keyed by image digest.
+ 45.5 Clean-up policy for artifact size.
+[VERIFY] Test time reduction measured.
+
+TODO 46 - aarch64 feasibility                           Gate: RESEARCH-FIRST
+Area: platform   Depends: 47
+[TODO]
+ 46.1 Memo: cross-build vs native runners vs QEMU emulation costs.
+ 46.2 Which services need changes.
+ 46.3 bootc-image-builder support status (check current docs).
+ 46.4 Time/cost estimate for CI.
+ 46.5 Recommendation including "defer".
+[VERIFY] Docs cited.
+
+TODO 47 - CI caching                                    Gate: OPEN
+Area: CI   Depends: Wave 0
+[TODO]
+ 47.1 Cache cargo registry and target with a good key.
+ 47.2 Cache container layers where possible.
+ 47.3 Measure before/after job time.
+ 47.4 Make sure caches cannot poison release builds (release builds clean).
+ 47.5 Document cache invalidation.
+[VERIFY] Before/after timings.
+
+TODO 48 - Compliance scan                               Gate: RESEARCH-FIRST
+Area: assurance   Depends: 31
+[TODO]
+ 48.1 Memo: OpenSCAP + SCAP Security Guide profiles for Fedora/RHEL.
+ 48.2 Run a scan in a VM; collect results.
+ 48.3 Report "X of Y rules pass" - never "CIS compliant" (E).
+ 48.4 Explain rules that conflict with an immutable image.
+ 48.5 Track the score over time.
+[VERIFY] Raw scan report attached.
+
+TODO 49 - Opt-in telemetry                              Gate: DESIGN-FIRST
+Area: product   Depends: 40
+[TODO]
+ 49.1 Design: default OFF, explicit opt-in, per-category.
+ 49.2 Exactly what is collected; show the user a preview of the payload.
+ 49.3 No identifiers beyond a rotating random ID.
+ 49.4 Where it would go (no server exists - B4); design only.
+ 49.5 Privacy language reviewed; do not claim "zero telemetry" (E) unless true.
+[VERIFY] Design approved before code.
+
+TODO 50 - Update verification with automatic rollback   Gate: DESIGN-FIRST
+Area: updates   Depends: 39
+[TODO]
+ 50.1 Design: verify signature, stage, reboot, health check, commit or rollback.
+ 50.2 Use greenboot boot counter as the rollback trigger.
+ 50.3 State honestly: reboot is required, so NOT "zero-downtime" (E).
+ 50.4 Define the health checks that gate "commit".
+ 50.5 Test plan with a good image, a bad image, and a hung boot.
+[VERIFY] Design approved before code.
+
+================================================================================
+DOMAIN 6 - FEDORA -> DIRECTIONER REBRAND + BASE OS IDENTITY  (051-100)
+================================================================================
+Rule for all of D6 (B12): replace NAMES/LOGOS/BRANDING PACKAGES, not upstream
+source. Never copy or imitate Fedora logos. Logo/wallpaper assets: use what
+Aditya provides; if none, ship a clearly-labeled PLACEHOLDER mark.
+
+051 [OPEN] Fedora identity inventory (dep: Wave 0)
+  a) Build the image, list every file/package/string carrying Fedora identity:
+     os-release, fedora-release, issue/motd, GRUB/BLS titles, Plymouth, DM
+     themes, About panel, wallpapers, icons, bookmarks, repo files, bugreport
+     URLs, vendor strings, CPE, anaconda product, fastfetch.
+  b) Classify each: REPLACE / HIDE / KEEP-LEGAL / KEEP-UPSTREAM-NAME.
+  c) Output docs/rebrand/inventory.md with the exact commands + pasted output.
+  V: reproducible command list; counts per class.
+
+052 [RESEARCH-FIRST] Honest limits memo (dep: 051)
+  a) What cannot change without rebuilding upstream: kernel version string
+     (fcNN), %{dist} tags, rpm Vendor of upstream pkgs, SELinux policy names.
+  b) What we CAN do via config (uname -v cosmetics are NOT planned).
+  c) Wording for docs: "based on Fedora" only if trademark memo (068) allows.
+  V: every claim cited to real command output or upstream docs.
+
+053 [DESIGN-FIRST] Branding package set (dep: 051,052)
+  a) Packages: directioner-release, -logos, -backgrounds, -plymouth,
+     -theme, -repos, -config-<variant>.
+  b) Provides/Obsoletes/Conflicts vs upstream branding packages; rpm-ostree
+     override/replace mechanics in the Containerfile.
+  c) Variant split: desktop / minimal / dev.
+  V: Aditya approves package map.
+
+054 [OPEN] directioner-release package (dep: 053)
+  a) os-release: NAME, ID=directioner, ID_LIKE=fedora, VERSION, VERSION_ID,
+     PRETTY_NAME, VARIANT_ID, HOME_URL/SUPPORT_URL/BUG_REPORT_URL (from config).
+  b) system-release, system-release-cpe policy; redhat/fedora-release compat
+     symlinks decision documented (tools that sniff /etc/fedora-release).
+  c) Verify dnf/rpm-ostree/bootc/greenboot still work with the new ID.
+  V: `cat /etc/os-release` in VM; tooling smoke tests pass.
+
+055 [OPEN] issue/issue.net/motd/motd.d (dep: 054)
+  a) Branded login banners; no marketing claims (E).
+  b) motd.d snippet shows image id + account state (no secrets).
+  c) Console and SSH banner tests.
+  V: serial + ssh screenshots in VM.
+
+056 [OPEN] GRUB2 branding (dep: 053)
+  a) Theme, menu titles, BLS entry names "Directioner OS <ver> (<image id>)".
+  b) Keep rollback entries clearly labeled.
+  c) Test boot menu in QEMU screenshot.
+  V: screenshot + `grubby`/BLS listing.
+
+057 [OPEN] Plymouth boot splash (dep: 053)
+  a) Theme with progress, text fallback.
+  b) Ensure LUKS passphrase prompt still renders (ties 36).
+  c) Test with/without GPU (virtio, vmware).
+  V: boot screenshots.
+
+058 [OPEN] Logo set (dep: 053)
+  a) Use Aditya's assets or labeled placeholder; svg + png sizes; icon hooks.
+  b) No Fedora artwork anywhere; hash-scan in 089.
+  c) Provide ASCII logo for TTY/fastfetch.
+  V: asset manifest with provenance/license per file.
+
+059 [OPEN] Wallpapers (dep: 058)
+  a) Light/dark + common resolutions; GNOME/KDE metadata files as needed.
+  b) Provenance/license manifest.
+  c) Default selection hooks.
+  V: files render; metadata validates.
+
+060 [OPEN] Login manager theme (SDDM or GDM per 096) (dep: 096)
+  a) Theme with branding, session picker, accessibility menu.
+  b) No test autologin in release (D7).
+  c) Screenshot test.
+  V: screenshot golden.
+
+061 [OPEN] Lock screen/screensaver branding (dep: 060)
+  a) Branded wallpaper, clock; no sensitive notification previews by default.
+  b) Test lock/unlock in VM.
+  V: screenshots.
+
+062 [OPEN] About/system-info surfaces (dep: 054)
+  a) Settings About shows Directioner OS, image digest, build id, kernel.
+  b) Links to licenses page (497).
+  c) Strings from brand config (091).
+  V: screenshot.
+
+063 [OPEN] fastfetch config (dep: 058)
+  a) Logo + fields (OS, image, kernel, DE, health score if available).
+  b) Ship as default config in directioner-config.
+  V: output paste.
+
+064 [OPEN] Shell defaults (dep: 054)
+  a) /etc/skel, bash prompt, profile.d banner minimal; no heavy frameworks.
+  b) Add `directioner` completion hook (206).
+  V: new user shell test.
+
+065 [OPEN] Vendor/UA strings (dep: 054)
+  a) rpm-ostree/dnf/PackageKit user-agent/vendor via config where supported.
+  b) Document what is hardcoded upstream and cannot change (052).
+  V: list of strings checked.
+
+066 [DESIGN-FIRST] Repository strategy (dep: 053)
+  a) Directioner RPM repo vs bundling everything in the image; naming.
+  b) Upstream Fedora repos: keep enabled? mirror policy; GPG key handling.
+  c) No hosting/publishing now (B4).
+  V: design approved.
+
+067 [OPEN] directioner-repos package (dep: 066)
+  a) .repo files from config; gpgkey placeholders (no real keys in repo).
+  b) Priority rules vs upstream.
+  V: dnf repolist (offline mock) in VM.
+
+068 [RESEARCH-FIRST] Fedora trademark compliance memo (dep: 051)
+  a) Cite the current Fedora trademark guidelines and remix/derivative rules.
+  b) List allowed/forbidden phrases and logo use.
+  c) Output a checklist used by 087/089.
+  V: URLs cited; Aditya reviews before any public wording.
+
+069 [OPEN] Default browser branding (dep: 053)
+  a) Firefox policies.json: homepage, bookmarks, search defaults, telemetry
+     policy aligned with B14.
+  b) Remove Fedora start pages/bookmarks.
+  V: policies.json validated; first-run screenshot.
+
+070 [OPEN] Default search/homepage config (dep: 069)
+  a) All URLs from platform config; offline-safe local welcome page.
+  V: browser opens welcome page offline.
+
+071 [OPEN] Installer branding (dep: 456)
+  a) product.img/anaconda branding for ISO builds.
+  b) Text strings, logos, sidebars.
+  V: ISO boot screenshot (VM).
+
+072 [OPEN] Terminal profile/fonts (dep: 073)
+  a) Branded profile, colors from design tokens (077).
+  V: screenshot.
+
+073 [OPEN] Fonts set (dep: 053)
+  a) Open-license fonts only; license manifest.
+  b) Fallback chains for CJK/emoji.
+  V: license manifest check script.
+
+074 [OPEN] Sound theme (dep: 053)
+  a) Startup/notification sounds, license-clean, volume-safe.
+  V: manifest + files play.
+
+075 [OPEN] Cursor + icon themes (dep: 077)
+  a) Base on an open-license theme, renamed, license preserved.
+  b) Hicolor fallback verified.
+  V: missing-icon scan report.
+
+076 [OPEN] Unified toolkit theme (dep: 077)
+  a) GTK/Qt/Kvantum coherence light+dark; Flatpak theme overrides.
+  V: screenshots of GTK + Qt apps.
+
+077 [DESIGN-FIRST] Design tokens (dep: 053)
+  a) tokens.json (colors, radii, spacing, type scale, motion) as the shared
+     source for OS, and as a hand-off file for CLI/Aria/website agents.
+  b) Accessibility contrast rules (WCAG targets stated, measured).
+  V: design approved.
+
+078 [OPEN] Token-driven theme generation (dep: 077)
+  a) Build step emits GTK/Qt/QSS/plymouth/GRUB colors from tokens.
+  b) Deterministic output test.
+  V: diff-free regeneration.
+
+079 [OPEN] App grid cleanup (dep: 051)
+  a) Hide/replace branded or irrelevant .desktop entries via config.
+  b) Never delete upstream files; use overrides.
+  V: launcher listing before/after.
+
+080 [OPEN] Help/docs hook (dep: 054)
+  a) "Get Help" opens docs URL from config; offline local docs fallback.
+  V: manual + screenshot.
+
+081 [OPEN] Bug-report path (dep: 054)
+  a) Point report URLs to Directioner config; nothing auto-sent (B14).
+  b) `directioner-report` bundles logs locally for the user to review.
+  V: bundle contents listing; scrubber test (8).
+
+082 [OPEN] Branded unit/preset review (dep: 051)
+  a) Identify Fedora-named units/presets; hide/replace only when safe.
+  b) Never rename upstream units used by protected-unit lists.
+  V: unit list diff.
+
+083 [OPEN] Hostname scheme (dep: 054)
+  a) directioner-<random4> default; user override in OOBE.
+  V: first-boot test.
+
+084 [OPEN] /etc/skel + default dirs (dep: 054)
+  a) Standard XDG dirs; Directioner folder only if cloud enabled.
+  V: new-user tree listing.
+
+085 [OPEN] Default shortcut map incl. reserved AI slot (dep: 340)
+  a) Document defaults; one reserved key for "Ask Directioner".
+  b) Conflict detection with DE defaults.
+  V: shortcut export.
+
+086 [OPEN] Locale/timezone defaults (dep: 356)
+  a) Language choice at OOBE; sane fallbacks; NTP on.
+  V: VM test.
+
+087 [OPEN] Rebrand lint in CI (dep: 068,051)
+  a) Scan built image for "Fedora" strings; allowlist for legal notices and
+     package names; fail on new violations.
+  b) Report counts as artifact.
+  V: red/green demonstration with a planted string in a scratch branch.
+
+088 [OPEN] Rebrand screenshot tests (dep: 056,057,060)
+  a) Scripted QEMU screenshots: GRUB, Plymouth, login, desktop, About.
+  b) Golden compare with tolerance; update workflow documented.
+  V: CI artifact set.
+
+089 [OPEN] Logo/asset provenance scan (dep: 068)
+  a) Scan image for files matching known third-party-logo filename patterns
+     and the allowlist manifest; fail on unknown assets.
+  b) Do not store Fedora logo files in the repo to compare; use name rules.
+  V: scan output.
+
+090 [OPEN] BRANDING.md (dep: 091)
+  a) How to change a brand value in one place and rebuild.
+  V: a reviewer reproduces a rename in a scratch branch.
+
+091 [DESIGN-FIRST] brand.toml single source of truth (dep: 053)
+  a) Fields: names, ids, URLs, colors ref, version, channel, support text.
+  b) Consumers: release pkg, themes, installer, About, docs.
+  V: design approved.
+
+092 [OPEN] brand.toml generator (dep: 091)
+  a) Build step; schema validation; unit tests.
+  V: bad config rejected.
+
+093 [DESIGN-FIRST] Versioning scheme (dep: 091)
+  a) Directioner OS version numbering; VERSION_ID; relation to Fedora base.
+  b) Channels stable/beta/dev; image tags; changelog source.
+  V: approved scheme.
+
+094 [OPEN] Variant IDs (dep: 093)
+  a) VARIANT_ID for desktop/minimal/dev; used by installer + updater.
+  V: os-release per variant in CI.
+
+095 [OPEN] Build variants matrix (dep: 094)
+  a) Document contents and size per variant; CI builds only what is needed.
+  V: matrix doc + CI config.
+
+096 [RESEARCH-FIRST] Desktop environment decision memo (dep: Wave 0)
+  a) KDE Plasma vs GNOME vs both: theming depth, Wayland, accessibility,
+     overlay/layer-shell feasibility for Aria edge glow, Flatpak/Qt/GTK mix.
+  b) Which Fedora spin the image derives from; package diff.
+  c) Recommendation; Aditya decides (blocks D11).
+  V: sources cited; decision recorded.
+
+097 [OPEN] Third-party repo policy (dep: 486)
+  a) Rules for RPM Fusion/Flathub/COPR; default OFF unless approved.
+  V: policy doc + config.
+
+098 [OPEN] Flatpak defaults (dep: 097)
+  a) Remote names/branding, filtering, permissions review UI hooks.
+  V: `flatpak remotes` output.
+
+099 [OPEN] Consistent --version/--help for Directioner tools (dep: Wave 0)
+  a) Shared format: name, version, build id, contract version.
+  b) Test across all binaries.
+  V: golden outputs.
+
+100 [OPEN] Rebrand acceptance pack (dep: 087-089)
+  a) Review pack: screenshots, inventory deltas, remaining Fedora strings
+     with reasons.
+  b) State plainly what is NOT rebranded (052).
+  V: pack delivered as PR-3 evidence.
+
+
+================================================================================
+DOMAIN 7 - DIRECTIONER ACCOUNT / GLOBAL LOGIN / ENTITLEMENTS  (101-150)
+================================================================================
+Goal: one global Directioner account, usable across OS, CLI and Aria, issued by
+the Beyonders backend. OS side = `directioner-accountd` (+ GUI/CLI front-ends).
+Mock backend until the real repo arrives (A2, A4). Backend needs: Section M.
+
+101 [DESIGN-FIRST] Account architecture + threat model (dep: Wave 0)
+  a) Roles: OS (device identity, token custody) vs backend (identity, plans).
+  b) Device identity vs user identity vs per-app service tokens.
+  c) STRIDE per component; abuse cases (stolen laptop, shared PC).
+  V: approved doc.
+
+102 [RESEARCH-FIRST] Auth flow memo (dep: 101)
+  a) OAuth2 device authorization grant + PKCE browser flow: when each.
+  b) What backend endpoints each needs (feeds M1).
+  c) Passkey/MFA pass-through.
+  V: standards cited (RFC numbers verified).
+
+103 [DESIGN-FIRST] accountd local API v1 (dep: 101)
+  a) Methods: login.start/poll, logout, status, whoami, token.get(audience).
+  b) Transport: Unix socket (0600/peercred) and user-session D-Bus signals.
+  c) Error codes; versioning.
+  V: approved contract (goes to Section N).
+
+104 [OPEN] accountd skeleton (dep: 103)
+  a) New crate, systemd unit (hardened), socket, config load.
+  b) Health endpoint; no network yet.
+  V: unit starts in VM; socket mode 0600.
+
+105 [OPEN] Mock backend for tests (dep: 103)
+  a) Test-only server implementing M1 auth; never shipped (D7).
+  b) Fault modes: slow, 5xx, token expiry, revoke.
+  V: mock excluded from release image (scan).
+
+106 [OPEN] Device-code flow client (dep: 104,105)
+  a) Request, display code+URL, poll with interval/slow_down/expiry.
+  b) Cancel support; QR hint optional.
+  V: tests against mock incl. slow_down.
+
+107 [OPEN] PKCE browser flow client (dep: 104)
+  a) Loopback redirect with state+nonce, S256 challenge.
+  b) Browser launch via xdg-open/portal.
+  V: tests with scripted browser.
+
+108 [OPEN] Token storage (dep: 104)
+  a) Kernel keyring or Secret Service; never plaintext files.
+  b) Optional TPM-sealed refresh token memo (114).
+  V: strings/grep of disk after login finds no token.
+
+109 [OPEN] Refresh rotation + reuse detection (dep: 106)
+  a) Rotate on use; on reuse error -> force re-login + notify.
+  V: tests.
+
+110 [OPEN] In-memory access tokens (dep: 108)
+  a) Zeroize on drop; no logging; mlock where available.
+  V: unit tests + core-dump check (120).
+
+111 [OPEN] Logout/revoke (dep: 109)
+  a) Local wipe first, then backend revoke; queue revoke if offline.
+  b) Notify subscribers (139).
+  V: offline-logout test.
+
+112 [RESEARCH-FIRST] Multi-user model (dep: 101)
+  a) Per-Linux-user login vs per-device; shared family PCs.
+  b) Recommendation (per-user).
+  V: memo.
+
+113 [OPEN] Device registration (dep: 104)
+  a) Random device id (never hardware serial), name, OS version, variant.
+  b) Re-registration after reinstall.
+  V: tests vs mock.
+
+114 [RESEARCH-FIRST] Device attestation memo (dep: 113)
+  a) TPM2 quote/secure-boot state: what backend could verify, privacy cost.
+  b) Optional, off by default.
+  V: memo.
+
+115 [OPEN] Device list + remote revoke client (dep: 113) BACKEND-ASK
+  a) List devices, revoke one; show current device.
+  V: mock tests.
+
+116 [OPEN] Offline grace (dep: 117)
+  a) Cached entitlements with signed expiry and grace period.
+  b) Clock-rollback detection (monotonic + last-seen).
+  V: tests incl. clock rollback.
+
+117 [OPEN] Entitlement client (dep: 104) BACKEND-ASK
+  a) plan, features, quota remaining, reset time.
+  b) Cache + signature verification of entitlement blob.
+  V: mock tests.
+
+118 [DESIGN-FIRST] Rate-limit behavior (dep: 117)
+  a) 429/Retry-After UX; what degrades (stated plan: graceful degradation to a
+     local small model rather than hard failure).
+  b) Hook interface only; local model implementation is out of scope here.
+  V: approved design.
+
+119 [OPEN] Account state in cockpit/Work Log (dep: 104)
+  a) Status shown; never tokens/emails in logs (hash only).
+  V: scrub test.
+
+120 [OPEN] Core-dump + memory hygiene (dep: 110)
+  a) PR_SET_DUMPABLE=0, LimitCORE=0 for accountd; no swap of secrets (mlock).
+  V: induced crash leaves no token in dump.
+
+121 [OPEN] accountd sandbox (dep: 104)
+  a) systemd hardening directives; record `systemd-analyze security` score.
+  b) SELinux domain draft (ties 33/435).
+  V: score before/after pasted.
+
+122 [OPEN] Clock-skew handling (dep: 106)
+  a) Detect skew from backend Date header; prompt or fix via NTP status.
+  V: tests with skewed mock.
+
+123 [RESEARCH-FIRST] TLS/proxy memo (dep: 104)
+  a) System CA store, enterprise proxies, MITM CAs; certificate pinning pros
+     and cons (pinning can brick devices on rotation).
+  b) Recommendation.
+  V: memo.
+
+124 [OPEN] platform.toml (dep: 104)
+  a) /etc/directioner/platform.toml: base URL, region, channel; https-only;
+     validated; drop-in overrides for enterprise.
+  b) No default prod host baked in tests images (B4/453).
+  V: invalid config rejected.
+
+125 [OPEN] API versioning policy (dep: 124)
+  a) Min/max supported API version; deprecation behavior; user-visible
+     "update required" state.
+  V: tests.
+
+126 [OPEN] `dos-account` CLI (dep: 104)
+  a) login/logout/status/devices; JSON output flag.
+  V: golden outputs.
+
+127 [OPEN] Token exchange for CLI/Aria (dep: 103,128)
+  a) Audience-scoped short-TTL tokens via accountd; contract only here.
+  b) Real CLI/Aria binding is WAITING-ON-REPOS (209/309).
+  V: fake-client tests.
+
+128 [OPEN] Scope/audience model (dep: 101) BACKEND-ASK
+  a) Audiences: os, cli, aria, cloud, update; least privilege scopes.
+  V: matrix doc + tests.
+
+129 [OPEN] Client identity verification (dep: 127)
+  a) SO_PEERCRED + exe path + cgroup; allowlist of known client binaries by
+     path (+hash when packaged).
+  b) Unknown client => deny + log.
+  V: tests with impostor binary.
+
+130 [OPEN] Consent prompt for token grants (dep: 129)
+  a) First request by an app => user approval; revocable in Settings.
+  V: UI test with scripted accept/deny.
+
+131 [OPEN] Recovery/lockout copy (dep: 101)
+  a) Messages only state what backend actually supports (A4).
+  V: copy review.
+
+132 [RESEARCH-FIRST] Passkeys/MFA (dep: 102)
+  a) WebAuthn via browser; OS pass-through; hardware key support in image.
+  V: memo.
+
+133 [RESEARCH-FIRST] Managed/org accounts (dep: 101)
+  a) Enterprise policy, MDM-like hooks (stated future); minimal v1 surface.
+  V: memo.
+
+134 [OPEN] Deletion/export flows (dep: 117) BACKEND-ASK
+  a) Client side "export my data"/"delete my account" flows.
+  V: mock tests.
+
+135 [RESEARCH-FIRST] Directioner account as Linux login? (dep: 101)
+  a) PAM/SSSD risks: offline lockout, brute-force, privilege.
+  b) Default recommendation: NOT in v1; local auth stays.
+  V: memo; nothing built.
+
+136 [RESEARCH-FIRST] Unlock-with-account idea (dep: 135)
+  a) Optional second factor for lock screen only; risks.
+  V: memo.
+
+137 [OPEN] OOBE sign-in step (dep: 356)
+  a) Skippable; works offline; explains what signing in enables.
+  V: OOBE test.
+
+138 [OPEN] Account state machine (dep: 104)
+  a) States: signed-out, signing-in, signed-in, expiring, expired, revoked,
+     offline-grace. Exhaustive transition tests.
+  V: tests + generated diagram.
+
+139 [OPEN] Account event bus (dep: 138)
+  a) User-session D-Bus signals for GUI/Aria/CLI.
+  V: subscriber test.
+
+140 [OPEN] Local request rate limiting (dep: 17)
+  a) Per-UID limits on accountd; reuse breaker design.
+  V: hammer test.
+
+141 [OPEN] Fuzz accountd protocol (dep: 104)
+  a) cargo-fuzz target for request parser.
+  V: run log, corpus committed.
+
+142 [OPEN] Token invariants property tests (dep: 110)
+  a) Never persisted plaintext; zeroized on logout; audience respected.
+  V: proptest pass.
+
+143 [OPEN] QEMU login test vs mock (dep: 105)
+  a) Login, reboot, token persists/expires properly.
+  V: CI log.
+
+144 [OPEN] Crash safety (dep: 109)
+  a) Kill accountd mid-refresh: no lost session, no leaked token.
+  V: chaos case added (42).
+
+145 [OPEN] Account telemetry list (dep: 49)
+  a) Events that MAY be reported if opted in; default none.
+  V: list reviewed.
+
+146 [OPEN] Accessible login flows (dep: 126)
+  a) Screen-reader labels, keyboard-only path, no color-only cues.
+  V: checklist run.
+
+147 [OPEN] i18n scaffold for account strings (dep: 126)
+  a) gettext catalogs; en baseline.
+  V: extraction test.
+
+148 [OPEN] Account docs (dep: 138)
+  a) Architecture, threat model, runbook, recovery limits.
+  V: doc review.
+
+149 [OPEN] Auth conformance suite (dep: 105) WAITING-ON-REPOS for real run
+  a) Suite derived from M1; runs on mock now.
+  V: green on mock; report format ready.
+
+150 [OPEN] Bind accountd to real backend auth (dep: 149) WAITING-ON-REPOS
+  a) Read-only inventory of backend auth routes; map to M1; list mismatches.
+  b) Run conformance; fix OS side only; request backend changes via report.
+  V: conformance report.
+
+
+================================================================================
+DOMAIN 8 - BACKEND PROXY CLIENT + CLOUD STORAGE + SYNC  (151-200)
+================================================================================
+OS services talk ONLY to the configured Beyonders backend (B11). Client lib
+`directioner-platform-client`; cloud service `directioner-cloudd`.
+
+151 [DESIGN-FIRST] platform-client architecture (dep: 103)
+  a) Shared Rust lib: auth injection, retry, TLS, streaming, tracing, errors.
+  b) Who links it: accountd, cloudd, intentd (for status), updater hooks.
+  V: approved design.
+
+152 [OPEN] HTTP core (dep: 151)
+  a) Timeouts, jittered retries, idempotency keys, circuit breaker.
+  V: tests vs mock fault modes.
+
+153 [OPEN] Streaming (SSE/WebSocket) (dep: 152)
+  a) Backpressure, reconnect, cancel; used by AI/voice proxy clients.
+  V: tests incl. mid-stream drop.
+
+154 [OPEN] Auth middleware (dep: 152,127)
+  a) Obtain audience token from accountd; refresh on 401 once; no token logs.
+  V: tests.
+
+155 [OPEN] Error taxonomy (dep: 152)
+  a) Map backend errors to typed OS errors (auth, quota, offline, version).
+  V: table-driven tests.
+
+156 [OPEN] Offline queue (dep: 152)
+  a) Bounded, encrypted-at-rest queue for non-AI calls; replay rules.
+  V: kill/restart test.
+
+157 [OPEN] Client observability (dep: 152)
+  a) Request ids, local counters, structured logs without secrets.
+  V: scrub test.
+
+158 [OPEN] Mock backend v2 (dep: 105)
+  a) Add AI streaming, 429, 5xx, slow, malformed, version-mismatch modes.
+  V: excluded from release.
+
+159 [OPEN] AI proxy contract tests v1 (dep: 153,158) BACKEND-ASK
+  a) Chat streaming request/response shape from M2; tests on mock.
+  V: green on mock.
+
+160 [OPEN] STT/TTS proxy contract tests (dep: 153) BACKEND-ASK
+  a) Audio streaming framing, chunk sizes, end-of-utterance from M3.
+  V: green on mock.
+
+161 [DESIGN-FIRST] Local AI gateway decision (dep: 151)
+  a) Should the OS host a local gateway (quota display, offline errors,
+     consent) or leave each client to call the backend itself?
+  b) Pros/cons incl. extra attack surface.
+  V: Aditya decides.
+
+162 [OPEN] Quota display client (dep: 117)
+  a) Remaining/reset/plan from entitlement + response headers.
+  V: tests.
+
+163 [OPEN] Client-side usage counters (dep: 162)
+  a) Display only; backend is authoritative.
+  V: tests.
+
+164 [OPEN] Provider-key absence CI check (dep: Wave 0)
+  a) Scan repo+image for provider key patterns/known SDK env names (B11).
+  V: planted-key detection demo.
+
+165 [OPEN] Egress allowlist doc + rules (dep: 124)
+  a) Which hosts Directioner services may contact (from platform.toml).
+  b) Optional nftables user rules for managed setups; no blocking of user apps.
+  V: egress test (442).
+
+166 [DESIGN-FIRST] Cloud architecture (dep: 101)
+  a) Client-side encrypted blobs; what syncs; what never syncs.
+  b) Server learns: sizes, timing, ids - state this plainly.
+  V: approved doc.
+
+167 [BACKEND-ASK] Cloud API contract (dep: 166)
+  a) Chunked resumable upload, content-addressed blobs, versions, quotas,
+     delete, listing; requirements go to M4.
+  V: contract doc.
+
+168 [DESIGN-FIRST] Encryption design (dep: 166)
+  a) Per-user data key, wrapping, recovery key, key rotation.
+  b) Vetted primitives only; no custom crypto; limits stated, no "unbreakable".
+  V: approved design.
+
+169 [OPEN] cloudd skeleton (dep: 166)
+  a) Service, socket, config, state dir under /var/lib or ~/.local/share.
+  V: starts in VM.
+
+170 [OPEN] Crypto module (dep: 168)
+  a) AEAD wrapper over vetted crates; known-answer tests.
+  V: KAT results pasted.
+
+171 [OPEN] Key derivation + recovery (dep: 168)
+  a) Argon2id parameters documented; recovery key format; tests.
+  V: tests.
+
+172 [OPEN] Chunker + dedupe (dep: 170)
+  a) Content-defined chunking; convergent encryption is NOT used unless the
+     design approves it (leaks equality).
+  V: tests.
+
+173 [OPEN] Resumable transfer (dep: 167,172)
+  a) Per-chunk hash verify; resume after kill.
+  V: kill test.
+
+174 [OPEN] Local sync DB (dep: 169)
+  a) SQLite schema, migrations, integrity check.
+  V: migration tests.
+
+175 [OPEN] Conflict policy (dep: 174)
+  a) Keep both with conflict suffix; never silent overwrite.
+  V: scenario tests.
+
+176 [OPEN] Selective sync + exclusions (dep: 174)
+  a) Default excludes: ~/.ssh, keyrings, browser profiles, token dirs.
+  b) User-managed include list.
+  V: exclusion tests.
+
+177 [OPEN] Metered/battery awareness (dep: 169)
+  a) Pause on metered/low battery; user override.
+  V: NM mock tests.
+
+178 [OPEN] FS watcher (dep: 174)
+  a) inotify/fanotify, bounded queues, overflow => rescan.
+  V: stress test.
+
+179 [OPEN] Settings sync (dep: 174)
+  a) Versioned schema of curated keys; per-device overrides.
+  V: schema tests.
+
+180 [OPEN] Dotfile sync with secret scanning (dep: 176)
+  a) Pre-upload scan; block and warn.
+  V: planted-secret test.
+
+181 [OPEN] App-list sync (dep: 179)
+  a) Record flatpaks/layered pkgs; restore = PROPOSAL plan only (B1/B10).
+  V: restore draft test.
+
+182 [OPEN] Trash/versions hooks (dep: 173)
+  a) API for file manager integration (343).
+  V: tests.
+
+183 [DESIGN-FIRST] Quota behavior (dep: 167)
+  a) Over-quota UX; what stops syncing; no silent data loss.
+  V: approved design.
+
+184 [RESEARCH-FIRST] Sharing memo (dep: 168)
+  a) E2E sharing complexity; likely defer.
+  V: memo.
+
+185 [RESEARCH-FIRST] Cloud mount integration (dep: 169)
+  a) FUSE vs GVfs backend for file manager; offline files.
+  V: memo.
+
+186 [OPEN] Cache eviction (dep: 174)
+  a) LRU with pinned files; low-disk behavior.
+  V: tests.
+
+187 [OPEN] Corruption detect/repair (dep: 173)
+  a) Detect bad chunk, re-fetch, report.
+  V: injected corruption test.
+
+188 [OPEN] Delete semantics doc (dep: 167)
+  a) What "delete" means locally vs server retention (per backend, A4).
+  V: doc.
+
+189 [OPEN] Multi-device sync test (dep: 41)
+  a) Two QEMU VMs + mock; conflict and resume scenarios.
+  V: CI log.
+
+190 [OPEN] Fuzz sync metadata (dep: 174)
+  V: fuzz run log.
+
+191 [OPEN] Chaos cases for cloudd (dep: 42)
+  a) Kill mid-upload, disk full, clock jump.
+  V: matrix rows.
+
+192 [OPEN] Account isolation (dep: 169)
+  a) User A's cache/keys unreadable by user B (perms + tests).
+  V: isolation test.
+
+193 [OPEN] New-device restore flow (dep: 181)
+  a) First-boot restore of settings/files (mock).
+  V: VM test.
+
+194 [OPEN] OS config backup (dep: 179)
+  a) Back up policy/brand config - never secrets.
+  V: secret-scan on backup set.
+
+195 [OPEN] Local export-all tool (dep: 174)
+  a) Decrypted export to a user-chosen folder.
+  V: round-trip test.
+
+196 [OPEN] Cloud telemetry list (dep: 49)
+  a) Opt-in events only.
+  V: list.
+
+197 [OPEN] Cloud privacy doc (dep: 166)
+  a) Plain-language what is encrypted, what leaks, what we cannot promise.
+  V: reviewer checks vs banned words (E).
+
+198 [OPEN] Cloud conformance suite (dep: 167) WAITING-ON-REPOS for real run
+  V: green on mock.
+
+199 [OPEN] Bind cloudd to real storage API (dep: 198) WAITING-ON-REPOS
+  a) Inventory real routes; map to M4; mismatch report.
+  V: conformance report.
+
+200 [OPEN] Bind platform-client to real proxy API (dep: 159,160) WAITING-ON-REPOS
+  a) Inventory; conformance; mismatch report; OS-side fixes only.
+  V: conformance report.
+
+
+================================================================================
+DOMAIN 9 - AI ENGINEER (DIRECTIONER-CLI) OS INTEGRATION SURFACE  (201-250)
+================================================================================
+The CLI (`directioner`) is built by ANOTHER agent in ANOTHER repo and proxies to
+the Beyonders backend itself. YOU build what the OS must offer it: packaging,
+auth hand-off, read-only context, an intent/proposal path, approvals, terminal
+hooks, sandbox launcher, update policy, and delegation from Aria. The CLI never
+connects to ai-capabilityd (B9).
+
+201 [DESIGN-FIRST] CLI<->OS contract v1 (dep: 103)
+  a) Packaging, auth, context, intents, approvals, updates, telemetry, UI hooks.
+  b) Versioned, goes to Section N.
+  V: approved contract.
+
+202 [OPEN] CLI repo inventory (dep: repo handed over) WAITING-ON-REPOS
+  a) Read-only: runtime (TypeScript/Bun?), build, deps, binary name, config
+     paths, network endpoints, license text(s) - upstream Codebuff is Apache-2.0
+     per its repo; resolve the inner-README MIT claim; do not guess.
+  b) List what the OS must provide vs what the CLI already does.
+  V: inventory doc with file paths.
+
+203 [OPEN] RPM spec for `directioner` (dep: 201)
+  a) Spec takes a prebuilt artifact input; installs /usr/bin/directioner;
+     no network at build time.
+  V: rpmbuild + rpmlint output.
+
+204 [RESEARCH-FIRST] Runtime packaging strategy (dep: 203)
+  a) Single compiled binary vs layered runtime vs toolbox-only.
+  b) Size, updates, SELinux labeling, reproducibility.
+  V: memo.
+
+205 [OPEN] Preinstall layer (dep: 203,31)
+  a) Include in desktop/dev variants only; absent from minimal.
+  V: image contents listing.
+
+206 [OPEN] Shell completions (dep: 203)
+  a) bash/zsh/fish install paths and packaging.
+  V: completion works in VM shell.
+
+207 [OPEN] Man page, desktop entry, icon (dep: 203,058)
+  a) Terminal-launch desktop entry; icon from brand set.
+  V: launcher screenshot.
+
+208 [OPEN] Default config layering (dep: 124)
+  a) /etc/directioner/cli.toml (endpoint from platform.toml) + user overrides.
+  V: precedence tests.
+
+209 [OPEN] Auth hand-off (OS side) (dep: 127,129)
+  a) CLI obtains audience=cli token from accountd; consent prompt.
+  b) CLI-side changes are the CLI agent's job; deliver the contract + example.
+  V: fake-CLI test.
+
+210 [OPEN] First-run flow (dep: 209)
+  a) Signed-out `directioner` triggers OS login (device code in terminal).
+  V: scripted test.
+
+211 [OPEN] Context provider (dep: 201)
+  a) `directioner-context`: read-only facts (OS/image, failed units, health,
+     hardware summary) over a local socket, consent-gated per level.
+  V: tests + peercred.
+
+212 [OPEN] Context redaction (dep: 211)
+  a) Optional redaction of hostnames/IPs/usernames/paths; levels 0-3.
+  V: golden redaction tests.
+
+213 [OPEN] World Model read API (dep: 211)
+  a) Read-only SQLite views only; no write path.
+  V: write attempt fails.
+
+214 [OPEN] Journal excerpt provider (dep: 8,211)
+  a) Scrubbed, size-capped, untrusted-tagged excerpts.
+  V: injection-text fixture.
+
+215 [OPEN] Workspace trust registry (dep: 201)
+  a) User-scope list of folders the CLI may edit; prompt on first use.
+  V: tests.
+
+216 [DESIGN-FIRST] CLI sandbox launcher (dep: 217)
+  a) `directioner-sandbox` using Landlock/bubblewrap with allowed dirs.
+  b) Honest limits: a coding agent needs wide access; sandbox reduces
+     blast radius, it does not make the agent harmless.
+  V: approved design.
+
+217 [RESEARCH-FIRST] Sandboxing options memo (dep: 201)
+  a) Landlock vs bubblewrap vs systemd user scopes vs SELinux user domain.
+  V: memo with tradeoffs and test results in VM.
+
+218 [RESEARCH-FIRST] CLI SELinux plan (dep: 33,217)
+  a) Confined user domain feasibility; never permissive (B7).
+  V: memo.
+
+219 [OPEN] Shell hook (dep: 201)
+  a) Opt-in "ask directioner" keybinding and error-explain hook (bash/zsh/fish).
+  V: tests in each shell.
+
+220 [OPEN] command-not-found handler (dep: 219)
+  a) Suggest flatpak/toolbox/rpm-ostree options; never installs by itself.
+  V: transcript.
+
+221 [OPEN] Failed-command capture (dep: 219)
+  a) Opt-in last-command/stderr hand-off with redaction.
+  V: tests.
+
+222 [OPEN] Terminal quick-launch (dep: 207)
+  a) Profile/menu entry opening `directioner` in the current directory.
+  V: screenshot.
+
+223 [OPEN] Dev containers integration (dep: 223a)
+  a) Toolbox/distrobox default for developer tooling on an immutable OS.
+  b) Documented workflow for the CLI inside a toolbox.
+  V: VM walkthrough transcript.
+
+224 [OPEN] `directioner-dev doctor` (dep: 223)
+  a) Checks toolbox, compilers, git, ssh agent; read-only.
+  V: output paste.
+
+225 [OPEN] Intent Broker client contract for CLI (dep: 269)
+  a) CLI sends typed intents; contract tests with a fake CLI.
+  V: fake-CLI e2e.
+
+226 [OPEN] "Propose OS change" endpoint (dep: 225)
+  a) Produces a DRAFT plan only (B1); validated by PlanDraftValidator.
+  V: tests prove no execution flag survives.
+
+227 [OPEN] Proposal queue UI/CLI (dep: 226,336)
+  a) Pending proposals with blast radius, origin, age.
+  V: UI test.
+
+228 [OPEN] Approval flow (dep: 227)
+  a) Confirm dialog bound to ONE plan hash; shows steps/diff; expiry.
+  V: tests incl. replay/hash mismatch.
+
+229 [OPEN] Terminal approval (dep: 228)
+  a) `dos-approve <id>` with re-auth; shows same card as GUI.
+  V: tests.
+
+230 [OWNER-AUTH] Draft -> execution wiring (dep: 228)
+  a) Prepare PR + tests ONLY; stop. Needs the B1 phrase from Aditya.
+  V: nothing merged or executed.
+
+231 [OPEN] Audit origin tagging (dep: 119)
+  a) Work Log entries carry origin (cli/aria/user), session id, account hash.
+  V: tests.
+
+232 [OPEN] Per-origin rate limits (dep: 17)
+  a) Separate buckets for CLI and Aria at the broker.
+  V: tests.
+
+233 [OPEN] Capability catalog export (dep: 372)
+  a) Read-only discovery of intents/schemas/tiers for CLI.
+  V: schema validation.
+
+234 [OPEN] Schema versioning (dep: 233)
+  a) Compat rules; N-1 support; tests.
+  V: compat matrix.
+
+235 [DESIGN-FIRST] OS MCP server (dep: 233)
+  a) `directioner-os-mcp`: read-only facts + draft-intent tools for IDEs/CLI.
+  b) MCP threat model: tool poisoning, over-broad scopes, confused deputy.
+  V: approved design.
+
+236 [OPEN] Untrusted-context envelope (dep: 211)
+  a) All OS-provided text (journals, files) wrapped and labeled untrusted.
+  V: tests.
+
+237 [OPEN] Envelope spec for CLI/Aria (dep: 236)
+  a) Shared spec into Section N; examples of hostile content.
+  V: spec doc.
+
+238 [RESEARCH-FIRST] CLI update policy (dep: 203)
+  a) Updates via OS repo vs self-update; recommend package-manager only.
+  V: memo.
+
+239 [OPEN] Contract version check (dep: 234)
+  a) At login/start: min OS contract version; helpful error.
+  V: tests.
+
+240 [OPEN] CLI crash reports (dep: 446)
+  a) Opt-in via OS crash pipeline, scrubbed.
+  V: tests.
+
+241 [OPEN] Resource limits (dep: 203)
+  a) systemd user-slice limits for runaway CLI processes.
+  V: stress test.
+
+242 [OPEN] Egress policy doc (dep: 165)
+  a) Which endpoints the CLI uses; user approvals for others (CLI's job).
+  V: doc.
+
+243 [OPEN] Offline/quota status API (dep: 162)
+  a) Local status call so CLI shows clear messages.
+  V: tests.
+
+244 [DESIGN-FIRST] Aria->CLI task delegation protocol (dep: 245)
+  a) Envelope: id, goal, constraints, permissions, deadline, callbacks.
+  b) Child never exceeds parent's approved scope.
+  V: approved.
+
+245 [OPEN] Delegation semantics (dep: 244)
+  a) Progress events, cancel, result, partial results, error codes.
+  V: spec + tests.
+
+246 [OPEN] `directioner-taskd` skeleton (dep: 245)
+  a) Queue, state machine, persistence, peercred.
+  V: tests.
+
+247 [OPEN] Result delivery (dep: 246)
+  a) Voice summary to Aria; notification to GUI; log entry.
+  V: tests.
+
+248 [OPEN] Task lifecycle (dep: 246)
+  a) Survive logout? Resume after reboot? Decide; implement; test.
+  V: reboot test.
+
+249 [OPEN] CLI conformance run (dep: 202,234) WAITING-ON-REPOS
+  a) Run suite against the real binary; report gaps both directions.
+  V: conformance report.
+
+250 [OPEN] Bind packaging + auth hand-off to real CLI (dep: 249) WAITING-ON-REPOS
+  a) Real artifact into the RPM; real login flow; integration test in VM.
+  V: integration report; no merge.
+
+
+================================================================================
+DOMAIN 10 - ARIA OS INTEGRATION SURFACE + INTENT BROKER  (251-310)
+================================================================================
+Aria is built by ANOTHER agent in ANOTHER repo (wake word, VAD, STT, TTS all
+reach providers THROUGH the Beyonders backend; no provider keys on device).
+YOU build: audio readiness, privacy controls, UI hooks (small orb + screen-edge
+glow ONLY; Canvas Mode/spatial overlays/heavy UI are cancelled), the Intent
+Broker, the user-session executor, confirmations, delegation to the AI engineer.
+Aria's reach is wide but bounded (B9, B10): typed intents, tiers, audit, undo.
+
+251 [DESIGN-FIRST] Aria<->OS contract v1 (dep: 103)
+  a) Audio, wake word, UI hooks, intents, confirmation, privacy, delegation.
+  b) Versioned; goes to Section N.
+  V: approved contract.
+
+252 [OPEN] Aria repo inventory (dep: repo handed over) WAITING-ON-REPOS
+  a) Read-only: stack, build, services, network endpoints, models, license.
+  b) What OS must provide vs what Aria already has.
+  V: inventory doc with paths.
+
+253 [OPEN] Aria user service packaging (dep: 251)
+  a) RPM + systemd --user unit; autostart is opt-in.
+  V: rpmlint + unit test.
+
+254 [OPEN] PipeWire audio readiness (dep: 316)
+  a) Default config, echo cancellation module, device selection, mic portal.
+  V: loopback test in VM.
+
+255 [OPEN] Mic-in-use indicator (dep: 321)
+  a) Always-visible indicator while any capture stream is active; Aria cannot
+     suppress it.
+  V: screenshot + test.
+
+256 [OPEN] Global mic mute (dep: 254)
+  a) Software mute that revokes capture access; shortcut + tray; honors
+     hardware mute keys where present.
+  V: mute test.
+
+257 [OPEN] Wake-word model delivery (dep: 252)
+  a) Where models live, license, updates, integrity check; on-device only.
+  V: manifest + checksum tests.
+
+258 [DESIGN-FIRST] Listening policy (dep: 251)
+  a) Ring buffer in RAM only; nothing recorded to disk; cloud only after wake
+     and opt-in; what the indicator shows at each stage.
+  V: approved; plain-language text for users.
+
+259 [OPEN] Audio egress rules (dep: 258)
+  a) Only post-wake utterance leaves device; indicator on while streaming.
+  b) Egress test captures traffic in VM (442).
+  V: test output.
+
+260 [OPEN] Push-to-talk (dep: 261)
+  a) Shortcut-based alternative to wake word.
+  V: tests.
+
+261 [OPEN] Global shortcut portal (dep: 340)
+  a) Register via xdg-desktop-portal GlobalShortcuts where available;
+     fallback per DE.
+  V: tests per DE.
+
+262 [OPEN] Orb window spec + hook (dep: 251)
+  a) Small circular indicator window API for Aria to drive (states, anchor).
+  b) Simple only; reduced-motion honored.
+  V: demo with fake driver.
+
+263 [OPEN] Screen-edge glow overlay (dep: 264)
+  a) Click-through overlay hook; per-compositor implementation.
+  b) Performance + a11y (reduced motion, no flashing).
+  V: screenshots + frame-time report.
+
+264 [RESEARCH-FIRST] Overlay feasibility (dep: 096)
+  a) Layer-shell/overlay availability per compositor (verify, do not assume).
+  b) Fallbacks (panel-edge glow, orb-only).
+  V: memo with test results in VM.
+
+265 [OPEN] Orb states (dep: 262)
+  a) idle/listening/thinking/speaking/error/muted + non-color cues.
+  V: screenshots.
+
+266 [OPEN] Orb placement settings (dep: 262)
+  a) Multi-monitor, HiDPI, anchor corner, hide in fullscreen.
+  V: tests.
+
+267 [OPEN] Do-not-disturb/presentation (dep: 262)
+  a) Aria stays silent during screen share or DND if configured.
+  V: tests.
+
+268 [OPEN] Aria settings page (dep: 329)
+  a) Enable, wake word, voice, privacy, data, shortcuts.
+  V: screenshot.
+
+269 [OPEN] Intent Broker skeleton (dep: 251)
+  a) `directioner-intentd`: socket 0600, peercred, deny_unknown_fields schemas.
+  V: fuzz/unit tests.
+
+270 [OPEN] Intent schema v1 + registry (dep: 371)
+  a) Versioned JSON schema; registry; lint.
+  V: validation tests.
+
+271 [OPEN] Tier mapping (dep: 371)
+  a) user-scope: Auto/Notify; destructive: Confirm; system: draft -> pipeline.
+  b) System tiers unchanged (B2).
+  V: table-driven tests.
+
+272 [OPEN] Aria identity at broker (dep: 129)
+  a) Path+hash+cgroup + active seat user.
+  V: impostor test.
+
+273 [OPEN] User-session executor (dep: 269)
+  a) `directioner-actd`: no root, own allowlist, separate process.
+  V: privilege test (cannot write root-owned paths).
+
+274 [OPEN] Confirmation service (dep: 336)
+  a) On-screen plan card + voice yes/no; "yes" binds to ONE plan id; expiry;
+     ambiguity => re-ask.
+  V: tests incl. wrong plan id, expired, double-confirm.
+
+275 [RESEARCH-FIRST] Speaker verification (dep: 251)
+  a) Voice ID is weak; not a security boundary. Evaluate as convenience only.
+  V: memo.
+
+276 [OPEN] Replay/spoofing defense (dep: 274)
+  a) Confirm-tier+ requires visible on-screen confirm (click/keypress) not
+     voice alone; ExpertReview adds re-auth.
+  V: tests with injected "yes" audio.
+
+277 [OPEN] Locked-screen policy (dep: 271)
+  a) Explicit list of intents allowed while locked; default tiny.
+  V: tests.
+
+278 [OPEN] Spoken-output redaction (dep: 236)
+  a) Never read secrets/tokens/passwords aloud; mask in transcripts.
+  V: tests.
+
+279 [OPEN] Aria context consent (dep: 211)
+  a) Same provider as CLI with per-level user consent.
+  V: tests.
+
+280 [OPEN] Aria->AI engineer delegation (dep: 246)
+  a) Aria sends task envelope; speaks progress/result; cancel by voice.
+  V: fake-engineer e2e.
+
+281 [OPEN] Voice abuse limits (dep: 232)
+  a) Per-minute intent caps, repeated-failure cooldown.
+  V: tests.
+
+282 [OPEN] Latency instrumentation (dep: 253)
+  a) Stage timestamps (wake, VAD end, first audio) logged locally.
+  b) Report numbers; no claims without data.
+  V: sample report from VM.
+
+283 [DESIGN-FIRST] Offline behavior (dep: 371)
+  a) Which intents work offline (time, open app, volume) and clear errors for
+     the rest.
+  V: approved list.
+
+284 [OPEN] Alarm/timer integration test (dep: 373)
+  V: fake-Aria e2e: set, reboot, fires.
+
+285 [OPEN] Notification intents (dep: 388)
+  V: tests.
+
+286 [OPEN] Media intents (dep: 391)
+  V: MPRIS fake player tests.
+
+287 [OPEN] Volume/brightness/DND intents (dep: 382,383,388)
+  V: tests.
+
+288 [OPEN] App intents (dep: 376)
+  a) Launch/focus/close via desktop entries; no kill -9 by default.
+  V: tests.
+
+289 [OPEN] Window intents (dep: 381)
+  a) Compositor-specific back-ends behind one interface.
+  V: tests per DE.
+
+290 [OPEN] Clipboard intents (dep: 389)
+  a) Per-use consent; never silent read.
+  V: tests.
+
+291 [OPEN] Screen capture/read intents (dep: 390)
+  a) Portal-mediated, per-use consent; indicator shown.
+  V: tests.
+
+292 [DESIGN-FIRST] Accessibility mode (dep: 403)
+  a) Screen-reading/narration via AT-SPI; coordination with Orca; privacy.
+  V: approved design.
+
+293 [RESEARCH-FIRST] Dictation into focused field (dep: 251)
+  a) Input-method frameworks, Wayland constraints, security of synthetic input.
+  V: memo.
+
+294 [RESEARCH-FIRST] Calendar/reminders store (dep: 375)
+  a) Which local store; sync with cloud; privacy.
+  V: memo.
+
+295 [OPEN] "Explain this error" intent (dep: 414)
+  a) Pulls latest failed-unit evidence read-only; hands to AI engineer.
+  V: fixture test.
+
+296 [OPEN] "What happened?" intent (dep: 335)
+  a) Narrates Work Log/incident entries (read-only).
+  V: fixture test.
+
+297 [OPEN] "Why is it slow?" intent (dep: 27,30)
+  a) PSI + health model diagnosis (read-only).
+  V: stress-ng VM test.
+
+298 [OPEN] "Fix it" flow (dep: 226,274)
+  a) AI proposes draft; Confirm card; then (only after B1 auth) pipeline.
+  V: tests prove drafts only today.
+
+299 [OPEN] Intent history view (dep: 231)
+  a) "What did Aria do today": list, filter, export.
+  V: UI test.
+
+300 [OPEN] Undo for user-scope intents (dep: 273)
+  a) Per-intent undo (volume, setting, move) with expiry.
+  V: tests.
+
+301 [OPEN] Global stop (dep: Wave 0)
+  a) One action stops Aria/CLI work: cancels tasks, revokes broker tokens,
+     leaves existing kill-switch semantics untouched (B7).
+  V: timing test; kill-switch regression.
+
+302 [OPEN] Broker fuzz + property tests (dep: 269)
+  a) Property: no intent reaches system scope without a plan draft.
+  V: proptest/fuzz logs.
+
+303 [OPEN] Red-team pack (dep: 236)
+  a) Injection via background audio transcripts, hostile filenames, hostile
+     web text, clipboard contents; allowlist holds.
+  V: results table (pass/fail honest).
+
+304 [OPEN] Restart safety (dep: 274)
+  a) Aria restart cancels pending confirmations.
+  V: tests.
+
+305 [OPEN] Seat/user binding (dep: 272)
+  a) Aria acts only for the active seat user; fast-user-switch tests.
+  V: tests.
+
+306 [OPEN] Fake-Aria e2e harness (dep: 269)
+  a) Scripted driver exercising broker -> actd -> UI in QEMU.
+  V: CI log.
+
+307 [OPEN] Aria integration guide (dep: 251)
+  a) Docs for the Aria agent: contracts, examples, error codes.
+  V: doc review.
+
+308 [OPEN] Aria conformance run (dep: 252,306) WAITING-ON-REPOS
+  V: conformance report.
+
+309 [OPEN] Bind packaging/auth/audio/UI to real Aria (dep: 308) WAITING-ON-REPOS
+  V: integration report; no merge.
+
+310 [OWNER-AUTH] Voice-confirmed execution path (dep: 298)
+  a) Prepare PR + tests ONLY; stop. Requires the B1 phrase.
+  V: nothing merged or executed.
+
+
+================================================================================
+DOMAIN 11 - DESKTOP GUI (FEDORA-BASED) + AI EXPERIENCE LAYER  (311-370)
+================================================================================
+Fully graphical OS, not CUI-only. Built on Fedora's desktop stack (DE chosen in
+096). Desktop is a SEPARATE image variant (Task B; blocked by Task A, F9).
+
+311 [DESIGN-FIRST] GUI architecture (dep: 096)
+  a) DE, compositor, display manager, session defaults, settings strategy.
+  V: approved doc.
+
+312 [OPEN] Desktop image variant (dep: 311, Task A merged)
+  a) Containerfile target `desktop`, separate from the headless image.
+  V: image builds; size reported.
+
+313 [OPEN] Minimal package set (dep: 312)
+  a) Remove bloat; rationale per group.
+  V: package list + diff.
+
+314 [OPEN] Session defaults (dep: 312)
+  a) Wayland default, X11 fallback, autostart policy.
+  V: VM boot test.
+
+315 [OPEN] Graphics baseline (dep: 312)
+  a) virtio-gpu/vmware-svga/bochs; Mesa; fallbacks.
+  V: boot screenshots per hypervisor.
+
+316 [OPEN] Guest tools (dep: 312)
+  a) open-vm-tools, spice-vdagent, qemu-guest-agent, hyperv daemons; resize,
+     clipboard.
+  V: screenshot after resize.
+
+317 [OPEN] Desktop smoke test (dep: 312)
+  a) QEMU: boot -> login -> desktop -> screenshot.
+  V: CI artifact.
+
+318 [OPEN] Test-only autologin (dep: 317)
+  a) In `test` target only; absent from release (D7).
+  V: release scan.
+
+319 [OPEN] Panel/taskbar layout (dep: 312)
+  a) Familiar bottom-panel layout; alternatives documented.
+  V: screenshot.
+
+320 [OPEN] Launcher (dep: 319)
+  a) Branded launcher; hook for AI/intents search (341).
+  V: screenshot.
+
+321 [OPEN] Tray status items (dep: 319)
+  a) Account, quota, mic-in-use, health, cloud sync.
+  V: screenshots per state.
+
+322 [OPEN] Default apps (dep: 312)
+  a) Browser, files, terminal, editor, media, images, archives; license notes.
+  V: list + .desktop associations test.
+
+323 [RESEARCH-FIRST] Multimedia policy (dep: 486)
+  a) Codecs available without non-free repos; what users need to add.
+  V: memo.
+
+324 [OPEN] Printers/scanners/BT/WiFi (dep: 312)
+  a) Stack included and tested (virtual where possible).
+  V: checklist results.
+
+325 [DESIGN-FIRST] Settings strategy (dep: 311)
+  a) Branded settings app: trim modules, add Directioner module.
+  V: approved.
+
+326 [OPEN] Directioner settings module skeleton (dep: 325)
+  a) Pages: Account, Cloud, AI & Voice, Privacy, Updates, AI Safety, About.
+  V: opens in VM.
+
+327 [OPEN] Account page (dep: 326,126)
+  a) Login, devices, plan, quota; states from 138.
+  V: UI tests with mock.
+
+328 [OPEN] Cloud page (dep: 326,169)
+  a) Folders, status, quota, restore.
+  V: UI tests.
+
+329 [OPEN] AI & Voice page (dep: 326,268)
+  a) Aria on/off, wake word, mic, data, shortcuts.
+  V: UI tests.
+
+330 [OPEN] Privacy page (dep: 326,444)
+  a) Telemetry (off), egress list, permissions ledger.
+  V: UI tests.
+
+331 [OPEN] Updates page (dep: 326,462)
+  a) bootc status, channel, rollback proposal.
+  V: UI tests.
+
+332 [OPEN] About page (dep: 062)
+  V: screenshot.
+
+333 [OPEN] AI Safety page (dep: 326)
+  a) Pending proposals, kill-switch, self-healing status (DISABLED default),
+     audit log link.
+  V: UI tests.
+
+334 [OPEN] Cockpit GUI (dep: Wave 0)
+  a) GUI over the existing ai-cockpit data: health, incidents, timeline.
+  V: screenshots.
+
+335 [OPEN] Work Log viewer (dep: 20)
+  a) Browse, filter, verification badge from the offline verifier.
+  V: UI test with tampered fixture.
+
+336 [OPEN] Approval widget library (dep: 228)
+  a) Plan card, blast-radius meter, steps/diff, confirm/cancel, timeout.
+  V: visual + a11y tests.
+
+337 [OPEN] AI notification design (dep: 321)
+  a) Notify-tier events, grouping, DND aware, no spam.
+  V: scenario tests.
+
+338 [OPEN] "Ask Directioner" affordance (dep: 340)
+  a) System-wide quick text prompt -> broker (draft-only).
+  V: UI test.
+
+339 [RESEARCH-FIRST] Contextual in-app AI icon (dep: 311)
+  a) Feasibility across Qt/GTK/Flatpak; selection actions (explain/rewrite).
+  b) Security of reading selections from other apps.
+  V: memo.
+
+340 [OPEN] Global shortcut registry (dep: 311)
+  a) User-bindable shortcuts -> intents; conflict detection; portal-based.
+  V: tests.
+
+341 [OPEN] Quick panel (dep: 320,340)
+  a) Spotlight-like: apps, files, intents, AI.
+  V: UI test.
+
+342 [DESIGN-FIRST] AI-first file manager plan (dep: 311)
+  a) Customize existing manager vs custom app; recommendation + effort.
+  V: approved.
+
+343 [OPEN] File manager actions (dep: 182,342)
+  a) Context menu: ask about this, sync, version history.
+  V: UI test.
+
+344 [OPEN] System monitor integration (dep: 27,30)
+  a) Health model panel/widget.
+  V: screenshot.
+
+345 [OPEN] Terminal AI hook (dep: 219)
+  V: transcript.
+
+346 [RESEARCH-FIRST] Native app suite memo (dep: 311)
+  a) File manager, settings, monitor: build vs customize; effort; staging.
+  V: memo.
+
+347 [OPEN] Accessibility baseline (dep: 312)
+  a) Screen reader, high contrast, large text, keyboard nav checklist run.
+  V: checklist with results.
+
+348 [OPEN] Accessibility settings schema (dep: 403)
+  V: tests.
+
+349 [OPEN] Auto dark/light (dep: 078)
+  V: test.
+
+350 [OPEN] HiDPI/fractional scaling (dep: 312)
+  V: screenshots at 100/150/200%.
+
+351 [OPEN] Multi-monitor defaults (dep: 312)
+  V: VM two-display test.
+
+352 [OPEN] Touch/pen/gestures (dep: 312)
+  V: checklist.
+
+353 [OPEN] Session menu branding (dep: 319)
+  V: screenshot.
+
+354 [OPEN] Lock screen widgets (dep: 061)
+  a) Media controls; notification privacy default hidden.
+  V: screenshots.
+
+355 [OPEN] Login screen account hint (dep: 060)
+  V: screenshot.
+
+356 [OPEN] OOBE wizard (dep: 312)
+  a) Language, keyboard, network, account (skippable), privacy (all off), theme,
+     AI/voice explanation.
+  V: scripted run.
+
+357 [OPEN] OOBE tests (dep: 356)
+  V: CI log + screenshots.
+
+358 [OPEN] Welcome tour (dep: 356)
+  a) Static, works offline.
+  V: screenshots.
+
+359 [OPEN] Theme/wallpaper picker (dep: 078)
+  V: UI test.
+
+360 [OPEN] Minimal widgets (dep: 321)
+  V: screenshot.
+
+361 [OPEN] Screenshot/recording defaults (dep: 312)
+  V: portal behavior test.
+
+362 [RESEARCH-FIRST] Remote desktop policy (dep: 312)
+  a) Default OFF; risks; per-session consent.
+  V: memo.
+
+363 [DESIGN-FIRST] Time Travel timeline (dep: 335)
+  a) GUI over World Model snapshots + `diff --since`; stated future feature.
+  V: approved design.
+
+364 [DESIGN-FIRST] Boot narration (dep: 43,30)
+  a) Explainable boot timeline UI; stated future feature.
+  V: approved design.
+
+365 [OPEN] GUI performance baseline (dep: 312)
+  a) Idle RAM/CPU in VM; report numbers only.
+  V: report.
+
+366 [OPEN] GUI crash reports (dep: 446)
+  a) Opt-in, scrubbed.
+  V: tests.
+
+367 [OPEN] Screenshot regression suite (dep: 088)
+  V: CI.
+
+368 [RESEARCH-FIRST] Second DE variant (dep: 096)
+  a) Cost of also shipping the other DE.
+  V: memo.
+
+369 [OPEN] GUI + theming guide (dep: 078)
+  V: doc.
+
+370 [OPEN] Desktop acceptance pack (dep: 357,367)
+  a) Recording script, screenshots, checklist for Aditya.
+  V: pack as PR-3 evidence.
+
+
+================================================================================
+DOMAIN 12 - SYSTEM ACTIONS CATALOG (alarms, apps, files, settings, a11y)  (371-420)
+================================================================================
+How Aria/CLI "do anything" safely (B10): every action is a typed INTENT with a
+schema, scope, tier, confirmation text, undo, audit fields. Anything not in the
+catalog is answered "not supported" - never improvised. User-scope runs in
+`actd` (no root). System-scope becomes a draft plan in the existing pipeline.
+Destructive = Confirm minimum. No raw shell intent exists.
+
+371 [DESIGN-FIRST] Intent catalog structure (dep: 251)
+  a) Fields: id, params schema, scope, tier, confirm text, undo, offline-ok.
+  b) Naming, versioning, deprecation.
+  V: approved.
+
+372 [OPEN] Catalog validator + docs generator (dep: 371)
+  a) `intent-catalog lint`, generated reference docs.
+  V: lint catches bad entries.
+
+373 [OPEN] alarm.set/list/cancel (dep: 371)
+  a) Mechanism memo (systemd user timers vs desktop alarm app), then impl.
+  b) Persists across reboot; sound + notification; wake-from-suspend only if
+     the platform allows (verify).
+  V: VM test: set, reboot, fires.
+
+374 [OPEN] timer/stopwatch (dep: 373)
+  V: tests.
+
+375 [OPEN] reminder.create (dep: 373)
+  V: tests.
+
+376 [OPEN] app.launch (dep: 371)
+  a) Resolve by desktop-entry id/name; ambiguity => ask which.
+  V: tests incl. ambiguous names.
+
+377 [OPEN] app.close (dep: 376)
+  a) Graceful close; force-kill = Confirm.
+  V: tests.
+
+378 [OPEN] app.install (dep: 371)
+  a) Flatpak install = Confirm (shows source + permissions).
+  b) Layered RPM = pipeline draft only.
+  V: tests.
+
+379 [OPEN] app.uninstall (dep: 378)
+  a) Confirm; shows data impact; keep-data default.
+  V: tests.
+
+380 [OPEN] app.default.set (dep: 376)
+  V: tests.
+
+381 [OPEN] window.* (dep: 371)
+  a) Move/snap/minimize/switch desktop via compositor interface.
+  V: tests per DE.
+
+382 [OPEN] audio.* (dep: 371)
+  a) Volume, mute, output device.
+  V: PipeWire VM tests.
+
+383 [OPEN] display.* (dep: 371)
+  a) Brightness, night light, scale, layout (resolution change auto-reverts).
+  V: tests.
+
+384 [OPEN] power.* (dep: 371)
+  a) Profile, sleep, lock, logout; shutdown/reboot = Confirm.
+  V: tests.
+
+385 [OPEN] network.wifi (dep: 371)
+  a) List/connect KNOWN networks; new-password entry via secure prompt, never
+     spoken or logged.
+  V: NM mock tests.
+
+386 [OPEN] network.vpn (dep: 371)
+  a) Toggle existing profiles only.
+  V: tests.
+
+387 [OPEN] bluetooth.* (dep: 371)
+  a) Toggle/connect paired devices; pairing = Confirm.
+  V: tests.
+
+388 [OPEN] notifications.* (dep: 371)
+  V: tests.
+
+389 [OPEN] clipboard.read/write (dep: 371)
+  a) Per-use consent; indicator.
+  V: tests.
+
+390 [OPEN] screenshot.take (dep: 371)
+  a) Portal-mediated; consent; file lands in user dir.
+  V: tests.
+
+391 [OPEN] media.* (dep: 371)
+  a) MPRIS control.
+  V: fake player tests.
+
+392 [OPEN] file.search (dep: 371)
+  a) Read-only index query; results list; honors exclusions.
+  V: tests.
+
+393 [OPEN] file.open/reveal (dep: 392)
+  V: tests.
+
+394 [OPEN] file.create/write (dep: 371)
+  a) User dirs/trusted folders only; no overwrite without Confirm.
+  V: tests.
+
+395 [OPEN] file.edit (dep: 394)
+  a) Patch-style with diff preview; pre-edit copy kept for undo.
+  b) Outside trusted dirs = Confirm.
+  V: tests incl. undo.
+
+396 [OPEN] file.move/copy/rename (dep: 394)
+  a) Overwrite = Confirm; cross-device handled safely.
+  V: tests.
+
+397 [OPEN] file.delete (dep: 399,400)
+  a) Default: move to Trash. Permanent delete = Confirm with count+size shown.
+  b) Bulk above N files/size => extra confirmation step with listing.
+  c) Never deletable via intents: /, home root, system dirs, ~/.ssh,
+     keyrings, the Directioner state dirs.
+  V: tests incl. traversal and symlink tricks.
+
+398 [OPEN] file.undo (dep: 395,397)
+  a) Restore from Trash / pre-edit copies with retention policy.
+  V: tests.
+
+399 [OPEN] Protected path set (dep: 16)
+  a) openat2-based resolution; list is data; tests for bind mounts/symlinks.
+  V: traversal tests.
+
+400 [OPEN] Bulk-operation guard (dep: 397)
+  a) Mandatory dry-run listing before any bulk change.
+  V: tests.
+
+401 [OPEN] Privileged file ops (dep: 371)
+  a) Root-owned paths => pipeline plan only; never via actd.
+  V: test that actd refuses.
+
+402 [OPEN] settings.get/set (dep: 371)
+  a) Curated allowlist of keys (theme, wallpaper, language, layout, locale,
+     timezone, fonts, scaling); schema per key.
+  V: tests + revert.
+
+403 [OPEN] accessibility.set (dep: 402)
+  a) Text size, contrast, cursor size, screen reader, sticky/slow keys,
+     magnifier, reduce motion, captions.
+  V: tests.
+
+404 [OPEN] input.* (dep: 402)
+  a) Mouse/touchpad/key-repeat.
+  V: tests.
+
+405 [OPEN] printer.* (dep: 371)
+  a) Default printer; basic job control.
+  V: virtual printer test.
+
+406 [OPEN] datetime/timezone (dep: 371)
+  a) System scope => pipeline draft.
+  V: tests.
+
+407 [OPEN] user.* (dep: 371)
+  a) Create/delete local users = system scope, ExpertReview-level; never
+     voice-only.
+  V: tests prove tier.
+
+408 [OPEN] system.updates (dep: 462)
+  a) Check/stage; rollback = proposal (22/50).
+  V: tests.
+
+409 [OPEN] system.service (dep: 371)
+  a) Status/restart via existing capabilities; protected units unchanged.
+  V: tests.
+
+410 [OPEN] system.firewall (dep: 371)
+  a) Status; open-port = proposal (Confirm+).
+  V: tests.
+
+411 [OPEN] system.storage (dep: 371)
+  a) Usage read-only; cleanup = proposal.
+  V: tests.
+
+412 [OPEN] system.sysctl/module (dep: 371)
+  a) Wrap existing Tier-2 capabilities; tiers/denylists unchanged.
+  V: regression tests.
+
+413 [OPEN] system.kernel-args (dep: 371)
+  a) Wrap existing Phase-3 capabilities; floor unchanged.
+  V: regression tests.
+
+414 [OPEN] diagnose.* (dep: 371)
+  a) Failed units, boot, health, hardware (read-only).
+  V: fixtures.
+
+415 [OPEN] ai.delegate (dep: 246)
+  a) Hand multi-step work to the AI engineer via taskd.
+  V: fake-engineer test.
+
+416 [OPEN] Intent explanation text (dep: 371)
+  a) Every intent renders "what I am about to do" from params.
+  V: golden strings.
+
+417 [OPEN] Intent dry-run (dep: 371)
+  a) Simulate effects without doing them.
+  V: tests.
+
+418 [OPEN] Coverage matrix doc (dep: 371)
+  a) Supported / partial / unsupported, with honest "not supported" replies.
+  V: doc.
+
+419 [OPEN] Catalog property tests (dep: 372)
+  a) Scope escalation impossible; tiers monotonic.
+  V: proptest logs.
+
+420 [OPEN] Permission model UI (dep: 330)
+  a) Per-app/per-intent grants, review, revoke.
+  V: UI tests.
+
+
+================================================================================
+DOMAIN 13 - SECURITY, PRIVACY, TRUST  (421-455)
+================================================================================
+
+421 [DESIGN-FIRST] Threat model v2 (dep: 101,251)
+  a) New surfaces: account, cloud, broker, voice, GUI, packaging.
+  b) STRIDE per component; assets; trust boundaries.
+  V: approved.
+
+422 [OPEN] Threat model tracking (dep: 421)
+  a) Every mitigation maps to a TODO id; gaps listed.
+  V: table.
+
+423 [OPEN] Broker authN/authZ tests (dep: 269)
+  V: impostor/peercred tests.
+
+424 [OPEN] Confused-deputy tests (dep: 127)
+  a) CLI cannot use Aria's token and vice versa.
+  V: tests.
+
+425 [OPEN] Token theft mitigations (dep: 108)
+  a) Keyring ACLs, ptrace_scope, no tokens in env or argv.
+  V: checks scripted.
+
+426 [OPEN] Shared injection corpus (dep: 303)
+  a) Versioned corpus used by CLI/Aria/OS tests.
+  V: corpus + runner.
+
+427 [OPEN] Untrusted-tag enforcement (dep: 236)
+  a) Lint: every context provider output is enveloped.
+  V: tests.
+
+428 [OPEN] Supply-chain CI (dep: Wave 0)
+  a) cargo-deny, cargo-audit, pinned lockfiles, license policy.
+  V: CI run.
+
+429 [OPEN] SBOM (dep: 428)
+  a) CycloneDX/SPDX for Rust services and image; artifact only.
+  V: files + validation.
+
+430 [RESEARCH-FIRST] Reproducible builds (dep: 428)
+  a) Experiment: rebuild twice, diff; report real result, even if not
+     reproducible.
+  V: memo.
+
+431 [DESIGN-FIRST] Image signing (dep: 468)
+  a) cosign/sigstore options; key custody = OWNER-AUTH; no keys in repo.
+  V: approved.
+
+432 [OPEN] Signature verification policy (dep: 431)
+  a) containers policy for bootc/rpm-ostree updates; tests with bad signature.
+  V: bad-signature rejection demo.
+
+433 [RESEARCH-FIRST] Secure Boot memo (dep: 32)
+  a) Inherit Fedora shim/kernel signing; what we do NOT own; implications.
+  V: memo.
+
+434 [OPEN] Unit hardening for all new services (dep: 104)
+  a) Record `systemd-analyze security` before/after per service.
+  V: table.
+
+435 [OPEN] SELinux modules for new daemons (dep: 33)
+  a) accountd, cloudd, intentd, actd, taskd; drafts; Enforcing-mode tests.
+  V: AVC-clean logs.
+
+436 [OPEN] Seccomp filters (dep: 434)
+  a) Where feasible; documented exceptions.
+  V: tests.
+
+437 [OPEN] Landlock self-restriction (dep: 434)
+  a) New daemons restrict themselves after startup.
+  V: tests.
+
+438 [OPEN] Memory safety policy (dep: Wave 0)
+  a) forbid(unsafe_code) in new crates; audited exceptions list.
+  V: CI check.
+
+439 [OPEN] Dependency minimization (dep: 428)
+  a) Report of dependency counts; remove avoidable.
+  V: report.
+
+440 [OPEN] Fuzz infrastructure (dep: 141)
+  a) Manual-trigger CI workflow; corpus storage policy.
+  V: run log.
+
+441 [OPEN] Data-flow diagram (dep: 421)
+  a) What leaves the device, to whom (Beyonders only), when, why.
+  V: diagram + doc.
+
+442 [OPEN] Egress inventory test (dep: 165)
+  a) Observe VM traffic; assert only configured hosts from Directioner svcs.
+  V: capture summary.
+
+443 [OPEN] Local data retention/deletion tool (dep: 441)
+  V: tests.
+
+444 [OPEN] Consent ledger (dep: 441)
+  a) Local record of opt-ins/outs with timestamps; user-viewable.
+  V: tests.
+
+445 [OPEN] Telemetry implementation (dep: 49) BACKEND-ASK
+  a) After design approval only; default OFF; payload preview.
+  V: tests.
+
+446 [OPEN] Crash report pipeline (dep: 444)
+  a) Opt-in, scrubbed, local review before send.
+  V: tests.
+
+447 [OPEN] Disclosure policy template (dep: 421)
+  a) security.txt + policy draft; publishing = OWNER-AUTH (B4).
+  V: draft.
+
+448 [OPEN] CVE tracking process (dep: 428)
+  a) How upstream Fedora updates flow in; response times stated as goals.
+  V: doc.
+
+449 [OPEN] Drill: leaked device token (dep: 115)
+  a) Simulate; verify revoke path end-to-end on mock.
+  V: drill report.
+
+450 [OPEN] Drill: malicious proposal (dep: 303)
+  a) Hostile draft plan; verify validator/reviewer behavior (read-only
+     observation of restricted code).
+  V: drill report.
+
+451 [OPEN] Internal review checklist (dep: 421)
+  a) Self-review list; explicitly NOT an external audit.
+  V: checklist.
+
+452 [OPEN] Repo secret scanning (dep: Wave 0)
+  a) gitleaks in CI; history scan once.
+  V: output.
+
+453 [OPEN] Dev/prod config separation (dep: 124)
+  a) No prod endpoints in test images; no test keys in release.
+  V: image scans.
+
+454 [RESEARCH-FIRST] Managed-device hooks (dep: 133)
+  a) MDM-equivalent policy surface (stated future); minimal v1.
+  V: memo.
+
+455 [OPEN] Security regression suite (dep: 423-427)
+  a) Aggregated runner and report.
+  V: report.
+
+================================================================================
+DOMAIN 14 - INSTALLER, UPDATES, REPOS, RELEASE ENGINEERING  (456-480)
+================================================================================
+
+456 [DESIGN-FIRST] Installer strategy (dep: 31)
+  a) ISO via bootc-image-builder anaconda-iso vs raw/qcow2; kickstart.
+  V: approved.
+
+457 [OPEN] ISO build target (dep: 456)
+  a) CI artifact only; not published (B4).
+  V: boots in VM.
+
+458 [OPEN] Kickstart defaults (dep: 456)
+  a) No hardcoded credentials; sane partitioning.
+  V: VM install test.
+
+459 [OPEN] Disk encryption option (dep: 36)
+  V: VM test.
+
+460 [RESEARCH-FIRST] Live/try mode (dep: 456)
+  V: memo.
+
+461 [OPEN] Dual-boot guidance (dep: 456)
+  a) Honest doc incl. data-loss warnings; no automation touching real disks.
+  V: doc.
+
+462 [OPEN] Update UX (dep: 39,50)
+  a) Check, staged notice, reboot prompt, maintenance windows.
+  V: UI tests.
+
+463 [DESIGN-FIRST] Update channels (dep: 93) BACKEND-ASK
+  a) stable/beta/dev tags; manifest source; entitlement interaction.
+  V: approved.
+
+464 [OPEN] Rollback UX (dep: 462)
+  a) Boot menu + settings; greenboot status.
+  V: tests.
+
+465 [OPEN] Health-check scripts (dep: 39)
+  a) greenboot required checks for accountd/intentd/etc.
+  V: bad-service rollback test.
+
+466 [RESEARCH-FIRST] Update size (dep: 462)
+  a) zstd:chunked / layer strategy; measured numbers.
+  V: memo.
+
+467 [DESIGN-FIRST] Registry plan (dep: 463)
+  a) Where images live; access; mirroring; hosting = OWNER-AUTH.
+  V: approved.
+
+468 [OPEN] Release process doc (dep: 431)
+  a) Build, test, sign, publish steps, each with an owner gate.
+  V: doc.
+
+469 [OPEN] RC checklist automation (dep: 468)
+  V: script output.
+
+470 [OPEN] Changelog generation (dep: 468)
+  V: sample.
+
+471 [OPEN] Image size budget (dep: 95)
+  V: CI tracking.
+
+472 [OPEN] RPM build pipeline (dep: 053)
+  a) Local rpmbuild/mock in CI for Directioner packages; no publishing.
+  V: artifacts.
+
+473 [OPEN] rpmlint gate (dep: 472)
+  V: CI.
+
+474 [OPEN] Multi-arch link (dep: 46)
+  V: memo cross-ref.
+
+475 [DESIGN-FIRST] Air-gapped updates (dep: 462)
+  V: approved design.
+
+476 [RESEARCH-FIRST] Enterprise rings (dep: 454)
+  V: memo.
+
+477 [OPEN] Boot/shutdown budgets (dep: 43)
+  V: CI tracking.
+
+478 [DESIGN-FIRST] Factory reset (dep: 36)
+  a) Destroys user data - design only; implementation needs OWNER-AUTH.
+  V: approved design.
+
+479 [RESEARCH-FIRST] Recovery environment (dep: 39)
+  V: memo.
+
+480 [OPEN] Release dry-run in VM (dep: 457,356)
+  a) install -> OOBE -> mock login -> update -> rollback; report.
+  V: report with logs.
+
+================================================================================
+DOMAIN 15 - HARDWARE, DRIVERS, POWER, PERFORMANCE  (481-492)
+================================================================================
+
+481 [RESEARCH-FIRST] Hardware enablement matrix (dep: Wave 0)
+  a) WiFi, BT, fingerprint, sleep/wake, GPUs: what Fedora supports; sources.
+  V: memo.
+
+482 [OPEN] Firmware/fwupd (dep: 481)
+  V: tests/doc.
+
+483 [RESEARCH-FIRST] GPU driver policy (dep: 481)
+  a) Open vs proprietary NVIDIA, immutability implications, licensing.
+  V: memo.
+
+484 [OPEN] Laptop power (dep: 481)
+  a) power-profiles-daemon/TLP choice; battery reports.
+  V: doc + VM-visible checks.
+
+485 [OPEN] Suspend/resume checklist (dep: 481)
+  a) Needs real hardware: Aditya runs it; agent writes script + log collector.
+  V: checklist.
+
+486 [RESEARCH-FIRST] Codec/proprietary policy (dep: 68)
+  a) Legal/licensing of non-free repos in a distributed image; closed-source
+     note B13.
+  V: memo.
+
+487 [OPEN] Peripherals checklist (dep: 481)
+  V: checklist.
+
+488 [RESEARCH-FIRST] Biometric login memo (dep: 481)
+  a) Fingerprint/IR camera risks; no spoofable defaults.
+  V: memo.
+
+489 [OPEN] Performance baselines (dep: 43)
+  a) Boot, idle RAM, app launch in VM; numbers only.
+  V: report.
+
+490 [OPEN] Memory defaults (dep: 489)
+  a) zram/swap/systemd-oomd tuned and tested.
+  V: stress tests.
+
+491 [RESEARCH-FIRST] Filesystem choice (dep: 36)
+  a) btrfs/xfs/ext4 with snapshots for /home?
+  V: memo.
+
+492 [OPEN] Real-hardware test plan (dep: 485)
+  a) Aditya executes; reuse ai-hwcheck (diagnostic-only) for data.
+  V: plan.
+
+================================================================================
+DOMAIN 16 - LEGAL, QA, DOCS, HANDOVER  (493-500)
+================================================================================
+
+493 [OPEN] Docs structure (dep: Wave 0)
+  a) mdBook in repo: architecture, runbooks, contracts. No publishing.
+  V: builds locally.
+
+494 [OPEN] Contracts handover pack (dep: 103,201,251,167)
+  a) Section N + schemas as standalone docs for CLI/Aria/backend agents.
+  V: pack.
+
+495 [OPEN] Test matrix + coverage report (dep: Wave 0)
+  V: report.
+
+496 [OPEN] Mock/debt register (dep: Wave 0)
+  a) Every mock, stub, and known gap with owner and removal condition.
+  V: register.
+
+497 [OWNER-AUTH] Legal/licensing pack (dep: 68,486)
+  a) SPDX inventory of the image, GPL/LGPL source-offer plan, Fedora
+     trademark checklist results, CLI license questions.
+  b) Prepared for Aditya's counsel; the agent gives no legal conclusions (B13).
+  V: pack delivered; stop.
+
+498 [OPEN] Contributor guide (dep: 493)
+  a) For future agents/humans: rules B1-B15, rhythm D1-D3, how to run tests.
+  V: guide.
+
+499 [OPEN] "Binding day" runbook (dep: 494)
+  a) Steps when the three repos arrive: inventory -> conformance -> bind ->
+     integration test -> report. Read-only first.
+  V: runbook.
+
+500 [OPEN] Plan status accounting (dep: all)
+  a) Update docs/plan-status.md: all 500 with state and evidence links,
+     honest unfinished list. This is a status update, not a "final" document.
+  V: table.
+
+
+--------------------------------------------------------------------------------
+K. OUT OF SCOPE FOR THE OS AGENT
+--------------------------------------------------------------------------------
+- Building or editing the internals of Directioner-CLI, Aria, or
+  beyonders-platform-backend (separate repos/agents). You build OS-side
+  contracts, packaging, brokers, UI hooks, and conformance suites.
+- Website, billing/payment implementation, publishing, hosting, domains (B4).
+- Federation network transport; Windows/Mac gap-closing; custom native app
+  suite beyond the memos in D11 (346).
+- Real hardware / Hyper-V testing (Aditya runs; agent supplies scripts).
+- Any execution wiring of conversational/voice/CLI paths (B1) until authorized.
+
+--------------------------------------------------------------------------------
+L. PER-PR CHECKLIST AND TALLY
+--------------------------------------------------------------------------------
+Every task (3 issues, 3 commits, 3 PRs - D1):
+ [ ] Issues: #1 spec/design, #2 implementation, #3 verification+follow-ups
+ [ ] Commits: tests-first, implementation, docs/evidence (all with the
+     harness attribution lines)
+ [ ] PRs: PR-1 tests/scaffold, PR-2 implementation, PR-3 docs+evidence;
+     branches plan/<NNN>-<slug>-{1,2,3}; NONE merged (B3)
+ [ ] Restricted-file diff check with REAL paths, output pasted (B2)
+ [ ] cargo fmt / clippy / test output pasted
+ [ ] Mocks and fakes listed in the PR body (B5)
+ [ ] No banned words (E); no test conveniences in release (D7)
+ [ ] docs/plan-status.md updated
+ [ ] Closing report posted, then the conversation ENDS (A3, D3)
+
+Tally (computed by script from this file; see end of section):
+  Original 001-050: 23 OPEN | 8 SPLIT | 8 RESEARCH-FIRST | 8 DESIGN-FIRST | 1 DESIGN+OWNER-AUTH | 2 OWNER-AUTH
+  New 051-500 (first gate tag): 374 OPEN | 38 RESEARCH-FIRST | 34 DESIGN-FIRST | 3 OWNER-AUTH | 1 BACKEND-ASK (167)
+  New tasks also tagged WAITING-ON-REPOS: 11 | BACKEND-ASK: 8
+  Total TODOs: 500. Numbered/lettered subtasks written out: 763 (plus V: lines).
+
+--------------------------------------------------------------------------------
+M. WHAT THE OS NEEDS FROM THE BEYONDERS BACKEND  (REQUESTS, not claims)
+--------------------------------------------------------------------------------
+Aditya's backend notes were not available when this was written (A4). Treat
+everything below as the OS's REQUIREMENTS. When beyonders-platform-backend is
+handed over, the OS agent maps each item to what exists (TODO 150/199/200),
+marks gaps, and the backend agent decides what to build. Nothing here says the
+backend already does any of it.
+
+M0. Platform-wide
+  M0.1 Versioned HTTPS API (/v1/...), published OpenAPI spec, stable error
+       schema (code, message, request_id, retry_after).
+  M0.2 A sandbox/staging environment and test accounts that the OS test
+       harness can use (no production data in CI).
+  M0.3 Rate-limit headers on every response (limit, remaining, reset).
+  M0.4 Idempotency-Key support on mutating calls.
+  M0.5 Deprecation policy and a /v1/meta endpoint (min client version,
+       maintenance notices, feature flags).
+  M0.6 Health/status endpoint usable for offline-vs-outage detection.
+  M0.7 Region/data-residency stance stated in writing.
+
+M1. Identity and auth
+  M1.1 OAuth2 device authorization grant (device_code, user_code, interval,
+       slow_down) for headless/terminal/OS login.
+  M1.2 Authorization-code + PKCE (S256) for browser login with loopback
+       redirect.
+  M1.3 Short-lived access tokens; rotating refresh tokens with reuse
+       detection; revocation endpoint; token introspection or JWKS for
+       offline verification of entitlement blobs.
+  M1.4 Audience-scoped tokens (os, cli, aria, cloud, update) via token
+       exchange so one login serves CLI, Aria and OS with least privilege.
+  M1.5 MFA/passkey support in the web flow; account recovery rules.
+  M1.6 Account deletion and data-export endpoints.
+  M1.7 Session list per account.
+
+M2. AI proxy (text/agent)
+  M2.1 Streaming chat/completions-style endpoint (SSE) with cancel; tool-call
+       passthrough; request size limits. Whether it is OpenAI-compatible is the
+       backend's choice - OS needs the spec either way.
+  M2.2 Model aliases resolved server-side (e.g., the rebrand names); the OS
+       never sees provider names or keys.
+  M2.3 Per-account quota and rate-limit with clear 429 semantics, plan info,
+       and a "degrade to smaller model" signal if the backend supports it.
+  M2.4 Usage metering endpoint (read) so the OS can show remaining quota.
+  M2.5 Server-side prompt-injection and abuse controls are the backend's; the
+       OS adds its own (D9/D10) and does not rely on them.
+  M2.6 Clear data-handling statement: prompt retention, training use, logs.
+
+M3. Voice proxy (for Aria)
+  M3.1 Streaming STT endpoint (WebSocket or gRPC): audio framing, sample
+       rate, chunk size, partial/final transcripts, end-of-utterance.
+  M3.2 Streaming TTS endpoint: voice ids, chunked audio, cancel/barge-in.
+  M3.3 Latency telemetry fields (opt-in) to tune the pipeline.
+  M3.4 Same auth/quota model as M2; separate meters.
+  M3.5 Statement that raw audio is not retained (or what is) - in writing.
+
+M4. Cloud storage
+  M4.1 Blob API for client-side-encrypted chunks: content-addressed or
+       id-addressed put/get/head/delete, resumable and chunked, with
+       integrity checksums.
+  M4.2 Manifest/version API (list, history, restore, delete) that never needs
+       plaintext or keys.
+  M4.3 Quotas and usage endpoints; over-quota error semantics.
+  M4.4 Multi-device change feed (cursor-based) for sync.
+  M4.5 Deletion semantics and retention windows stated.
+  M4.6 Optional: sharing primitives (deferred; E2E complexity).
+
+M5. Device registry
+  M5.1 Register/list/rename/revoke devices; device-bound refresh tokens.
+  M5.2 Optional attestation intake (TPM quote) - default off.
+
+M6. Entitlements
+  M6.1 Read-only entitlements endpoint: plan, features, quota, reset time,
+       signed blob with expiry for offline grace.
+  M6.2 (Billing UI/payment is NOT an OS task; the OS only displays status.)
+
+M7. Updates and channels
+  M7.1 Channel manifest (stable/beta/dev): which image tag/digest to follow.
+  M7.2 Minimum-version/forced-update signals for security fixes.
+  M7.3 Where signed images live is a separate decision (467).
+
+M8. Telemetry and crash intake (opt-in only)
+  M8.1 Intake endpoints with an explicit schema; rotating random install id;
+       server-side deletion by id.
+  M8.2 Crash report intake accepting scrubbed bundles; size limits.
+
+M9. Notifications
+  M9.1 Optional push/poll for account notices (quota nearly used, security
+       alert). Must work without a persistent open connection by default.
+
+M10. Security expectations from the backend
+  M10.1 TLS 1.2+ only; HSTS; certificate rotation plan communicated (OS
+        decides on pinning in TODO 123).
+  M10.2 Signing keys for entitlements/manifests under backend control; public
+        keys/JWKS retrievable; rotation overlap.
+  M10.3 Abuse/rate controls for token endpoints.
+
+M11. Questions Aditya/backend agent must answer (OS cannot guess)
+  1. Auth provider: self-hosted or third party? Device-code supported?
+  2. AI proxy wire format (OpenAI-compatible or custom)? Tool calls?
+  3. Voice transport: WebSocket, gRPC, or HTTP chunked?
+  4. Storage: object store behind the API? Per-user quota numbers?
+  5. Plan/quota model and free-tier limits (numbers belong to the backend).
+  6. Data residency, retention, training-use statements.
+  7. Environments: staging URL, test accounts, rate limits for CI.
+  8. Who owns image signing keys and the registry?
+  9. Is there an existing OpenAPI/Proto spec to import?
+
+--------------------------------------------------------------------------------
+N. OS-SIDE CONTRACTS (versioned; the CLI/Aria/backend agents build against these)
+--------------------------------------------------------------------------------
+N1  directioner-accountd   login/logout/status/whoami/token.get(audience);
+    Unix socket 0600 + peercred; user D-Bus signals for state changes.  (103)
+N2  directioner-cloudd     sync status, folders, restore, quota; local socket;
+    cloud API per M4.                                                  (166)
+N3  directioner-intentd    Intent Broker: submit intent, get result/needs-
+    confirm; schemas with deny_unknown_fields; origin identity.    (269,371)
+N4  directioner-actd       user-scope executor; reachable only from intentd;
+    no root; own allowlist.                                              (273)
+N5  directioner-taskd      delegation (Aria -> AI engineer): create, progress,
+    cancel, result.                                                  (244-246)
+N6  directioner-context    read-only OS facts with consent levels and
+    redaction; untrusted-content envelope.                           (211,236)
+N7  platform.toml          /etc/directioner/platform.toml: endpoints/channel/
+    region; https only; drop-ins.                                        (124)
+N8  UI hooks               orb window API, edge-glow overlay hook, approval
+    widget, quick panel, global shortcut registry.            (262,263,336,340)
+N9  Packaging contract     RPM expectations for `directioner` (CLI) and Aria
+    user service: paths, units, completions, config layering.    (203,253)
+N10 Untrusted envelope     how any outside text is labeled for models.     (237)
+N11 Versioning rules       semver for contracts; N-1 support; compat tests.(234)
+Rule: other agents may propose contract changes via an issue; only Aditya
+approves a contract bump (DESIGN-FIRST).
+
+--------------------------------------------------------------------------------
+O. REMINDERS FOR ADITYA (not for the agent)
+--------------------------------------------------------------------------------
+1. Directioner-CLI: five commits on `rebrand/beyonders-full` exist on one
+   machine only. Push them yourself.
+2. A self-healing server on ports 12000/12001 serves the CLI landing page and
+   zip. It was built without your review. Decide whether it stays up.
+3. PR #14 / CI run 37915676199 / sshd-denial claims remain unverified (Wave 0).
+4. Decide: dbus.service and firewalld.service in the handler list (TODO 013).
+5. Hand over the CLI, Aria and backend repos when ready; "Binding day" is
+   TODO 499; the backend notes you mentioned still need to be shared.
+6. Voice/CLI "do anything" is deliberately bounded (B10). If you want the
+   bound loosened, that is a decision for you, in writing, per intent - not
+   something the agent may widen.
+7. The OS can only be "closed source" for Directioner's own code (B13);
+   get the legal review (TODO 497) before public claims.
+================================================================================
+END OF PLAN v2
+================================================================================
