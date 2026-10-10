@@ -318,6 +318,7 @@ impl Reviewer {
             CapabilityKind::ServiceRestart { unit, .. } => {
                 let protected = [
                     "ssh.service",
+                    "sshd.service",
                     "systemd-udevd.service",
                     "dbus.service",
                     "firewalld.service",
@@ -329,7 +330,7 @@ impl Reviewer {
                         message: "Restarting systemd-udevd is forbidden".into(),
                         step_id: Some(step.step_id.clone()),
                     });
-                } else if protected.iter().any(|p| unit == p)
+                } else if is_ssh_unit_match(&protected, unit)
                     && step.blast_radius.tier < ApprovalTier::ExpertReview
                 {
                     findings.push(ReviewFinding {
@@ -345,6 +346,7 @@ impl Reviewer {
             CapabilityKind::ServiceStop { unit, .. } => {
                 let protected = [
                     "ssh.service",
+                    "sshd.service",
                     "systemd-udevd.service",
                     "dbus.service",
                     "firewalld.service",
@@ -356,7 +358,7 @@ impl Reviewer {
                         message: "Stopping systemd-udevd is forbidden".into(),
                         step_id: Some(step.step_id.clone()),
                     });
-                } else if protected.iter().any(|p| unit == p)
+                } else if is_ssh_unit_match(&protected, unit)
                     && step.blast_radius.tier < ApprovalTier::ExpertReview
                 {
                     findings.push(ReviewFinding {
@@ -528,6 +530,27 @@ impl Reviewer {
             }
         }
     }
+}
+
+/// Helper for protected-unit matching that normalises the SSH service naming gap
+/// between Debian/Ubuntu (`ssh.service`) and Fedora (`sshd.service`), as well as
+/// the `ssh`/`sshd` bare forms, so that all four forms match the same protected entry.
+fn is_ssh_unit_match(protected: &[&str], unit: &str) -> bool {
+    let u = unit.trim();
+    let u_base = u.strip_suffix(".service").unwrap_or(u);
+    let is_u_ssh = u_base == "ssh" || u_base == "sshd";
+    protected.iter().any(|p| {
+        let p_trim = p.trim();
+        if p_trim == u {
+            return true;
+        }
+        let p_base = p_trim.strip_suffix(".service").unwrap_or(p_trim);
+        if p_base == u_base {
+            return true;
+        }
+        let is_p_ssh = p_base == "ssh" || p_base == "sshd";
+        is_p_ssh && is_u_ssh
+    })
 }
 
 #[cfg(test)]
@@ -790,5 +813,74 @@ mod tests {
                 .message
                 .contains("3 distinct crates")
         );
+    }
+
+    #[test]
+    fn test_reviewer_flags_protected_unit_variants() {
+        let reviewer = Reviewer::new(ReviewerConfig::default());
+        let test_units = [
+            "ssh.service",
+            "ssh",
+            "sshd.service",
+            "sshd",
+            "systemd-udevd.service",
+            "systemd-udevd",
+            "dbus.service",
+            "dbus",
+            "firewalld.service",
+            "firewalld",
+        ];
+
+        for unit in test_units {
+            // Build a plan with low approval tier (e.g. Notify) to assert rejection
+            let mut fake_blast = PolicyEngine::evaluate_capability(
+                &CapabilityKind::ServiceRestart {
+                    unit: unit.into(),
+                    approved: true,
+                },
+                None,
+            );
+            fake_blast.tier = ApprovalTier::Notify;
+
+            let plan = Plan {
+                id: "plan-prot".into(),
+                intent: "restart protected unit".into(),
+                summary: "restart".into(),
+                steps: vec![PlanStep {
+                    step_id: "step-1".into(),
+                    description: format!("restart {unit}"),
+                    capability: CapabilityKind::ServiceRestart {
+                        unit: unit.into(),
+                        approved: true,
+                    },
+                    blast_radius: fake_blast,
+                    timeout_secs: 5,
+                }],
+                rollback_steps: vec![],
+                aggregate_blast_radius: PolicyEngine::evaluate_plan_aggregate(
+                    &[CapabilityKind::ServiceRestart {
+                        unit: unit.into(),
+                        approved: true,
+                    }],
+                    None,
+                ),
+                created_at: "2026-08-28T00:00:00Z".into(),
+                status: crate::plan::PlanStatus::Draft,
+            };
+
+            let report = reviewer.review_plan(&plan);
+            assert_eq!(
+                report.verdict,
+                ReviewVerdict::Rejected,
+                "Reviewer should reject restart of protected unit '{unit}' when tier is Notify"
+            );
+            assert!(
+                report
+                    .findings
+                    .iter()
+                    .any(|f| f.category == "policy_mismatch" || f.category == "critical_unit"),
+                "Finding should be policy_mismatch or critical_unit for '{unit}'"
+            );
+        }
     }
 }
