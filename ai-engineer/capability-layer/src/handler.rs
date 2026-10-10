@@ -11,6 +11,11 @@ use crate::{
     CapError, CapabilityKind, CapabilityRequest, CapabilityResponse, MAX_READ_BYTES, Result,
 };
 
+/// Default maximum subprocess execution timeout: 30 seconds (TODO 002).
+pub const DEFAULT_SUBPROCESS_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(30);
+/// Maximum allowable subprocess execution timeout: 300 seconds (TODO 002).
+pub const MAX_SUBPROCESS_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(300);
+
 /// Configuration settings for the Capability [`Handler`].
 #[derive(Debug, Clone)]
 pub struct HandlerConfig {
@@ -20,6 +25,8 @@ pub struct HandlerConfig {
     pub protected_units: Vec<String>,
     /// Whether package mutations operate in simulated dry-run mode.
     pub dry_run: bool,
+    /// Maximum execution timeout for spawned external subprocesses (default 30s, max 300s).
+    pub subprocess_timeout: std::time::Duration,
 }
 
 impl Default for HandlerConfig {
@@ -37,6 +44,7 @@ impl Default for HandlerConfig {
                 "firewalld.service".into(),
             ],
             dry_run: true,
+            subprocess_timeout: DEFAULT_SUBPROCESS_TIMEOUT,
         }
     }
 }
@@ -111,7 +119,16 @@ impl Handler {
 
     /// Executes an external command within a dedicated process group, registering its PGID
     /// with the killswitch and actively polling for killswitch activation every 10ms.
-    /// If the killswitch is engaged, the process group is immediately terminated via `SIGKILL`.
+    ///
+    /// ## Timeout (TODO 002)
+    /// The call is bounded by `self.config.subprocess_timeout`. When the deadline is
+    /// exceeded the process group receives `SIGKILL`, the PGID is unregistered, and
+    /// `ErrorKind::TimedOut` is returned. The timeout is clamped to [`MAX_SUBPROCESS_TIMEOUT`]
+    /// at the call site to prevent misconfiguration.
+    ///
+    /// ## Kill-switch priority
+    /// If the killswitch is engaged at any point **before** the timeout fires, the process
+    /// group is still killed immediately via `SIGKILL` — no grace period applies.
     pub fn run_command(
         &self,
         cmd: &mut std::process::Command,
@@ -124,6 +141,13 @@ impl Handler {
         let mut child = cmd.spawn()?;
         let pgid = child.id();
         KillSwitch::register_process_group(pgid);
+
+        // Clamp the per-call timeout so a misconfigured value can never exceed the hard cap.
+        let timeout = self
+            .config
+            .subprocess_timeout
+            .min(MAX_SUBPROCESS_TIMEOUT);
+        let deadline = std::time::Instant::now() + timeout;
 
         let mut stdout_handle = child.stdout.take().map(|mut out| {
             std::thread::spawn(move || {
@@ -159,6 +183,7 @@ impl Handler {
                     });
                 }
                 None => {
+                    // ── Kill-switch check (immediate SIGKILL, no grace) ─────────────────────
                     if self.killswitch.is_engaged() {
                         if let Some(pid) = rustix::process::Pid::from_raw(pgid as i32) {
                             let _ = rustix::process::kill_process_group(
@@ -175,6 +200,30 @@ impl Handler {
                             "subprocess terminated by killswitch",
                         ));
                     }
+
+                    // ── Timeout check (TODO 002 subtask 2.3) ───────────────────────────────
+                    if std::time::Instant::now() >= deadline {
+                        // Kill the entire process group so child threads cannot become orphans.
+                        if let Some(pid) = rustix::process::Pid::from_raw(pgid as i32) {
+                            let _ = rustix::process::kill_process_group(
+                                pid,
+                                rustix::process::Signal::KILL,
+                            );
+                        }
+                        KillSwitch::unregister_process_group(pgid);
+                        let _ = child.wait();
+                        drop(stdout_handle);
+                        drop(stderr_handle);
+                        return Err(std::io::Error::new(
+                            std::io::ErrorKind::TimedOut,
+                            format!(
+                                "subprocess timed out after {}s (limit: {}s)",
+                                timeout.as_secs(),
+                                MAX_SUBPROCESS_TIMEOUT.as_secs(),
+                            ),
+                        ));
+                    }
+
                     std::thread::sleep(std::time::Duration::from_millis(10));
                 }
             }
