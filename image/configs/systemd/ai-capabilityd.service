@@ -5,7 +5,10 @@ Documentation=file:///usr/share/doc/ai-capabilityd/README.md
 After=local-fs.target
 
 [Service]
-Type=simple
+# Type=notify with READY=1 emitted after socket bind and chmod 0600
+Type=notify
+WatchdogSec=30s
+
 # Shipped default: explicitly authorize root (UID 0) and primary desktop user (UID 1000).
 # Administrators on multi-user or enterprise directory systems can override this via /etc/default/ai-capabilityd.
 Environment="DIRECTIONER_ALLOWED_UIDS=1000"
@@ -24,6 +27,9 @@ RestartSec=2
 
 # Defense in depth: the process can only see these paths.
 # Lockdown increases below as adapters are wired to SELinux domains.
+# Note on ProtectSystem=strict: ProtectSystem=strict mounts /usr, /boot, and /etc read-only
+# for this unit. Managed state is confined to ReadWritePaths (/var/lib/ai-engineer, /etc/ai-engineer).
+# System mutations (package changes, service restarts) are executed via systemctl/dnf5 subprocesses.
 NoNewPrivileges=true
 PrivateTmp=true
 ProtectSystem=strict

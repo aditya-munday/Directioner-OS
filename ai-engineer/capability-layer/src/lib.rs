@@ -22,6 +22,7 @@
 pub mod audit;
 pub mod handler;
 pub mod killswitch;
+pub mod notify;
 pub mod scope;
 pub mod server;
 
