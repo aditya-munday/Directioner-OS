@@ -24,6 +24,7 @@ pub mod handler;
 pub mod killswitch;
 pub mod notify;
 pub mod scope;
+pub mod scrub;
 pub mod server;
 
 use std::fmt;
