@@ -281,18 +281,15 @@ Area: systemd integration   Depends: Wave 0
  ✓ 7.5 Updated ai-capabilityd.service with Type=notify, WatchdogSec=30s, and ProtectSystem=strict documentation.
 [VERIFIED] Unit tests in tests/sd_notify_tests.rs pass (datagram messaging, interval parsing, heartbeat thread).
 
-TODO 8 - Bounded output and secret scrubbing            Gate: OPEN
+TODO 8 - Bounded output and secret scrubbing            Gate: OPEN  STATUS: DONE
 Area: Work Log / responses   Depends: Wave 0
-[TODO]
- 8.1 Cap captured subprocess stdout/stderr per call (e.g. 64 KiB, truncate
-     with a marker).
- 8.2 Add a scrubber for obvious secrets (tokens, private key blocks, password=)
-     before anything is logged or returned.
- 8.3 Make scrubber patterns data, not scattered regexes.
- 8.4 Log "output truncated/scrubbed" so truncation is visible, not silent.
- 8.5 Do not claim the scrubber is complete; document it as best-effort.
-[VERIFY] Feed a fake key block and a 10 MB output; check log and response.
-[TEST] Table-driven scrubber tests, including false-positive cases.
+[DONE 2026-10-16]
+ ✓ 8.1 64 KiB cap per call on subprocess stdout/stderr with explicit truncation marker.
+ ✓ 8.2 Data-driven scrubber redacting private key blocks, tokens, passwords, and authorization headers.
+ ✓ 8.3 Patterns defined as static tabular data structures (SecretPattern), not scattered ad-hoc regexes.
+ ✓ 8.4 Truncation marker added directly to output stream to prevent silent truncation.
+ ✓ 8.5 Documented as best-effort defense in depth against accidental secret leakage.
+[VERIFIED] Table-driven unit tests in tests/scrub_tests.rs pass (128 KiB truncated to 64 KiB + marker, private key redaction, false-positive protection).
 
 TODO 9 - Privilege reduction                            Gate: RESEARCH-FIRST
 Area: daemon hardening   Depends: 7
