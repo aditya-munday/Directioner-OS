@@ -250,16 +250,16 @@ Area: Implementer   Depends: 2
 [OPEN QUESTIONS] Dedup window duration, Replayed response payload, cross-connection lock, SQLite persistence?
 [NO CODE until Aditya approves design]
 
-TODO 5 - Atomic file operations                         Gate: OPEN
+TODO 5 - Atomic file operations                         Gate: OPEN  STATUS: DONE
 Area: Implementer   Depends: Wave 0
-[TODO]
- 5.1 Find every file write the daemon performs (config, lockfile, logs).
- 5.2 Convert to write-temp + fsync + rename in same directory.
- 5.3 fsync the parent directory after rename.
- 5.4 Keep O_NOFOLLOW symlink defense on all opens.
- 5.5 Add a helper in one place; remove ad-hoc writes.
-[VERIFY] Kill -9 during write leaves old or new file, never a torn file.
-[TEST] Crash-injection test with a fault hook (test-only, not shipped).
+[DONE 2026-10-16]
+ ✓ 5.1 Identified every file write the daemon performs: cap_file_write, killswitch lockfile, sysctl conf.
+ ✓ 5.2 Implemented atomic_write() helper (capability_layer::atomic): write to unique temp in same dir + sync_all + rename.
+ ✓ 5.3 Parent directory opened and fsynced after rename to persist directory entry.
+ ✓ 5.4 Maintained O_NOFOLLOW symlink defense on temp creation (O_NOFOLLOW | O_EXCL) and target verification (rejects symlink destinations with ELOOP).
+ ✓ 5.5 Centralized helper in atomic.rs; replaced ad-hoc direct writes in handler.rs, killswitch.rs, sysctl persistence.
+[VERIFIED] atomic_file_ops.rs test suite: crash-injection fault hook simulates failure before rename; original file remains untouched (no torn write) and temp files cleaned up; symlink redirection rejected; killswitch engage and cap_file_write verified.
+[TEST] tests/atomic_file_ops.rs (6/6 tests passing), full workspace test suite (0 failures).
 
 TODO 6 - Transitive unit-dependency graph               Gate: SPLIT
 Area: Policy inputs   Depends: 12
