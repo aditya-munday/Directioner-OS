@@ -261,17 +261,15 @@ Area: Implementer   Depends: Wave 0
 [VERIFIED] atomic_file_ops.rs test suite: crash-injection fault hook simulates failure before rename; original file remains untouched (no torn write) and temp files cleaned up; symlink redirection rejected; killswitch engage and cap_file_write verified.
 [TEST] tests/atomic_file_ops.rs (6/6 tests passing), full workspace test suite (0 failures).
 
-TODO 6 - Transitive unit-dependency graph               Gate: SPLIT
+TODO 6 - Transitive unit-dependency graph               Gate: SPLIT  STATUS: PARTIAL (OPEN subtasks DONE)
 Area: Policy inputs   Depends: 12
-[TODO]
- 6.1 [OPEN] Read-only tool: given a unit, list what Requires/Wants/After it
-     via systemctl show. No mutation.
- 6.2 [OPEN] Build a graph and detect if stopping unit X would stop a
-     protected unit (ssh, dbus, firewalld, systemd-udevd).
- 6.3 [OPEN] Unit tests with fixture unit files.
- 6.4 [OWNER-AUTH] Feed the graph into PolicyEngine blast radius.
- 6.5 [OWNER-AUTH] Feed it into Reviewer red-line checks.
-[VERIFY] 6.1-6.3 only until Aditya authorizes 6.4-6.5 (policy.rs/reviewer.rs).
+[DONE 2026-10-16: 6.1-6.3 OPEN; 6.4-6.5 pending OWNER-AUTH]
+ ✓ 6.1 [OPEN] Implemented read-only parser for systemctl show properties (Requires, RequiredBy, Wants, After, Before) in control_plane::unit_graph.
+ ✓ 6.2 [OPEN] Built transitive UnitDependencyGraph and detect_protected_unit_impact() detecting direct and transitive shutdown impacts on protected units (ssh, dbus, firewalld, systemd-udevd).
+ ✓ 6.3 [OPEN] Comprehensive unit tests with fixture unit files and dependency chains in tests/unit_dependency_graph.rs.
+  6.4 [OWNER-AUTH] Feed graph into PolicyEngine blast radius (awaiting Aditya authorization per B2).
+  6.5 [OWNER-AUTH] Feed into Reviewer red-line checks (awaiting Aditya authorization per B2).
+[VERIFIED] tests/unit_dependency_graph.rs (4/4 tests pass). Strict boundary preserved: zero edits to policy.rs or reviewer.rs.
 
 TODO 7 - sd_notify and socket activation                Gate: OPEN
 Area: systemd integration   Depends: Wave 0

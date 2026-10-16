@@ -30,6 +30,7 @@ pub mod reviewer;
 pub mod self_healing;
 pub mod simulation;
 pub mod symbol_graph;
+pub mod unit_graph;
 pub mod verifier;
 
 pub use client::{CapabilityClient, ClientError};
