@@ -19,6 +19,8 @@
 //! 3. [`handler::Handler::execute`] validates scope + gates, executes through the
 //!    typed `dnf5`/`systemctl`/file adapters, writes an audit row, and replies.
 
+/// Atomic file operations with write-temp + fsync + rename and symlink defense.
+pub mod atomic;
 pub mod audit;
 pub mod handler;
 pub mod killswitch;

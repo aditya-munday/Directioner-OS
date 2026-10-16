@@ -350,25 +350,35 @@ impl Handler {
                 }
             }
         }
-        if let Some(parent) = path.parent() {
-            std::fs::create_dir_all(parent).map_err(|e| CapError::Internal(e.to_string()))?;
+        if !append {
+            crate::atomic::atomic_write(&path, content.as_bytes()).map_err(|e| {
+                if e.raw_os_error() == Some(rustix::io::Errno::LOOP.raw_os_error()) {
+                    CapError::Denied(format!("symlinks not permitted in scope: {raw}"))
+                } else {
+                    CapError::Internal(e.to_string())
+                }
+            })?;
+        } else {
+            if let Some(parent) = path.parent() {
+                std::fs::create_dir_all(parent).map_err(|e| CapError::Internal(e.to_string()))?;
+            }
+            use std::io::Write;
+            use std::os::unix::fs::OpenOptionsExt;
+            let mut options = std::fs::OpenOptions::new();
+            options
+                .create(true)
+                .write(true)
+                .truncate(false)
+                .append(true)
+                .custom_flags(rustix::fs::OFlags::NOFOLLOW.bits() as i32);
+            let mut f = options
+                .open(&path)
+                .map_err(|e| CapError::Internal(e.to_string()))?;
+            f.write_all(content.as_bytes())
+                .map_err(|e| CapError::Internal(e.to_string()))?;
+            f.sync_all()
+                .map_err(|e| CapError::Internal(e.to_string()))?;
         }
-        use std::io::Write;
-        use std::os::unix::fs::OpenOptionsExt;
-        let mut options = std::fs::OpenOptions::new();
-        options
-            .create(true)
-            .write(true)
-            .truncate(!append)
-            .append(append)
-            .custom_flags(rustix::fs::OFlags::NOFOLLOW.bits() as i32);
-        let mut f = options
-            .open(&path)
-            .map_err(|e| CapError::Internal(e.to_string()))?;
-        f.write_all(content.as_bytes())
-            .map_err(|e| CapError::Internal(e.to_string()))?;
-        f.sync_all()
-            .map_err(|e| CapError::Internal(e.to_string()))?;
         Ok(json!({
             "path": path.display().to_string(),
             "bytes": content.len(),
@@ -957,14 +967,9 @@ impl Handler {
             if sysctl_dir.exists() {
                 let conf_path = sysctl_dir.join("99-directioner-tuning.conf");
                 let line = format!("{key} = {value}\n");
-                use std::io::Write;
-                let mut f = std::fs::OpenOptions::new()
-                    .create(true)
-                    .append(true)
-                    .open(&conf_path)
-                    .map_err(|e| CapError::Internal(e.to_string()))?;
-                f.write_all(line.as_bytes())
-                    .map_err(|e| CapError::Internal(e.to_string()))?;
+                let existing = std::fs::read_to_string(&conf_path).unwrap_or_default();
+                let new_content = format!("{existing}{line}");
+                let _ = crate::atomic::atomic_write(&conf_path, new_content.as_bytes());
             }
         }
 
