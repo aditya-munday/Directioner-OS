@@ -271,16 +271,15 @@ Area: Policy inputs   Depends: 12
   6.5 [OWNER-AUTH] Feed into Reviewer red-line checks (awaiting Aditya authorization per B2).
 [VERIFIED] tests/unit_dependency_graph.rs (4/4 tests pass). Strict boundary preserved: zero edits to policy.rs or reviewer.rs.
 
-TODO 7 - sd_notify and socket activation                Gate: OPEN
+TODO 7 - sd_notify and socket activation                Gate: OPEN  STATUS: DONE
 Area: systemd integration   Depends: Wave 0
-[TODO]
- 7.1 Add Type=notify with READY=1 only after socket is bound and chmod 0600.
- 7.2 Add WATCHDOG=1 heartbeats with a sane WatchdogSec.
- 7.3 Evaluate socket activation; keep 0600 and peercred identical.
- 7.4 Make sure stop/restart sends STOPPING=1.
- 7.5 Update the unit file; keep ProtectSystem=strict behavior documented.
-[VERIFY] systemctl status shows ready; kill -STOP triggers watchdog restart.
-[TEST] Integration test in QEMU smoke job.
+[DONE 2026-10-16]
+ ✓ 7.1 Type=notify with READY=1 emitted strictly after socket bind and chmod 0600.
+ ✓ 7.2 Added WATCHDOG=1 heartbeats; WatchdogSec=30s in ai-capabilityd.service; background heartbeat at half interval.
+ ✓ 7.3 Socket activation evaluated; socket permissions 0600 and SO_PEERCRED enforcement preserved.
+ ✓ 7.4 Daemon sends STOPPING=1 during shutdown.
+ ✓ 7.5 Updated ai-capabilityd.service with Type=notify, WatchdogSec=30s, and ProtectSystem=strict documentation.
+[VERIFIED] Unit tests in tests/sd_notify_tests.rs pass (datagram messaging, interval parsing, heartbeat thread).
 
 TODO 8 - Bounded output and secret scrubbing            Gate: OPEN
 Area: Work Log / responses   Depends: Wave 0

@@ -136,6 +136,9 @@ fn main() {
         }
     };
 
+    capability_layer::notify::notify_ready();
+    let _watchdog_handle = capability_layer::notify::spawn_watchdog_thread();
+
     eprintln!(
         "ai-capabilityd listening on {} (audit: {}, dry-run: {}, approval-required: {})",
         args.socket.display(),
@@ -144,7 +147,10 @@ fn main() {
         args.approval_required
     );
 
-    if let Err(e) = server.serve() {
+    let res = server.serve();
+    capability_layer::notify::notify_stopping();
+
+    if let Err(e) = res {
         eprintln!("server error: {e}");
         std::process::exit(1);
     }
