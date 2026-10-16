@@ -1,7 +1,6 @@
 //! Kill-switch (Phase 0.4): one action that halts all AI Engineer activity.
 
-use std::fs::OpenOptions;
-use std::io::{self, Write};
+use std::io;
 use std::path::{Path, PathBuf};
 
 const ENGAGED: &str = "ENGAGED\n";
@@ -67,17 +66,7 @@ impl KillSwitch {
 
     /// Engages the killswitch by atomically writing the lockfile and terminating active subprocesses.
     pub fn engage(&mut self) -> io::Result<()> {
-        if let Some(parent) = self.lock_file.parent() {
-            std::fs::create_dir_all(parent)?;
-        }
-        let mut f = OpenOptions::new()
-            .create(true)
-            .truncate(true)
-            .write(true)
-            .open(&self.lock_file)?;
-        f.write_all(ENGAGED.as_bytes())?;
-        f.sync_all()?;
-
+        crate::atomic::atomic_write(&self.lock_file, ENGAGED.as_bytes())?;
         Self::terminate_active_processes();
         Ok(())
     }
