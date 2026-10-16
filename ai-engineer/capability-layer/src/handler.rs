@@ -125,18 +125,26 @@ impl Handler {
         let pgid = child.id();
         KillSwitch::register_process_group(pgid);
 
-        let mut stdout_handle = child.stdout.take().map(|mut out| {
+        let mut stdout_handle = child.stdout.take().map(|out| {
             std::thread::spawn(move || {
-                let mut buf = Vec::new();
-                let _ = std::io::Read::read_to_end(&mut out, &mut buf);
-                buf
+                let (raw, _) = crate::scrub::read_bounded_output(out, crate::scrub::MAX_OUTPUT_BYTES);
+                if let Ok(text) = std::str::from_utf8(&raw) {
+                    let (scrubbed, _) = crate::scrub::scrub_secrets(text);
+                    scrubbed.into_bytes()
+                } else {
+                    raw
+                }
             })
         });
-        let mut stderr_handle = child.stderr.take().map(|mut err| {
+        let mut stderr_handle = child.stderr.take().map(|err| {
             std::thread::spawn(move || {
-                let mut buf = Vec::new();
-                let _ = std::io::Read::read_to_end(&mut err, &mut buf);
-                buf
+                let (raw, _) = crate::scrub::read_bounded_output(err, crate::scrub::MAX_OUTPUT_BYTES);
+                if let Ok(text) = std::str::from_utf8(&raw) {
+                    let (scrubbed, _) = crate::scrub::scrub_secrets(text);
+                    scrubbed.into_bytes()
+                } else {
+                    raw
+                }
             })
         });
 
