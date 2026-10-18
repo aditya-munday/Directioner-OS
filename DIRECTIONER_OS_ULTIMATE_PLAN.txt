@@ -544,7 +544,7 @@ Area: image   Depends: Wave 0
  ✓ 31.1 Two build targets implemented in image/Containerfile: `test` (ci user, local key, sudo allowed) and `release` (default final stage).
  ✓ 31.2 Release target contains NONE of: ci user, committed public key, passwordless sudo, --exec flags, test sockets.
  ✓ 31.3 CI inspection script implemented in scripts/inspect_release_image.sh; verified via scripts/test_inspect_release_image.sh.
- ✓ 31.4 Base image pinned by digest (quay.io/fedora/fedora-bootc:42@sha256:d8b28489cbe339bc060773e7381ff010189b09214713c713be213b1856aaebf8); digest bump procedure documented.
+ ✓ 31.4 Base image pinned by digest (quay.io/fedora/fedora-bootc:42@sha256:077182b6ba853b3348d0bede602ac30b9e6568c6422bcf0654de5af96f19b9c3); digest bump procedure documented.
  ✓ 31.5 Package minimization: neovim, tmux, htop excluded from base/release (documented rationale); retained core runtime dependencies.
 [VERIFIED] scripts/test_inspect_release_image.sh passes; dirty rootfs correctly rejected.
 
