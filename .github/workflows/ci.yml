@@ -12,8 +12,9 @@ name: Directioner-OS CI
 
 on:
   push:
-    branches: [main]
+    branches: [main, "plan/**"]
   pull_request:
+    branches: [main]
   workflow_dispatch:
     inputs:
       skip-vm-smoke:

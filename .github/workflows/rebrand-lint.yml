@@ -2,7 +2,7 @@ name: Rebrand Lint + Asset Scan (Domain 6 - TODO 087, 089, 092)
 
 on:
   push:
-    branches: ["main", "feature/**", "rebrand/**"]
+    branches: ["main", "feature/**", "rebrand/**", "plan/**"]
   pull_request:
     branches: ["main"]
   workflow_dispatch:
