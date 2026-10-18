@@ -1,0 +1,46 @@
+# Directioner-OS Brand Configuration (Single Source of Truth - TODO 091)
+# Used to generate os-release, issue, motd, fastfetch, GRUB titles, themes, and documentation.
+
+[brand]
+name = "Directioner OS"
+short_name = "Directioner"
+id = "directioner"
+id_like = ["fedora"]
+vendor = "Directioner OS Project"
+author = "Aditya Munday"
+tagline = "The AI-Native Operating System"
+description = "Hardened, transactional, and autonomous AI-native operating system built on containerized bootc."
+
+[version]
+major = 42
+minor = 0
+patch = 0
+channel = "stable"       # stable | beta | dev
+version_string = "42.0.0"
+fedora_base_version = "42"
+codename = "Genesis"
+
+[variants]
+default = "server"
+supported = ["server", "desktop", "developer", "minimal"]
+
+[urls]
+homepage = "https://github.com/aditya-munday/Directioner-OS"
+documentation = "https://github.com/aditya-munday/Directioner-OS#readme"
+support = "https://github.com/aditya-munday/Directioner-OS/issues"
+bug_report = "https://github.com/aditya-munday/Directioner-OS/issues"
+privacy_policy = "https://github.com/aditya-munday/Directioner-OS/blob/main/docs/designs/opt_in_telemetry.md"
+
+[theme]
+tokens_file = "design/tokens.json"
+primary_color = "#00D2FF"
+accent_color = "#3A7BD5"
+background_dark = "#0A0E17"
+background_light = "#F4F7FB"
+text_dark = "#FFFFFF"
+text_light = "#0D1117"
+
+[shortcuts]
+ai_assistant_key = "Super+A"
+terminal_key = "Super+Return"
+app_launcher_key = "Super+Space"

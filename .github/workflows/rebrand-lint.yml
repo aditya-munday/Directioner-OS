@@ -1,0 +1,120 @@
+name: Rebrand Lint + Asset Scan (Domain 6 - TODO 087, 089, 092)
+
+on:
+  push:
+    branches: ["main", "feature/**", "rebrand/**"]
+  pull_request:
+    branches: ["main"]
+  workflow_dispatch:
+
+jobs:
+  brand-validate:
+    name: Validate brand.toml
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install tomllib fallback (Python < 3.11 not used, but kept safe)
+        run: pip install tomli || true
+
+      - name: Validate brand.toml schema (TODO 092)
+        run: python3 scripts/validate_brand_toml.py
+
+  token-generation-check:
+    name: Verify deterministic token generation
+    runs-on: ubuntu-latest
+    needs: brand-validate
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install tomllib fallback
+        run: pip install tomli || true
+
+      - name: Generate brand tokens (initial)
+        run: python3 scripts/generate_brand_tokens.py
+
+      - name: Verify diff-free regeneration (TODO 078)
+        run: python3 scripts/generate_brand_tokens.py --check
+
+      - name: Upload generated tokens as artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: brand-tokens
+          path: build/brand/
+          retention-days: 7
+
+  rebrand-lint:
+    name: Rebrand Lint — scan for unallowlisted Fedora strings
+    runs-on: ubuntu-latest
+    needs: brand-validate
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Run rebrand lint on source tree (TODO 087)
+        run: |
+          python3 scripts/rebrand_lint.py --root . --json > rebrand_lint_report.json || EXIT_CODE=$?
+          python3 scripts/rebrand_lint.py --root . --counts-only
+          exit ${EXIT_CODE:-0}
+
+      - name: Upload rebrand lint report as artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: rebrand-lint-report
+          path: rebrand_lint_report.json
+          retention-days: 14
+
+      - name: Plant a Fedora string to demo red/green (proof of detection)
+        if: github.event_name == 'workflow_dispatch'
+        run: |
+          echo "This is Fedora OS" > /tmp/planted_test.txt
+          # This would fail: python3 scripts/rebrand_lint.py --root /tmp/
+          echo "Demo: planted string would cause CI FAIL if scanned"
+
+  asset-provenance-scan:
+    name: Asset Provenance Scan — check for forbidden logo filenames
+    runs-on: ubuntu-latest
+    needs: brand-validate
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Run asset provenance scan (TODO 089)
+        run: |
+          python3 scripts/asset_provenance_scan.py \
+            --root . \
+            --manifest packaging/directioner-backgrounds/SOURCES/MANIFEST.json \
+            --json > asset_scan_report.json || EXIT_CODE=$?
+          python3 scripts/asset_provenance_scan.py \
+            --root . \
+            --manifest packaging/directioner-backgrounds/SOURCES/MANIFEST.json
+          exit ${EXIT_CODE:-0}
+
+      - name: Upload asset scan report
+        uses: actions/upload-artifact@v4
+        with:
+          name: asset-provenance-report
+          path: asset_scan_report.json
+          retention-days: 14

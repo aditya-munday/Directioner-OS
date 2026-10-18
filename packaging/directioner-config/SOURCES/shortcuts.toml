@@ -1,0 +1,45 @@
+# Directioner OS — Default Keyboard Shortcut Map (TODO 085)
+# Shipped as documentation and as a reference for DE configuration tools.
+# DE-specific implementation is handled in directioner-config-desktop.
+#
+# Reserved AI key: Super+A → "Ask Directioner" (Aria/AI Engineer launcher)
+# This key is reserved at the OS level and should not be overridden by apps.
+
+[reserved]
+# These shortcuts are reserved by Directioner OS and should not be
+# reassigned by users or applications without explicit awareness.
+ai_assistant     = "Super+A"         # Opens Ask Directioner (Aria/CLI)
+system_settings  = "Super+I"         # Opens System Settings
+app_launcher     = "Super+Space"     # Opens application launcher
+
+[shell]
+terminal         = "Super+Return"    # Opens default terminal
+file_manager     = "Super+E"         # Opens file manager
+screenshot       = "Print"           # Full screenshot
+screenshot_area  = "Shift+Print"     # Area screenshot
+screenshot_window = "Alt+Print"      # Window screenshot
+
+[window_management]
+close_window     = "Alt+F4"
+maximize_window  = "Super+Up"
+restore_window   = "Super+Down"
+move_left        = "Super+Left"
+move_right       = "Super+Right"
+
+[workspace]
+switch_1         = "Super+1"
+switch_2         = "Super+2"
+switch_3         = "Super+3"
+switch_4         = "Super+4"
+
+[conflict_detection]
+# These are known conflicts with common DE defaults.
+# Reported by: docs; resolved in DE-specific config package.
+# ai_assistant (Super+A) conflicts with: GNOME Activities (Super) — resolved by
+#   binding to Super+A specifically (not Super alone).
+
+[notes]
+# The "Ask Directioner" shortcut (Super+A) is the single most important
+# shortcut in Directioner OS. It is given the most ergonomic position
+# in the Super+key namespace. Changing it requires updating brand.toml
+# (shortcuts.ai_assistant_key) and rebuilding the config package.

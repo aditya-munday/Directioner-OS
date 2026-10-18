@@ -1,0 +1,40 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- Directioner OS Dark Wallpaper — PLACEHOLDER
+     Replace with final artwork provided by Aditya.
+     License: CC-BY-SA-4.0
+     Provenance: Generated placeholder, Directioner OS Project, 2026-10-18 -->
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 3840 2160">
+  <defs>
+    <radialGradient id="bg-dark" cx="50%" cy="50%" r="80%">
+      <stop offset="0%"   stop-color="#0D1B2A"/>
+      <stop offset="60%"  stop-color="#0A0E17"/>
+      <stop offset="100%" stop-color="#06080F"/>
+    </radialGradient>
+    <radialGradient id="glow" cx="50%" cy="40%" r="40%">
+      <stop offset="0%"   stop-color="#00D2FF" stop-opacity="0.12"/>
+      <stop offset="100%" stop-color="#00D2FF" stop-opacity="0"/>
+    </radialGradient>
+  </defs>
+  <!-- Dark space background -->
+  <rect width="3840" height="2160" fill="url(#bg-dark)"/>
+  <!-- Subtle AI glow -->
+  <ellipse cx="1920" cy="900" rx="1400" ry="700" fill="url(#glow)"/>
+  <!-- Grid lines (subtle) -->
+  <g stroke="#00D2FF" stroke-width="0.5" opacity="0.04">
+    <line x1="0" y1="360"  x2="3840" y2="360"/>
+    <line x1="0" y1="720"  x2="3840" y2="720"/>
+    <line x1="0" y1="1080" x2="3840" y2="1080"/>
+    <line x1="0" y1="1440" x2="3840" y2="1440"/>
+    <line x1="0" y1="1800" x2="3840" y2="1800"/>
+    <line x1="640"  y1="0" x2="640"  y2="2160"/>
+    <line x1="1280" y1="0" x2="1280" y2="2160"/>
+    <line x1="1920" y1="0" x2="1920" y2="2160"/>
+    <line x1="2560" y1="0" x2="2560" y2="2160"/>
+    <line x1="3200" y1="0" x2="3200" y2="2160"/>
+  </g>
+  <!-- Watermark -->
+  <text x="1920" y="2100" font-family="monospace" font-size="32"
+        text-anchor="middle" fill="#00D2FF" opacity="0.3">
+    PLACEHOLDER — Directioner OS Dark Wallpaper — Replace before release
+  </text>
+</svg>

@@ -42,3 +42,6 @@ path = "src/bin/ai-hwcheck.rs"
 [lints]
 workspace = true
 
+[[test]]
+name = "rebrand_tests"
+path = "tests/rebrand_tests.rs"

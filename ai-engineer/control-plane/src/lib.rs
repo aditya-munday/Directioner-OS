@@ -27,6 +27,7 @@ pub mod incident_persistence;
 pub mod incident_response;
 pub mod invariants;
 pub mod journal_anomaly;
+pub mod brand_identity;
 pub mod localization;
 pub mod network_blackhole;
 pub mod plan;
