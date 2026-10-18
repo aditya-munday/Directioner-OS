@@ -1,0 +1,7 @@
+[directioner]
+name=Directioner OS $releasever - $basearch
+baseurl=@DIRECTIONER_REPO_URL@/$releasever/$basearch/
+enabled=0
+gpgcheck=1
+gpgkey=file:///etc/pki/rpm-gpg/RPM-GPG-KEY-directioner
+skip_if_unavailable=True

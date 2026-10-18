@@ -93,54 +93,16 @@ RUN (dnf install -y fastfetch || true) \
 # Apply os-release: Directioner OS identity (TODO 054)
 # Replace the upstream Fedora os-release with our branded version.
 # ID_LIKE=fedora is intentionally preserved for dnf/rpm-ostree compatibility.
-RUN cat > /etc/os-release << 'OSRELEASE'
-NAME="Directioner OS"
-VERSION="42.0.0 (Genesis)"
-ID=directioner
-ID_LIKE=fedora
-VERSION_ID=42.0.0
-PLATFORM_ID="platform:dos42"
-PRETTY_NAME="Directioner OS 42 (Genesis)"
-ANSI_COLOR="0;34"
-LOGO=directioner-logo
-CPE_NAME="cpe:/o:directioneros:directioner:42.0.0"
-DEFAULT_HOSTNAME="directioner"
-HOME_URL="https://github.com/aditya-munday/Directioner-OS"
-DOCUMENTATION_URL="https://github.com/aditya-munday/Directioner-OS#readme"
-SUPPORT_URL="https://github.com/aditya-munday/Directioner-OS/issues"
-BUG_REPORT_URL="https://github.com/aditya-munday/Directioner-OS/issues"
-VARIANT_ID=server
-VARIANT="Server Edition"
-OSRELEASE
+COPY configs/os-release /etc/os-release
 
 # Apply system-release and system-release-cpe (TODO 054)
 RUN echo "Directioner OS release 42.0.0 (Genesis)" > /etc/system-release \
     && echo "cpe:/o:directioneros:directioner:42.0.0" > /etc/system-release-cpe
 
 # Apply branded login banners (TODO 055)
-RUN cat > /etc/issue << 'ISSUE'
- ____  _               _   _                      ___  ____
-|  _ \(_)_ __ ___  ___| |_(_) ___  _ __   ___ _ _/ _ \/ ___|
-| | | | | '__/ _ \/ __| __| |/ _ \| '_ \ / _ \ '__| | | \___ \
-| |_| | | | |  __/ (__| |_| | (_) | | | |  __/ |  | |_| |___) |
-|____/|_|_|  \___|\___|\__|_|\___/|_| |_|\___|_|   \___/|____/
-
-  Directioner OS 42.0.0 (Genesis) — The AI-Native Operating System
-  Kernel \r on \m (\l)
-
-ISSUE
-
+COPY configs/issue /etc/issue
 RUN echo "Directioner OS 42.0.0 (Genesis) — The AI-Native Operating System" > /etc/issue.net
-
-RUN cat > /etc/motd << 'MOTD'
-Hello from the AI-Native OS build
-Welcome to Directioner OS 42.0.0 (Genesis)
-The AI-Native Operating System
-
-  docs:    https://github.com/aditya-munday/Directioner-OS#readme
-  issues:  https://github.com/aditya-munday/Directioner-OS/issues
-
-MOTD
+COPY configs/motd /etc/motd
 
 # GRUB2 distributor branding (TODO 056)
 RUN if [ -f /etc/default/grub ]; then \
@@ -190,15 +152,8 @@ COPY packaging/directioner-config/SOURCES/policies.json \
 # Repo config (TODO 067) — enabled=0 until hosting is ready (Rule B4)
 COPY packaging/directioner-repos/SPECS/directioner-repos.spec \
      /usr/share/directioner/config/directioner-repos.spec.ref
-RUN mkdir -p /etc/yum.repos.d && cat > /etc/yum.repos.d/directioner.repo << 'REPO'
-[directioner]
-name=Directioner OS $releasever - $basearch
-baseurl=@DIRECTIONER_REPO_URL@/$releasever/$basearch/
-enabled=0
-gpgcheck=1
-gpgkey=file:///etc/pki/rpm-gpg/RPM-GPG-KEY-directioner
-skip_if_unavailable=True
-REPO
+RUN mkdir -p /etc/yum.repos.d
+COPY configs/directioner.repo /etc/yum.repos.d/directioner.repo
 
 # GPG key placeholder (OWNER-AUTH TODO 497)
 RUN mkdir -p /etc/pki/rpm-gpg \
