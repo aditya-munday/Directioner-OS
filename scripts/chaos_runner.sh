@@ -95,8 +95,14 @@ for step in range(1, iterations + 1):
     for inv in invariants:
         if step == fail_step and inv == "socket_permissions_0600":
             print(f"    -> INVARIANT VIOLATION at Step {step}: {inv} (Failing simulated permission check: 0666 != 0600)", file=sys.stderr)
-            with open("${FAIL_LOG}", "w") as f:
-                f.write(f"CHAOS_FAILING_SEED={seed}\nCHAOS_FAILING_STEP={step}\nCHAOS_FAILING_FAULT={chosen_fault}\n")
+            import os
+            fail_log_path = "${FAIL_LOG}"
+            try:
+                os.makedirs(os.path.dirname(os.path.abspath(fail_log_path)), exist_ok=True)
+                with open(fail_log_path, "w") as f:
+                    f.write(f"CHAOS_FAILING_SEED={seed}\nCHAOS_FAILING_STEP={step}\nCHAOS_FAILING_FAULT={chosen_fault}\n")
+            except Exception as e:
+                print(f"    -> Warning: could not write fail log: {e}", file=sys.stderr)
             sys.exit(3)
         else:
             print(f"    -> Invariant PASS: {inv}")

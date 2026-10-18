@@ -80,8 +80,16 @@ fn test_chaos_failing_seed_reproduces_deterministically() {
         .output()
         .expect("failed to execute chaos_runner.sh");
 
-    assert_eq!(output1.status.code(), Some(3));
+    let stdout1 = String::from_utf8_lossy(&output1.stdout);
     let stderr1 = String::from_utf8_lossy(&output1.stderr);
+    assert_eq!(
+        output1.status.code(),
+        Some(3),
+        "chaos_runner expected exit code 3 on injected step failure, got {:?}\nSTDOUT:\n{}\nSTDERR:\n{}",
+        output1.status.code(),
+        stdout1,
+        stderr1
+    );
     assert!(stderr1.contains("INVARIANT VIOLATION at Step 3"));
 
     // 2. Replay with the EXACT same seed and verify failure reproduces identically
@@ -97,8 +105,16 @@ fn test_chaos_failing_seed_reproduces_deterministically() {
         .output()
         .expect("failed to re-execute chaos_runner.sh");
 
-    assert_eq!(output2.status.code(), Some(3));
+    let stdout2 = String::from_utf8_lossy(&output2.stdout);
     let stderr2 = String::from_utf8_lossy(&output2.stderr);
+    assert_eq!(
+        output2.status.code(),
+        Some(3),
+        "chaos_runner replay expected exit code 3, got {:?}\nSTDOUT:\n{}\nSTDERR:\n{}",
+        output2.status.code(),
+        stdout2,
+        stderr2
+    );
     assert_eq!(
         stderr1, stderr2,
         "Failing seed must reproduce identical failure trace"
