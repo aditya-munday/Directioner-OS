@@ -309,3 +309,113 @@ fn test_protocol_malformed_json_fuzz() {
         assert!(res.is_err(), "Malformed input should fail: {}", input);
     }
 }
+
+#[test]
+fn test_encrypted_token_storage_zero_disk_plaintext_leak() {
+    let dir = tempdir().unwrap();
+    let store = StateStore::new(dir.path()).unwrap();
+
+    let secret_token = "ultra_secret_access_token_99999";
+    let secret_refresh = "ultra_secret_refresh_token_88888";
+
+    let tok = accountd::AuthToken {
+        access_token: secret_token.to_string(),
+        refresh_token: secret_refresh.to_string(),
+        token_type: "Bearer".to_string(),
+        expires_in: 3600,
+        created_at: 1000,
+        audience: "cli".to_string(),
+        scopes: vec!["cli:exec".to_string()],
+    };
+
+    let rec = accountd::store::SessionRecord {
+        state: AccountState::SignedIn,
+        profile: None,
+        token: Some(tok),
+        entitlements: None,
+        current_device: accountd::DeviceRegistration {
+            device_id: "dev-01".to_string(),
+            device_name: "pc".to_string(),
+            os_version: "42".to_string(),
+            variant_id: "server".to_string(),
+            registered_at: 100,
+            is_current: true,
+            revoked: false,
+        },
+        updated_at: 1000,
+    };
+
+    store.save_session(&rec).unwrap();
+
+    let session_file_raw = std::fs::read_to_string(dir.path().join("session.json")).unwrap();
+    assert!(!session_file_raw.contains(secret_token), "Plaintext access token leaked to disk");
+    assert!(!session_file_raw.contains(secret_refresh), "Plaintext refresh token leaked to disk");
+
+    let loaded = store.load_session().unwrap().expect("must decrypt stored token");
+    let loaded_tok = loaded.token.expect("must contain token");
+    assert_eq!(loaded_tok.access_token, secret_token);
+    assert_eq!(loaded_tok.refresh_token, secret_refresh);
+}
+
+#[test]
+fn test_live_unix_socket_ipc() {
+    use std::io::{BufRead, BufReader, Write};
+    use std::os::unix::net::{UnixListener, UnixStream};
+    use std::sync::mpsc;
+    use std::thread;
+
+    let dir = tempdir().unwrap();
+    let sock_path = dir.path().join("test_accountd.sock");
+    let listener = UnixListener::bind(&sock_path).unwrap();
+
+    let (tx, rx) = mpsc::channel();
+    let data_dir = dir.path().to_path_buf();
+
+    let handle = thread::spawn(move || {
+        let cfg = PlatformConfig::default();
+        let backend = MockBackend::new();
+        let mut engine = AccountEngine::new(&data_dir, cfg, backend).unwrap();
+
+        tx.send(()).unwrap();
+
+        if let Ok((mut stream, _)) = listener.accept() {
+            let mut reader = BufReader::new(stream.try_clone().unwrap());
+            let mut line = String::new();
+            if reader.read_line(&mut line).is_ok() {
+                if let Ok(req) = serde_json::from_str::<AccountRequest>(&line) {
+                    let resp = engine.handle_request(req, 1000, 100000);
+                    let out = serde_json::to_string(&resp).unwrap();
+                    let _ = stream.write_all(out.as_bytes());
+                    let _ = stream.write_all(b"\n");
+                    let _ = stream.flush();
+                }
+            }
+        }
+    });
+
+    rx.recv().unwrap();
+
+    let mut stream = UnixStream::connect(&sock_path).unwrap();
+    let req = AccountRequest::Status;
+    let serialized = serde_json::to_string(&req).unwrap();
+    stream.write_all(serialized.as_bytes()).unwrap();
+    stream.write_all(b"\n").unwrap();
+    stream.flush().unwrap();
+
+    let mut reader = BufReader::new(stream);
+    let mut resp_line = String::new();
+    reader.read_line(&mut resp_line).unwrap();
+
+    let resp: AccountResponse = serde_json::from_str(&resp_line).unwrap();
+    match resp {
+        AccountResponse::Ok(ResponseData::StatusInfo { state, .. }) => {
+            assert_eq!(state, AccountState::SignedOut);
+        }
+        _ => panic!("Expected StatusInfo response"),
+    }
+
+    drop(reader);
+    let _ = handle.join();
+}
+
+
