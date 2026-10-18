@@ -1,3 +1,4 @@
+// IN-MEMORY MODEL — no real OS integration. No sysfs, TPM, bootc, or kernel calls. Simulation only.
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]

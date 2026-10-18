@@ -1,3 +1,4 @@
+// IN-MEMORY MODEL — no real OS integration. No sysfs, TPM, bootc, or kernel calls. Simulation only.
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use std::collections::{HashMap, HashSet};
