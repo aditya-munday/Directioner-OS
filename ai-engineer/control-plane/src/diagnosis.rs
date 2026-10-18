@@ -100,10 +100,10 @@ pub fn diagnose_boot_loop(snapshot: &JournalSnapshot) -> DiagnosisReport {
     let mut restart_counts: HashMap<String, usize> = HashMap::new();
     for msg in &snapshot.recent_messages {
         let m = msg.message.to_ascii_lowercase();
-        if m.contains("start request repeated") || m.contains("reached restart limit") {
-            if let Some(ref unit) = msg.unit {
-                *restart_counts.entry(unit.clone()).or_insert(0) += 1;
-            }
+        if (m.contains("start request repeated") || m.contains("reached restart limit"))
+            && let Some(ref unit) = msg.unit
+        {
+            *restart_counts.entry(unit.clone()).or_insert(0) += 1;
         }
     }
 
@@ -151,7 +151,7 @@ pub fn diagnose_disk_full(snapshot: &JournalSnapshot) -> DiagnosisReport {
                 confidence: 0.0,
                 summary: "Disk usage data not available".to_string(),
                 evidence: Vec::new(),
-            }
+            };
         }
     };
 
@@ -200,7 +200,9 @@ pub fn diagnose_oom(snapshot: &JournalSnapshot) -> DiagnosisReport {
         .iter()
         .filter(|m| {
             let msg = m.message.to_ascii_lowercase();
-            msg.contains("out of memory") || msg.contains("oom-killer") || msg.contains("killed process")
+            msg.contains("out of memory")
+                || msg.contains("oom-killer")
+                || msg.contains("killed process")
         })
         .collect();
 
@@ -284,6 +286,10 @@ pub fn run_all_diagnoses(snapshot: &JournalSnapshot) -> Vec<DiagnosisReport> {
         diagnose_network_loss(snapshot),
     ];
     results.retain(|r| r.class != DiagnosisClass::Unknown || !r.evidence.is_empty());
-    results.sort_by(|a, b| b.confidence.partial_cmp(&a.confidence).unwrap_or(std::cmp::Ordering::Equal));
+    results.sort_by(|a, b| {
+        b.confidence
+            .partial_cmp(&a.confidence)
+            .unwrap_or(std::cmp::Ordering::Equal)
+    });
     results
 }

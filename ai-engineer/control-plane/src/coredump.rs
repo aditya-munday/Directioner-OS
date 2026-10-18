@@ -48,7 +48,8 @@ pub fn list_coredumps() -> CoredumpForensicsReport {
     let records: Vec<CoredumpRecord> = parsed
         .iter()
         .map(|v| {
-            let ts = v.get("timestamp")
+            let ts = v
+                .get("timestamp")
                 .or_else(|| v.get("time"))
                 .and_then(|t| t.as_str())
                 .unwrap_or("")
@@ -57,10 +58,23 @@ pub fn list_coredumps() -> CoredumpForensicsReport {
                 pid: v.get("pid").and_then(|p| p.as_u64()).unwrap_or(0),
                 uid: v.get("uid").and_then(|u| u.as_u64()).unwrap_or(0),
                 gid: v.get("gid").and_then(|g| g.as_u64()).unwrap_or(0),
-                signal: v.get("signal").and_then(|s| s.as_str()).map(|s| s.to_string()),
-                exe: v.get("exe").and_then(|e| e.as_str()).unwrap_or("unknown").to_string(),
-                unit: v.get("unit").and_then(|u| u.as_str()).map(|s| s.to_string()),
-                boot_id: v.get("boot_id").and_then(|b| b.as_str()).map(|s| s.to_string()),
+                signal: v
+                    .get("signal")
+                    .and_then(|s| s.as_str())
+                    .map(|s| s.to_string()),
+                exe: v
+                    .get("exe")
+                    .and_then(|e| e.as_str())
+                    .unwrap_or("unknown")
+                    .to_string(),
+                unit: v
+                    .get("unit")
+                    .and_then(|u| u.as_str())
+                    .map(|s| s.to_string()),
+                boot_id: v
+                    .get("boot_id")
+                    .and_then(|b| b.as_str())
+                    .map(|s| s.to_string()),
                 timestamp: ts,
                 backtrace_summary: None,
             }
@@ -114,12 +128,32 @@ pub fn parse_coredump_from_fixture(fixture_json: &str) -> CoredumpForensicsRepor
             pid: v.get("pid").and_then(|p| p.as_u64()).unwrap_or(0),
             uid: v.get("uid").and_then(|u| u.as_u64()).unwrap_or(0),
             gid: v.get("gid").and_then(|g| g.as_u64()).unwrap_or(0),
-            signal: v.get("signal").and_then(|s| s.as_str()).map(|s| s.to_string()),
-            exe: v.get("exe").and_then(|e| e.as_str()).unwrap_or("unknown").to_string(),
-            unit: v.get("unit").and_then(|u| u.as_str()).map(|s| s.to_string()),
-            boot_id: v.get("boot_id").and_then(|b| b.as_str()).map(|s| s.to_string()),
-            timestamp: v.get("timestamp").and_then(|t| t.as_str()).unwrap_or("").to_string(),
-            backtrace_summary: v.get("backtrace_summary").and_then(|b| b.as_str()).map(|s| s.to_string()),
+            signal: v
+                .get("signal")
+                .and_then(|s| s.as_str())
+                .map(|s| s.to_string()),
+            exe: v
+                .get("exe")
+                .and_then(|e| e.as_str())
+                .unwrap_or("unknown")
+                .to_string(),
+            unit: v
+                .get("unit")
+                .and_then(|u| u.as_str())
+                .map(|s| s.to_string()),
+            boot_id: v
+                .get("boot_id")
+                .and_then(|b| b.as_str())
+                .map(|s| s.to_string()),
+            timestamp: v
+                .get("timestamp")
+                .and_then(|t| t.as_str())
+                .unwrap_or("")
+                .to_string(),
+            backtrace_summary: v
+                .get("backtrace_summary")
+                .and_then(|b| b.as_str())
+                .map(|s| s.to_string()),
         })
         .collect();
 
@@ -161,7 +195,8 @@ impl CoredumpForensicsStore {
         }
         let mut file = std::fs::File::create(&self.path)?;
         for r in &records {
-            let line = serde_json::to_string(r).map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidData, e))?;
+            let line = serde_json::to_string(r)
+                .map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidData, e))?;
             use std::io::Write;
             writeln!(file, "{line}")?;
         }

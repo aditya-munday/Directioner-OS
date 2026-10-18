@@ -1,5 +1,5 @@
 use control_plane::network_blackhole::{
-    evaluate_network_signals, NetworkBlackholeClass, NetworkLinkState,
+    NetworkBlackholeClass, NetworkLinkState, evaluate_network_signals,
 };
 
 #[test]

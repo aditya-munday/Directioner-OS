@@ -43,11 +43,7 @@ pub fn score_v2(input: &HealthScoringV2Input) -> HealthScoringV2Report {
     let mut contributions: Vec<(String, i32)> = Vec::new();
     let mut unknown_inputs = input.missing_inputs.clone();
 
-    let subsystem_weights: &[(&str, f64)] = &[
-        ("services", 5.0),
-        ("boot", 3.0),
-        ("packages", 2.0),
-    ];
+    let subsystem_weights: &[(&str, f64)] = &[("services", 5.0), ("boot", 3.0), ("packages", 2.0)];
 
     for (name, weight) in subsystem_weights {
         match input.subsystems.iter().find(|s| s.name == *name) {
@@ -91,7 +87,11 @@ pub fn score_v2(input: &HealthScoringV2Input) -> HealthScoringV2Report {
         }
         let psi_base = 100i32;
         let psi_score = (psi_base + psi_score_contribution).max(0) as u32;
-        let psi_conf = if psi.overall_level == PsiPressureLevel::Unavailable { 0.0 } else { 1.0 };
+        let psi_conf = if psi.overall_level == PsiPressureLevel::Unavailable {
+            0.0
+        } else {
+            1.0
+        };
         if psi_conf == 0.0 {
             unknown_inputs.push("psi_pressure".to_string());
         }
@@ -106,7 +106,8 @@ pub fn score_v2(input: &HealthScoringV2Input) -> HealthScoringV2Report {
         unknown_inputs.push("psi_pressure".to_string());
     }
 
-    let scored_components: Vec<&ScoredComponent> = components.iter().filter(|c| c.confidence > 0.0).collect();
+    let scored_components: Vec<&ScoredComponent> =
+        components.iter().filter(|c| c.confidence > 0.0).collect();
     if scored_components.is_empty() {
         return HealthScoringV2Report {
             evaluated_at,
@@ -121,7 +122,10 @@ pub fn score_v2(input: &HealthScoringV2Input) -> HealthScoringV2Report {
     }
 
     let total_weight: f64 = scored_components.iter().map(|c| c.weight).sum();
-    let weighted_sum: f64 = scored_components.iter().map(|c| c.score as f64 * c.weight).sum();
+    let weighted_sum: f64 = scored_components
+        .iter()
+        .map(|c| c.score as f64 * c.weight)
+        .sum();
     let raw_score = (weighted_sum / total_weight).round() as u32;
     let composite_score = raw_score.min(100);
 

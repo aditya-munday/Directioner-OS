@@ -13,9 +13,9 @@
 pub mod client;
 pub mod cockpit;
 pub mod code_engine;
-pub mod coredump;
 pub mod conversational;
 pub mod conversational_isolation;
+pub mod coredump;
 pub mod diagnosis;
 pub mod draft_validator;
 pub mod federation;

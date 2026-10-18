@@ -1,5 +1,5 @@
 use control_plane::health_model::{HealthStatus, SubsystemHealth};
-use control_plane::health_v2::{score_v2, HealthScoringV2Input};
+use control_plane::health_v2::{HealthScoringV2Input, score_v2};
 use control_plane::psi::{PsiHealthSignal, PsiPressureLevel};
 
 #[test]

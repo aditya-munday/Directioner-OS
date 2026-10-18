@@ -152,7 +152,12 @@ pub fn read_psi_snapshot_from_strings(cpu: &str, memory: &str, io: &str) -> PsiS
     }
 }
 
-fn level_for(some_avg10: Option<f64>, full_avg10: Option<f64>, some_warn: f64, full_crit: f64) -> PsiPressureLevel {
+fn level_for(
+    some_avg10: Option<f64>,
+    full_avg10: Option<f64>,
+    some_warn: f64,
+    full_crit: f64,
+) -> PsiPressureLevel {
     let s = some_avg10.unwrap_or(0.0);
     let f = full_avg10.unwrap_or(0.0);
     if f >= full_crit {
@@ -209,14 +214,19 @@ pub fn evaluate_psi(snapshot: &PsiSnapshot, thresholds: &PsiThresholds) -> PsiHe
         PsiPressureLevel::Unavailable
     };
 
-    let overall_level = [&cpu_level, &memory_level, &io_level]
-        .iter()
-        .fold(PsiPressureLevel::None, |acc, level| match (acc, level) {
-            (PsiPressureLevel::Critical, _) | (_, PsiPressureLevel::Critical) => PsiPressureLevel::Critical,
-            (PsiPressureLevel::Warn, _) | (_, PsiPressureLevel::Warn) => PsiPressureLevel::Warn,
-            (PsiPressureLevel::Unavailable, _) | (_, PsiPressureLevel::Unavailable) => PsiPressureLevel::Unavailable,
-            _ => PsiPressureLevel::None,
-        });
+    let overall_level =
+        [&cpu_level, &memory_level, &io_level]
+            .iter()
+            .fold(PsiPressureLevel::None, |acc, level| match (acc, level) {
+                (PsiPressureLevel::Critical, _) | (_, PsiPressureLevel::Critical) => {
+                    PsiPressureLevel::Critical
+                }
+                (PsiPressureLevel::Warn, _) | (_, PsiPressureLevel::Warn) => PsiPressureLevel::Warn,
+                (PsiPressureLevel::Unavailable, _) | (_, PsiPressureLevel::Unavailable) => {
+                    PsiPressureLevel::Unavailable
+                }
+                _ => PsiPressureLevel::None,
+            });
 
     let score_contribution = match &overall_level {
         PsiPressureLevel::Critical => -30,
@@ -224,9 +234,7 @@ pub fn evaluate_psi(snapshot: &PsiSnapshot, thresholds: &PsiThresholds) -> PsiHe
         PsiPressureLevel::None | PsiPressureLevel::Unavailable => 0,
     };
 
-    let summary = format!(
-        "PSI pressure: cpu={cpu_level:?} mem={memory_level:?} io={io_level:?}"
-    );
+    let summary = format!("PSI pressure: cpu={cpu_level:?} mem={memory_level:?} io={io_level:?}");
 
     PsiHealthSignal {
         cpu_level,

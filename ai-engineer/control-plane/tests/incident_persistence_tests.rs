@@ -46,7 +46,11 @@ fn test_incident_persistence_rotation() {
     }
 
     let records = persistence.load_all().unwrap();
-    assert!(records.len() <= 3, "expected at most 3 records after rotation, got {}", records.len());
+    assert!(
+        records.len() <= 3,
+        "expected at most 3 records after rotation, got {}",
+        records.len()
+    );
 }
 
 #[test]
@@ -89,21 +93,27 @@ fn test_incident_persistence_hash_chain() {
     let persistence = IncidentPersistence::new(tmp.path(), 100);
 
     for i in 0..3 {
-        persistence.append(IncidentRecord {
-            incident_id: format!("chain-{i}"),
-            boot_id: "boot-x".to_string(),
-            timestamp: "2026-10-18T00:00:00Z".to_string(),
-            class: "test".to_string(),
-            summary: format!("entry {i}"),
-            evidence_json: "{}".to_string(),
-            prev_hash: None,
-            entry_hash: None,
-        }).unwrap();
+        persistence
+            .append(IncidentRecord {
+                incident_id: format!("chain-{i}"),
+                boot_id: "boot-x".to_string(),
+                timestamp: "2026-10-18T00:00:00Z".to_string(),
+                class: "test".to_string(),
+                summary: format!("entry {i}"),
+                evidence_json: "{}".to_string(),
+                prev_hash: None,
+                entry_hash: None,
+            })
+            .unwrap();
     }
 
     let records = persistence.load_all().unwrap();
     assert_eq!(records.len(), 3);
-    assert!(records[0].prev_hash.is_none() || records[0].prev_hash.as_deref() == Some("GENESIS") || records[0].entry_hash.is_some());
+    assert!(
+        records[0].prev_hash.is_none()
+            || records[0].prev_hash.as_deref() == Some("GENESIS")
+            || records[0].entry_hash.is_some()
+    );
     assert!(records[1].entry_hash.is_some());
     assert!(records[2].entry_hash.is_some());
     assert_ne!(records[0].entry_hash, records[1].entry_hash);

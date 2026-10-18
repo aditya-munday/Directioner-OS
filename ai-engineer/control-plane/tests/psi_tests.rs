@@ -1,5 +1,5 @@
 use control_plane::psi::{
-    evaluate_psi, read_psi_snapshot_from_strings, PsiPressureLevel, PsiThresholds,
+    PsiPressureLevel, PsiThresholds, evaluate_psi, read_psi_snapshot_from_strings,
 };
 
 #[test]

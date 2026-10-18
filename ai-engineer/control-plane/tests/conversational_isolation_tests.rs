@@ -40,7 +40,10 @@ fn test_drafted_plans_contain_no_execution_flags() {
         "steps": []
     }"#;
     let bad_res = PlanDraftValidator::validate_and_convert(malicious_json);
-    assert!(bad_res.is_err(), "Deny unknown fields should reject execution flags");
+    assert!(
+        bad_res.is_err(),
+        "Deny unknown fields should reject execution flags"
+    );
 }
 
 #[test]

@@ -1,6 +1,6 @@
 use control_plane::soak::{
-    read_pid_open_fds, read_pid_rss_kb, read_pid_threads, read_soak_csv, run_soak,
-    ProcessMetricsSample, SoakConfig,
+    ProcessMetricsSample, SoakConfig, read_pid_open_fds, read_pid_rss_kb, read_pid_threads,
+    read_soak_csv, run_soak,
 };
 use std::process;
 use std::time::Duration;
@@ -33,7 +33,11 @@ fn test_soak_harness_detects_stability() {
     };
 
     let report = run_soak(&config);
-    assert!(report.passed(), "Expected soak run to pass: {}", report.summary);
+    assert!(
+        report.passed(),
+        "Expected soak run to pass: {}",
+        report.summary
+    );
     assert!(!report.samples.is_empty());
 
     let csv = read_soak_csv(&report);
@@ -43,7 +47,7 @@ fn test_soak_harness_detects_stability() {
 #[test]
 fn test_soak_detects_synthetic_leak() {
     // Construct synthetic samples showing RSS runaway
-    let samples = vec![
+    let samples = [
         ProcessMetricsSample {
             elapsed_secs: 0.0,
             rss_kb: Some(1000),

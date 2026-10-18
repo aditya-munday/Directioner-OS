@@ -1,6 +1,6 @@
 use control_plane::diagnosis::{
-    diagnose_boot_loop, diagnose_disk_full, diagnose_failed_unit, diagnose_network_loss,
-    diagnose_oom, run_all_diagnoses, DiagnosisClass, JournalMessage, JournalSnapshot,
+    DiagnosisClass, JournalMessage, JournalSnapshot, diagnose_boot_loop, diagnose_disk_full,
+    diagnose_failed_unit, diagnose_network_loss, diagnose_oom, run_all_diagnoses,
 };
 use std::collections::HashMap;
 
@@ -29,8 +29,12 @@ fn journal_msg_unit(unit: &str, msg: &str) -> JournalMessage {
 #[test]
 fn test_diagnose_failed_unit_detects_failed_state() {
     let mut snapshot = JournalSnapshot::default();
-    snapshot.unit_states.insert("nginx.service".to_string(), "failed".to_string());
-    snapshot.unit_states.insert("sshd.service".to_string(), "running".to_string());
+    snapshot
+        .unit_states
+        .insert("nginx.service".to_string(), "failed".to_string());
+    snapshot
+        .unit_states
+        .insert("sshd.service".to_string(), "running".to_string());
 
     let report = diagnose_failed_unit(&snapshot);
     assert_eq!(report.class, DiagnosisClass::FailedUnit);
@@ -42,7 +46,9 @@ fn test_diagnose_failed_unit_detects_failed_state() {
 #[test]
 fn test_diagnose_failed_unit_clean_system_returns_unknown() {
     let mut snapshot = JournalSnapshot::default();
-    snapshot.unit_states.insert("sshd.service".to_string(), "running".to_string());
+    snapshot
+        .unit_states
+        .insert("sshd.service".to_string(), "running".to_string());
 
     let report = diagnose_failed_unit(&snapshot);
     assert_eq!(report.class, DiagnosisClass::Unknown);
@@ -121,7 +127,9 @@ fn test_diagnose_network_loss_detects_link_down() {
 #[test]
 fn test_run_all_diagnoses_returns_sorted_by_confidence() {
     let mut snapshot = JournalSnapshot::default();
-    snapshot.unit_states.insert("broken.service".to_string(), "failed".to_string());
+    snapshot
+        .unit_states
+        .insert("broken.service".to_string(), "failed".to_string());
     snapshot.disk_usage_percent = Some(99.0);
 
     let reports = run_all_diagnoses(&snapshot);

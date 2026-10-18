@@ -1,5 +1,5 @@
 use control_plane::coredump::{
-    parse_coredump_from_fixture, CoredumpForensicsStore, CoredumpRecord,
+    CoredumpForensicsStore, CoredumpRecord, parse_coredump_from_fixture,
 };
 use tempfile::NamedTempFile;
 

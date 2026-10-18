@@ -20,7 +20,11 @@ impl IncidentRecord {
     pub fn new(class: &str, summary: &str, evidence_json: &str) -> Self {
         let boot_id = read_boot_id();
         let now = Utc::now().to_rfc3339();
-        let incident_id = format!("{}-{}", &boot_id[..8.min(boot_id.len())], Utc::now().timestamp());
+        let incident_id = format!(
+            "{}-{}",
+            &boot_id[..8.min(boot_id.len())],
+            Utc::now().timestamp()
+        );
         Self {
             incident_id,
             boot_id,
@@ -55,10 +59,10 @@ impl IncidentPersistence {
     }
 
     pub fn append(&self, mut record: IncidentRecord) -> std::io::Result<()> {
-        if let Some(parent) = self.path.parent() {
-            if !parent.as_os_str().is_empty() {
-                fs::create_dir_all(parent)?;
-            }
+        if let Some(parent) = self.path.parent()
+            && !parent.as_os_str().is_empty()
+        {
+            fs::create_dir_all(parent)?;
         }
 
         let prev_hash = self.last_hash();
@@ -111,7 +115,10 @@ impl IncidentPersistence {
         Ok(records)
     }
 
-    pub fn load_previous_boot(&self, current_boot_id: &str) -> std::io::Result<Vec<IncidentRecord>> {
+    pub fn load_previous_boot(
+        &self,
+        current_boot_id: &str,
+    ) -> std::io::Result<Vec<IncidentRecord>> {
         Ok(self
             .load_all()?
             .into_iter()

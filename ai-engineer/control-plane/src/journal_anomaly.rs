@@ -33,13 +33,23 @@ pub const ANOMALY_PATTERNS: &[JournalAnomalyPattern] = &[
     },
     JournalAnomalyPattern {
         name: "io-error",
-        keywords: &["i/o error", "input/output error", "blk_update_request", "medium error"],
+        keywords: &[
+            "i/o error",
+            "input/output error",
+            "blk_update_request",
+            "medium error",
+        ],
         class: JournalAnomalyClass::IoError,
         severity: "warning",
     },
     JournalAnomalyPattern {
         name: "auth-flood",
-        keywords: &["authentication failure", "failed password", "invalid user", "did not receive identification"],
+        keywords: &[
+            "authentication failure",
+            "failed password",
+            "invalid user",
+            "did not receive identification",
+        ],
         class: JournalAnomalyClass::AuthFlood,
         severity: "warning",
     },

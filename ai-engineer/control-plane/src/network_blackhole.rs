@@ -1,6 +1,6 @@
 use serde::{Deserialize, Serialize};
-use std::process::Command;
 use std::path::Path;
+use std::process::Command;
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "snake_case")]
@@ -96,7 +96,14 @@ pub fn check_gateway_arp(gateway: &str) -> bool {
 
 pub fn check_dns_reachability(resolver_ip: &str) -> bool {
     let output = Command::new("dig")
-        .args(["+short", "+timeout=2", "+tries=1", "@", resolver_ip, "localhost"])
+        .args([
+            "+short",
+            "+timeout=2",
+            "+tries=1",
+            "@",
+            resolver_ip,
+            "localhost",
+        ])
         .output();
     match output {
         Ok(o) => o.status.success(),
