@@ -1,0 +1,16 @@
+[Unit]
+Description=Directioner OS Cloud Storage Daemon
+After=network.target directioner-accountd.service
+
+[Service]
+Type=simple
+ExecStart=/usr/bin/directioner-cloudd
+Restart=always
+RestartSec=5
+ProtectSystem=strict
+ProtectHome=read-only
+NoNewPrivileges=yes
+PrivateTmp=yes
+
+[Install]
+WantedBy=multi-user.target

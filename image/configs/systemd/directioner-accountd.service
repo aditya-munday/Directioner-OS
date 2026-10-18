@@ -1,0 +1,19 @@
+[Unit]
+Description=Directioner OS Account Daemon
+After=network.target
+
+[Service]
+Type=simple
+ExecStart=/usr/bin/directioner-accountd
+Restart=always
+RestartSec=5
+RuntimeDirectory=directioner
+StateDirectory=directioner/accountd
+ProtectSystem=strict
+ProtectHome=read-only
+NoNewPrivileges=yes
+PrivateTmp=yes
+LimitCORE=0
+
+[Install]
+WantedBy=multi-user.target

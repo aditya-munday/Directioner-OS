@@ -60,13 +60,17 @@ COPY bin/ /usr/bin/
 COPY libexec/ /usr/libexec/
 COPY configs/systemd/ai-capabilityd.service /usr/lib/systemd/system/ai-capabilityd.service
 COPY configs/systemd/ai-killswitch.service /usr/lib/systemd/system/ai-killswitch.service
+COPY configs/systemd/directioner-accountd.service /usr/lib/systemd/system/directioner-accountd.service
+COPY configs/systemd/directioner-cloudd.service /usr/lib/systemd/system/directioner-cloudd.service
+COPY configs/systemd/directioner-intentd.service /usr/lib/systemd/system/directioner-intentd.service
 COPY configs/systemd/serial-getty@ttyS0.service.d/ /usr/lib/systemd/system/serial-getty@ttyS0.service.d/
 COPY configs/ai-engineer/ai-capabilityd.default /etc/default/ai-capabilityd
+COPY configs/platform.toml /etc/directioner/platform.toml
 
-RUN mkdir -p /var/lib/ai-engineer /etc/ai-engineer /var/lib/ai-bin \
-    && chmod 755 /usr/bin/ai-* /usr/libexec/* 2>/dev/null || true \
+RUN mkdir -p /var/lib/ai-engineer /etc/ai-engineer /var/lib/ai-bin /var/lib/directioner/accountd /run/directioner \
+    && chmod 755 /usr/bin/ai-* /usr/bin/dos-* /usr/bin/directioner-* /usr/libexec/* 2>/dev/null || true \
     && for b in /usr/bin/ai-*; do [ -f "$b" ] && ln -sf "$b" "/var/lib/ai-bin/$(basename "$b")"; done || true \
-    && systemctl enable ai-capabilityd.service
+    && systemctl enable ai-capabilityd.service directioner-accountd.service directioner-cloudd.service directioner-intentd.service
 
 # ==================================================================
 # Domain 6: Directioner OS Branding Layer (TODOs 054-070, 083-087)
