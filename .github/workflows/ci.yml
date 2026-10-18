@@ -33,6 +33,17 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
         with:
           components: clippy, rustfmt
+      - name: Cache cargo registry & target
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry/index/
+            ~/.cargo/registry/cache/
+            ~/.cargo/git/db/
+            ai-engineer/target/
+          key: ${{ runner.os }}-cargo-cache-v1-${{ hashFiles('ai-engineer/Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-cargo-cache-v1-
       - name: fmt check
         working-directory: ai-engineer
         run: cargo fmt --all -- --check

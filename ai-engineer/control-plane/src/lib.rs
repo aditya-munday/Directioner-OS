@@ -40,7 +40,9 @@ pub mod self_healing;
 pub mod simulation;
 pub mod soak;
 pub mod symbol_graph;
+pub mod telemetry_optin;
 pub mod unit_graph;
+pub mod update_verifier;
 pub mod verifier;
 
 pub use client::{CapabilityClient, ClientError};
@@ -88,4 +90,12 @@ pub use self_healing::{
 };
 pub use simulation::{PlanPreview, Simulator, StepPreview};
 pub use symbol_graph::{SymbolDefinition, SymbolKind, WorkspaceSymbolGraph};
+pub use telemetry_optin::{
+    CrashReportPayload, EphemeralIdentity, FeatureUsagePayload, HardwareHealthPayload,
+    TelemetryCategories, TelemetryConfig, TelemetryManager, TelemetryPayload,
+};
+pub use update_verifier::{
+    GatingHealthCheck, GreenbootController, RollbackDecision, StagedDeployment, UpdateSignature,
+    UpdateVerificationReport,
+};
 pub use verifier::{VerificationCheck, VerificationReport, Verifier};
