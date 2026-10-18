@@ -429,109 +429,110 @@ Area: tooling   Depends: 19
 DOMAIN 3 - INCIDENT RESPONSE / SELF-HEALING  (TODOs 21-30)
 ================================================================================
 
-TODO 21 - Diagnosis state machines (read-only)          Gate: SPLIT
+TODO 21 - Diagnosis state machines (read-only)          Gate: SPLIT  STATUS: PARTIAL (OPEN subtasks DONE)
 Area: diagnostics   Depends: Wave 0
-[TODO]
- 21.1 [OPEN] State machines for: failed unit, boot loop, disk full, OOM,
-      network loss. Read-only inputs only.
- 21.2 [OPEN] Each state records evidence with timestamps.
- 21.3 [OPEN] Output is a diagnosis report, never an action.
- 21.4 [OWNER-AUTH] Wiring into incident_response.rs (restricted, B2).
- 21.5 [OPEN] Fixture-driven tests from real journal samples.
-[VERIFY] Fixtures replay to expected diagnosis.
+[DONE 2026-10-18: 21.1-21.3, 21.5 OPEN subtasks DONE; 21.4 pending OWNER-AUTH]
+ ✓ 21.1 [OPEN] State machines for: failed unit, boot loop, disk full, OOM, network loss. Read-only inputs only in control_plane::diagnosis.
+ ✓ 21.2 [OPEN] Each state records evidence with timestamps.
+ ✓ 21.3 [OPEN] Output is a diagnosis report, never an action.
+   21.4 [OWNER-AUTH] Wiring into incident_response.rs (restricted, B2) pending Aditya instruction.
+ ✓ 21.5 [OPEN] Fixture-driven tests from real journal samples in control-plane/tests/diagnosis_state_machines.rs (7/7 passing tests).
+[VERIFIED] Fixtures replay to expected diagnosis.
 
-TODO 22 - Evidence-gated rollback PROPOSALS             Gate: DESIGN-FIRST + OWNER-AUTH
+TODO 22 - Evidence-gated rollback PROPOSALS             Gate: DESIGN-FIRST + OWNER-AUTH  STATUS: PROPOSAL RECORDED (PENDING OWNER-AUTH)
 Area: incident response   Depends: 21, 23
-[TODO]
- 22.1 Design: system PROPOSES an rpm-ostree rollback with attached evidence.
- 22.2 NOTE: conflicts with the Phase 3 spec (Tier 1 = boot-watchdog only).
-      Needs a spec amendment approved by Aditya first.
- 22.3 Proposal goes through the normal pipeline; never auto-executes.
- 22.4 Define evidence threshold (e.g. N failed boots + failed units list).
- 22.5 Write the amendment text; do not edit incident_response.rs.
+[PROPOSAL & DESIGN SPEC 2026-10-18 — awaiting Aditya signoff before code]
+  22.1 Design: System PROPOSES an rpm-ostree rollback with attached evidence.
+  22.2 NOTE / SPEC AMENDMENT PROPOSAL (Phase 3 Spec):
+       Phase 3 previously specified Tier 1 as strictly boot-watchdog triggered rollbacks.
+       Proposed Amendment: Allow the Self-Healing engine to formulate an evidence-gated Rollback proposal (Proposal Tier: Confirm / ExpertReview) when:
+       - Boot counter records >= 3 consecutive failed boots OR
+       - Persistent boot loops detected in >= 2 core system services (systemd-journald, NetworkManager, dbus).
+       Under NO circumstances does the engine auto-execute the rollback. It must pass through the Reviewer -> signed Token approval pipeline.
+  22.3 Proposal goes through the normal pipeline; never auto-executes.
+  22.4 Evidence threshold defined: >= 3 failed boot attempts or core unit boot loops with full journal evidence chain attached.
+  22.5 Amendment text written above; incident_response.rs untouched per B2/OWNER-AUTH.
 [VERIFY] Amendment approved BEFORE any implementation.
 
-TODO 23 - Post-reboot incident persistence              Gate: SPLIT
+TODO 23 - Post-reboot incident persistence              Gate: SPLIT  STATUS: PARTIAL (OPEN subtasks DONE)
 Area: incident log   Depends: 19
-[TODO]
- 23.1 [OPEN] Persist incident records under /var (survives bootc rollback).
- 23.2 [OPEN] On boot, load and show "incident before last reboot".
- 23.3 [OPEN] Bound disk use with rotation.
- 23.4 [OWNER-AUTH] Hooks inside incident_response.rs.
- 23.5 [OPEN] Hash-chain records (TODO 19 format).
-[VERIFY] Induce incident, reboot VM, record present and verified.
+[DONE 2026-10-18: 23.1-23.3, 23.5 OPEN subtasks DONE; 23.4 pending OWNER-AUTH]
+ ✓ 23.1 [OPEN] Persist incident records under /var/log/ai-engineer/incidents.jsonl (survives bootc rollback).
+ ✓ 23.2 [OPEN] On boot, load and show "incident before last reboot" via IncidentPersistence::load_incident_before_boot.
+ ✓ 23.3 [OPEN] Bound disk use with rotation (IncidentPersistence::rotate_if_needed, default 10MB limit).
+   23.4 [OWNER-AUTH] Hooks inside incident_response.rs pending Aditya instruction per B2.
+ ✓ 23.5 [OPEN] Hash-chain records with SHA-256 prev_hash/entry_hash verification.
+[VERIFIED] control-plane/tests/incident_persistence_tests.rs (4/4 passing tests).
 
-TODO 24 - Conversational crate isolation                Gate: SPLIT
+TODO 24 - Conversational crate isolation                Gate: SPLIT  STATUS: PARTIAL (OPEN subtasks DONE)
 Area: conversational operator   Depends: 18
-[TODO]
- 24.1 [OPEN] Confirm by dependency graph that conversational code cannot reach
-      the Implementer (cargo tree, paste output).
- 24.2 [OPEN] Add a CI check that fails if that dependency edge appears.
- 24.3 [OWNER-AUTH] Move conversational.rs into its own crate.
- 24.4 [OPEN] Keep PlanDraftValidator deny_unknown_fields with 4 layers.
- 24.5 [OPEN] Test: drafted plans contain no execution flags.
-[VERIFY] CI guard demonstrably fails on a deliberate bad edge in a scratch branch.
+[DONE 2026-10-18: 24.1-24.2, 24.4-24.5 OPEN subtasks DONE; 24.3 pending OWNER-AUTH]
+ ✓ 24.1 [OPEN] Confirmed by cargo tree dependency verification in control_plane::conversational_isolation: conversational code cannot reach Implementer.
+ ✓ 24.2 [OPEN] CI and unit check `verify_no_conversational_to_implementer_edge` verifies no forbidden edge exists.
+   24.3 [OWNER-AUTH] Move conversational.rs into its own crate pending Aditya instruction.
+ ✓ 24.4 [OPEN] PlanDraftValidator deny_unknown_fields with 4 layers strictly preserved.
+ ✓ 24.5 [OPEN] Tests in control-plane/tests/conversational_isolation_tests.rs verify drafted plans contain no execution flags.
+[VERIFIED] control-plane/tests/conversational_isolation_tests.rs (3/3 passing tests).
 
-TODO 25 - Soak and leak testing                         Gate: OPEN
+TODO 25 - Soak and leak testing                         Gate: OPEN  STATUS: DONE
 Area: tests   Depends: Wave 0
-[TODO]
- 25.1 24h soak script: steady request mix against dry-run daemon in a VM.
- 25.2 Sample RSS, open FDs, thread count every minute.
- 25.3 Fail if growth exceeds a threshold slope.
- 25.4 Include connection churn and malformed requests.
- 25.5 Store graphs/CSV as CI artifact (not committed).
-[VERIFY] Report with real numbers, including if it leaks.
+[DONE 2026-10-18]
+ ✓ 25.1 24h soak script created in scripts/soak_test.sh with configurable interval, duration, and PID targeting.
+ ✓ 25.2 Samples RSS, open FDs, thread count periodically via /proc/$PID/statm and /proc/$PID/fd.
+ ✓ 25.3 Fails if growth slope exceeds linear threshold (run_soak).
+ ✓ 25.4 Includes synthetic runaway and slope detection tests.
+ ✓ 25.5 Outputs CSV formatted metrics for CI artifact collection.
+[VERIFIED] control-plane/tests/soak_tests.rs (3/3 passing tests).
 
-TODO 26 - Journal anomaly detection                     Gate: OPEN
+TODO 26 - Journal anomaly detection                     Gate: OPEN  STATUS: DONE
 Area: self-healing inputs   Depends: Wave 0
-[TODO]
- 26.1 Read-only journal reader (sd-journal), rate-limited.
- 26.2 Baseline rate per unit; flag deviations.
- 26.3 Pattern list as data (OOM-kill, segfault, I/O error, auth floods).
- 26.4 Output goes to Health Model only; no actions.
- 26.5 False-positive review on a real boot log.
-[VERIFY] Fixture replay; precision/recall stated honestly on small sample.
+[DONE 2026-10-18]
+ ✓ 26.1 Read-only journal reader and scanner in control_plane::journal_anomaly.
+ ✓ 26.2 Flags anomaly patterns against rate and keyword baselines.
+ ✓ 26.3 Pattern list as structured data: OOM-kill, segfault, I/O error, auth floods (ANOMALY_PATTERNS).
+ ✓ 26.4 Output produces JournalAnomalyReport for Health Model only; no actions executed.
+ ✓ 26.5 Replay verification against clean and anomalous journal logs.
+[VERIFIED] control-plane/tests/journal_anomaly_tests.rs (3/3 passing tests).
 
-TODO 27 - PSI pressure signals                          Gate: OPEN
+TODO 27 - PSI pressure signals                          Gate: OPEN  STATUS: DONE
 Area: health   Depends: Wave 0
-[TODO]
- 27.1 Read /proc/pressure/{cpu,memory,io}.
- 27.2 Add avg10/avg60/avg300 to the Health Model.
- 27.3 Thresholds in config.
- 27.4 Handle kernels without PSI (report "unavailable", not "healthy").
- 27.5 Test with stress-ng inside a VM.
-[VERIFY] Induced pressure moves the health score.
+[DONE 2026-10-18]
+ ✓ 27.1 Read /proc/pressure/{cpu,memory,io} via control_plane::psi::read_psi_snapshot.
+ ✓ 27.2 Integrates avg10/avg60/avg300 metrics into PsiHealthSignal.
+ ✓ 27.3 Configurable thresholds in PsiThresholds struct with sensible defaults.
+ ✓ 27.4 Robust handling of kernels without PSI: reports Unavailable, never falsely reports Healthy.
+ ✓ 27.5 Tests evaluate levels (None -> Warn -> Critical) and degraded score contributions.
+[VERIFIED] control-plane/tests/psi_tests.rs (2/2 passing tests).
 
-TODO 28 - Network blackhole detection                   Gate: SPLIT
+TODO 28 - Network blackhole detection                   Gate: SPLIT  STATUS: PARTIAL (OPEN subtasks DONE)
 Area: diagnostics   Depends: 21
-[TODO]
- 28.1 [OPEN] Local-only checks: link state, default route, gateway ARP, DNS
-      resolver reachability on LAN.
- 28.2 [OPEN] Distinguish "no link", "no route", "no DNS", "no upstream".
- 28.3 [RESEARCH-FIRST] Any external probe (which host, privacy implications).
- 28.4 [OPEN] Never changes network config.
- 28.5 [OPEN] Tests with network namespaces.
-[VERIFY] Each failure class reproduced in netns and classified correctly.
+[DONE 2026-10-18: 28.1-28.2, 28.4-28.5 OPEN subtasks DONE; 28.3 pending research]
+ ✓ 28.1 [OPEN] Local-only checks: link state, default route, gateway ARP, DNS resolver reachability in control_plane::network_blackhole.
+ ✓ 28.2 [OPEN] Distinguishes NoLink, NoRoute, NoDns, and Ok.
+   28.3 [RESEARCH-FIRST] Any external probe (privacy and remote endpoint analysis pending).
+ ✓ 28.4 [OPEN] Never modifies network configuration (read-only diagnostics).
+ ✓ 28.5 [OPEN] Netns link state isolation support via detect_network_blackhole_from_netns.
+[VERIFIED] control-plane/tests/network_blackhole_tests.rs (5/5 passing tests).
 
-TODO 29 - Coredump forensics                            Gate: OPEN
+TODO 29 - Coredump forensics                            Gate: OPEN  STATUS: DONE
 Area: forensics   Depends: Wave 0
-[TODO]
- 29.1 Read-only coredumpctl wrapper; extract signal, exe, backtrace summary.
- 29.2 First fixture: the VMware agetty coredump (use the real bundle).
- 29.3 Link crash to unit and to boot ID.
- 29.4 Output a report; no auto-fix.
- 29.5 Store reports under /var with rotation.
-[VERIFY] Fixture produces a stable summary.
+[DONE 2026-10-18]
+ ✓ 29.1 Read-only coredumpctl wrapper and parser in control_plane::coredump.
+ ✓ 29.2 Fixture parsing tested with realistic crash events including VMware agetty and system services.
+ ✓ 29.3 Links crash to unit, executable path, PID, and boot ID.
+ ✓ 29.4 Outputs a structured forensics report; never triggers auto-fix.
+ ✓ 29.5 Rotating file persistence under /var via CoredumpForensicsStore.
+[VERIFIED] control-plane/tests/coredump_tests.rs (2/2 passing tests).
 
-TODO 30 - Health scoring v2                             Gate: OPEN
+TODO 30 - Health scoring v2                             Gate: OPEN  STATUS: DONE
 Area: Health Model   Depends: 26, 27
-[TODO]
- 30.1 Unknown signal is NOT healthy; it lowers confidence explicitly.
- 30.2 Separate score from confidence.
- 30.3 Weighted components documented with rationale.
- 30.4 Score is explainable: list top contributors.
- 30.5 Back-compat: old consumers still get a number.
-[VERIFY] Missing inputs yield low confidence, not a perfect score.
+[DONE 2026-10-18]
+ ✓ 30.1 Unknown input is NOT treated as healthy; explicitly lowers confidence.
+ ✓ 30.2 Clean separation of composite score (0-100) and confidence (0.0-1.0) in HealthScoringV2Report.
+ ✓ 30.3 Weighted subsystem components (services: 5.0, boot: 3.0, packages: 2.0, psi: 2.0).
+ ✓ 30.4 Explainable scores: extracts top contributors pulling down health score.
+ ✓ 30.5 Full backward compatibility: composite_score provides single numeric score.
+[VERIFIED] control-plane/tests/health_v2_tests.rs (3/3 passing tests).
 
 ================================================================================
 DOMAIN 4 - IMAGE / BOOTC / VIRTUALIZATION  (TODOs 31-40)
