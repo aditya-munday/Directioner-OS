@@ -27,18 +27,14 @@ pub struct IntentRequest {
     pub kind: IntentKind,
     pub slots: HashMap<String, String>,
     pub confidence: f32,
-    pub execution_authorized: bool,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub enum IntentResult {
     DraftPreview {
         action_summary: String,
         target_subsystem: String,
         dry_run_output: String,
-    },
-    Executed {
-        result_message: String,
     },
     Rejected {
         reason: String,
@@ -75,64 +71,137 @@ impl IntentBroker {
         }
 
         let impact = self.classify_impact(&req.kind);
-        if impact == ImpactRating::PrivilegedMutation && !req.execution_authorized {
-            return IntentResult::DraftPreview {
-                action_summary: format!("Draft execution for: {}", req.raw_utterance),
-                target_subsystem: req
-                    .slots
-                    .get("target")
-                    .cloned()
-                    .unwrap_or_else(|| "system".to_string()),
-                dry_run_output:
-                    "Preview only: Rule B1 prohibits conversational execution without explicit owner authorization"
-                        .to_string(),
-            };
-        }
+        let target = req
+            .slots
+            .get("target")
+            .cloned()
+            .unwrap_or_else(|| "system".to_string());
 
-        match req.kind {
+        let summary = match &req.kind {
             IntentKind::LaunchApplication => {
                 let app = req.slots.get("app_name").cloned().unwrap_or_default();
-                IntentResult::Executed {
-                    result_message: format!("Launching {}", app),
-                }
+                format!("Would launch application: {}", app)
             }
-            IntentKind::QuerySystemStatus => IntentResult::Executed {
-                result_message: "System status: all healthy".to_string(),
-            },
+            IntentKind::QuerySystemStatus => "Would query system status".to_string(),
             IntentKind::SetSystemSetting => {
                 let key = req.slots.get("key").cloned().unwrap_or_default();
                 let val = req.slots.get("val").cloned().unwrap_or_default();
-                IntentResult::Executed {
-                    result_message: format!("Set {} to {}", key, val),
-                }
+                format!("Would set {} to {}", key, val)
             }
             IntentKind::ScheduleAlarm => {
                 let time = req.slots.get("time").cloned().unwrap_or_default();
-                IntentResult::Executed {
-                    result_message: format!("Alarm scheduled for {}", time),
-                }
+                format!("Would schedule alarm for {}", time)
             }
-            IntentKind::ExecuteAction => IntentResult::Executed {
-                result_message: format!("Executed authorized action: {}", req.raw_utterance),
-            },
+            IntentKind::ExecuteAction => {
+                format!("Would execute: {}", req.raw_utterance)
+            }
             IntentKind::DiagnoseIncident => {
-                let target = req.slots.get("target").cloned().unwrap_or_default();
-                IntentResult::Executed {
-                    result_message: format!("Diagnosis completed for: {}", target),
-                }
+                format!("Would diagnose: {}", target)
             }
             IntentKind::MediaPlayback => {
                 let action = req.slots.get("action").cloned().unwrap_or_default();
-                IntentResult::Executed {
-                    result_message: format!("Media playback: {}", action),
-                }
+                format!("Would perform media playback: {}", action)
             }
             IntentKind::NetworkSwitch => {
                 let profile = req.slots.get("profile").cloned().unwrap_or_default();
-                IntentResult::Executed {
-                    result_message: format!("Network switched to: {}", profile),
-                }
+                format!("Would switch network to: {}", profile)
             }
+        };
+
+        let dry_run_note = match impact {
+            ImpactRating::PrivilegedMutation => {
+                "Rule B1: privileged mutation requires explicit owner authorization before execution"
+                    .to_string()
+            }
+            ImpactRating::SystemConfig => {
+                "Conversational input produces draft only; system config changes require confirmation".to_string()
+            }
+            ImpactRating::UserScope => {
+                "Conversational input produces draft only; confirm to proceed".to_string()
+            }
+            ImpactRating::Readonly => {
+                "Conversational input produces draft only; read-only query pending confirmation"
+                    .to_string()
+            }
+        };
+
+        IntentResult::DraftPreview {
+            action_summary: summary,
+            target_subsystem: target,
+            dry_run_output: dry_run_note,
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn make_req(kind: IntentKind, confidence: f32) -> IntentRequest {
+        IntentRequest {
+            raw_utterance: "test utterance".to_string(),
+            kind,
+            slots: HashMap::new(),
+            confidence,
+        }
+    }
+
+    #[test]
+    fn no_conversational_input_produces_executed_result() {
+        let broker = IntentBroker::new(0.5);
+        let all_kinds = vec![
+            IntentKind::LaunchApplication,
+            IntentKind::SetSystemSetting,
+            IntentKind::QuerySystemStatus,
+            IntentKind::ScheduleAlarm,
+            IntentKind::ExecuteAction,
+            IntentKind::DiagnoseIncident,
+            IntentKind::MediaPlayback,
+            IntentKind::NetworkSwitch,
+        ];
+
+        for kind in all_kinds {
+            let result = broker.dispatch(make_req(kind, 0.99));
+            match result {
+                IntentResult::DraftPreview { .. } | IntentResult::Rejected { .. } => {}
+            }
+        }
+    }
+
+    #[test]
+    fn low_confidence_is_rejected() {
+        let broker = IntentBroker::new(0.7);
+        let result = broker.dispatch(make_req(IntentKind::QuerySystemStatus, 0.3));
+        assert_eq!(
+            result,
+            IntentResult::Rejected {
+                reason: "confidence_too_low".to_string()
+            }
+        );
+    }
+
+    #[test]
+    fn high_confidence_produces_draft_not_executed() {
+        let broker = IntentBroker::new(0.5);
+        let result = broker.dispatch(make_req(IntentKind::QuerySystemStatus, 0.99));
+        assert!(
+            matches!(result, IntentResult::DraftPreview { .. }),
+            "expected DraftPreview, got {:?}",
+            result
+        );
+    }
+
+    #[test]
+    fn privileged_mutation_draft_mentions_rule_b1() {
+        let broker = IntentBroker::new(0.5);
+        let result = broker.dispatch(make_req(IntentKind::ExecuteAction, 0.99));
+        if let IntentResult::DraftPreview { dry_run_output, .. } = result {
+            assert!(
+                dry_run_output.contains("Rule B1"),
+                "expected Rule B1 mention in dry_run_output"
+            );
+        } else {
+            panic!("expected DraftPreview");
         }
     }
 }
