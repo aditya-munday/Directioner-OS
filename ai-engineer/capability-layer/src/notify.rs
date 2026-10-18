@@ -1,8 +1,8 @@
 use std::env;
 use std::ffi::OsStr;
 use std::os::unix::net::UnixDatagram;
-use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::thread;
 use std::time::Duration;
 

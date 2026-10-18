@@ -24,7 +24,8 @@ impl TokenBucket {
         let elapsed = now.duration_since(self.last_update).as_secs_f64();
         self.last_update = now;
 
-        self.current_tokens = (self.current_tokens + elapsed * self.refill_rate_per_sec).min(self.capacity);
+        self.current_tokens =
+            (self.current_tokens + elapsed * self.refill_rate_per_sec).min(self.capacity);
 
         if self.current_tokens >= tokens {
             self.current_tokens -= tokens;
@@ -123,7 +124,10 @@ impl ProtectionEngine {
     pub fn check_rate_limit(&mut self, uid: u32) -> bool {
         let cap = self.default_capacity;
         let refill = self.default_refill_rate;
-        let bucket = self.rate_limiters.entry(uid).or_insert_with(|| TokenBucket::new(cap, refill));
+        let bucket = self
+            .rate_limiters
+            .entry(uid)
+            .or_insert_with(|| TokenBucket::new(cap, refill));
         bucket.try_consume(1.0)
     }
 
@@ -141,7 +145,10 @@ impl ProtectionEngine {
 
         let thresh = self.default_failure_threshold;
         let cool = self.default_cool_down;
-        let breaker = self.capability_breakers.entry(capability.to_string()).or_insert_with(|| CircuitBreaker::new(thresh, cool));
+        let breaker = self
+            .capability_breakers
+            .entry(capability.to_string())
+            .or_insert_with(|| CircuitBreaker::new(thresh, cool));
 
         if breaker.allow_request() {
             Ok(())
@@ -157,7 +164,10 @@ impl ProtectionEngine {
 
         let thresh = self.default_failure_threshold;
         let cool = self.default_cool_down;
-        let breaker = self.capability_breakers.entry(capability.to_string()).or_insert_with(|| CircuitBreaker::new(thresh, cool));
+        let breaker = self
+            .capability_breakers
+            .entry(capability.to_string())
+            .or_insert_with(|| CircuitBreaker::new(thresh, cool));
 
         if success {
             breaker.record_success();

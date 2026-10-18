@@ -269,7 +269,10 @@ pub fn verify_entries(entries: &[AuditEntry]) -> VerifyReport {
                 count_verified,
                 count_unchained,
                 broken_index: Some(entry.seq),
-                error_message: Some(format!("sequence gap: expected seq {}, found {}", idx, entry.seq)),
+                error_message: Some(format!(
+                    "sequence gap: expected seq {}, found {}",
+                    idx, entry.seq
+                )),
             };
         }
         match &entry.entry_hash {
@@ -328,10 +331,10 @@ fn scan_last_hash(path: &Path) -> std::io::Result<Option<String>> {
         if line.is_empty() {
             continue;
         }
-        if let Ok(entry) = serde_json::from_str::<AuditEntry>(line) {
-            if entry.entry_hash.is_some() {
-                last = entry.entry_hash;
-            }
+        if let Ok(entry) = serde_json::from_str::<AuditEntry>(line)
+            && entry.entry_hash.is_some()
+        {
+            last = entry.entry_hash;
         }
     }
     Ok(last)

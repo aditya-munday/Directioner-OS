@@ -70,10 +70,10 @@ pub fn read_bounded_output<R: Read>(mut reader: R, limit: usize) -> (Vec<u8>, bo
     }
 
     let mut check_extra = [0u8; 1];
-    if let Ok(n) = reader.read(&mut check_extra) {
-        if n > 0 {
-            truncated = true;
-        }
+    if let Ok(n) = reader.read(&mut check_extra)
+        && n > 0
+    {
+        truncated = true;
     }
 
     if truncated {
@@ -98,7 +98,7 @@ pub fn scrub_secrets(input: &str) -> (String, bool) {
                 } else {
                     output.replace_range(pos.., pat.redaction);
                 }
-            } else if let Some(newline_or_space) = output[pos..].find(|c| c == '\n' || c == ' ' || c == '&') {
+            } else if let Some(newline_or_space) = output[pos..].find(['\n', ' ', '&']) {
                 let total_end = pos + newline_or_space;
                 output.replace_range(pos..total_end, pat.redaction);
             } else {

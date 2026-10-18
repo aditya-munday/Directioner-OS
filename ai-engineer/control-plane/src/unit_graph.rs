@@ -7,7 +7,7 @@
 use std::collections::{HashMap, HashSet, VecDeque};
 
 /// Describes the dependency relationship between two systemd units.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub struct UnitDependencies {
     /// Units that this unit strongly requires (Requires=).
     pub requires: Vec<String>,
@@ -19,18 +19,6 @@ pub struct UnitDependencies {
     pub after: Vec<String>,
     /// Units that order before this unit (Before=).
     pub before: Vec<String>,
-}
-
-impl Default for UnitDependencies {
-    fn default() -> Self {
-        Self {
-            requires: Vec::new(),
-            required_by: Vec::new(),
-            wants: Vec::new(),
-            after: Vec::new(),
-            before: Vec::new(),
-        }
-    }
 }
 
 /// Represents an impact on a protected unit if a candidate unit is stopped.

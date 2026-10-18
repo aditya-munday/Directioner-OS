@@ -1,5 +1,5 @@
 use rustix::fd::OwnedFd;
-use rustix::fs::{openat, openat2, Mode, OFlags, ResolveFlags};
+use rustix::fs::{Mode, OFlags, ResolveFlags, openat, openat2};
 use std::fs::File;
 use std::io;
 use std::path::{Component, Path, PathBuf};
@@ -21,12 +21,7 @@ impl ScopedPath {
         &self.root
     }
 
-    pub fn open_scoped(
-        &self,
-        subpath: &str,
-        oflags: OFlags,
-        mode: Mode,
-    ) -> io::Result<OwnedFd> {
+    pub fn open_scoped(&self, subpath: &str, oflags: OFlags, mode: Mode) -> io::Result<OwnedFd> {
         let clean_relative = Self::safe_display(subpath);
         let root_file = File::open(&self.root)?;
 
@@ -36,8 +31,7 @@ impl ScopedPath {
             Err(rustix::io::Errno::NOSYS) => {
                 let resolved = self.resolve(subpath)?;
                 let flags_with_nofollow = oflags | OFlags::NOFOLLOW;
-                openat(&root_file, &resolved, flags_with_nofollow, mode)
-                    .map_err(io::Error::from)
+                openat(&root_file, &resolved, flags_with_nofollow, mode).map_err(io::Error::from)
             }
             Err(e) => Err(io::Error::from(e)),
         }
@@ -64,13 +58,13 @@ impl ScopedPath {
             self.root.join(raw)
         };
 
-        if let Ok(meta) = candidate.symlink_metadata() {
-            if meta.file_type().is_symlink() {
-                return Err(io::Error::new(
-                    io::ErrorKind::PermissionDenied,
-                    format!("symlink resolution prohibited in scope: {raw}"),
-                ));
-            }
+        if let Ok(meta) = candidate.symlink_metadata()
+            && meta.file_type().is_symlink()
+        {
+            return Err(io::Error::new(
+                io::ErrorKind::PermissionDenied,
+                format!("symlink resolution prohibited in scope: {raw}"),
+            ));
         }
 
         let abs = match std::fs::canonicalize(&candidate) {

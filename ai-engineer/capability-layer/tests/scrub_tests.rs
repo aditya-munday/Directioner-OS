@@ -1,5 +1,5 @@
 use capability_layer::scrub::{
-    read_bounded_output, scrub_secrets, MAX_OUTPUT_BYTES, TRUNCATION_MARKER,
+    MAX_OUTPUT_BYTES, TRUNCATION_MARKER, read_bounded_output, scrub_secrets,
 };
 use std::io::Cursor;
 

@@ -35,6 +35,8 @@ impl LifecyclePlan<Reviewed> {
     }
 }
 
+#[allow(clippy::assertions_on_constants)]
 const _: () = assert!(20 <= 40);
+#[allow(clippy::assertions_on_constants)]
 const _: () = assert!(40 <= 80);
 const _: () = assert!(std::mem::size_of::<usize>() >= 4);

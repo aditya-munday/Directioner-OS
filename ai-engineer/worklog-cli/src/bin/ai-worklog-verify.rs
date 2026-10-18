@@ -59,7 +59,10 @@ fn main() {
                 })
             );
         } else {
-            println!("Work log does not exist ({}), treating as empty valid log.", log_path.display());
+            println!(
+                "Work log does not exist ({}), treating as empty valid log.",
+                log_path.display()
+            );
         }
         exit(0);
     }
