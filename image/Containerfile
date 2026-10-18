@@ -57,13 +57,14 @@ RUN chmod 755 /etc/greenboot/check/required.d/01_directioner_milestone.sh \
 # Phase 0: Native AI Engineer Control Plane Binaries & Systemd Units
 # ------------------------------------------------------------------
 COPY bin/ /usr/bin/
+COPY libexec/ /usr/libexec/
 COPY configs/systemd/ai-capabilityd.service /usr/lib/systemd/system/ai-capabilityd.service
 COPY configs/systemd/ai-killswitch.service /usr/lib/systemd/system/ai-killswitch.service
 COPY configs/systemd/serial-getty@ttyS0.service.d/ /usr/lib/systemd/system/serial-getty@ttyS0.service.d/
 COPY configs/ai-engineer/ai-capabilityd.default /etc/default/ai-capabilityd
 
 RUN mkdir -p /var/lib/ai-engineer /etc/ai-engineer /var/lib/ai-bin \
-    && chmod 755 /usr/bin/ai-* 2>/dev/null || true \
+    && chmod 755 /usr/bin/ai-* /usr/libexec/* 2>/dev/null || true \
     && for b in /usr/bin/ai-*; do [ -f "$b" ] && ln -sf "$b" "/var/lib/ai-bin/$(basename "$b")"; done || true \
     && systemctl enable ai-capabilityd.service
 
@@ -77,7 +78,7 @@ RUN dnf install -y neovim tmux htop \
     && dnf clean all
 
 # Configure test environment with ci user and passwordless sudo
-RUN useradd -m -G wheel -s /bin/bash ci \
+RUN (id -u ci >/dev/null 2>&1 || useradd -m -G wheel -s /bin/bash ci) \
     && echo '%wheel ALL=(ALL) NOPASSWD: ALL' > /etc/sudoers.d/wheel \
     && chmod 0440 /etc/sudoers.d/wheel \
     && mkdir -p /home/ci/.ssh \
