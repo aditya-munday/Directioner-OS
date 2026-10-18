@@ -1,19 +1,37 @@
 use world_model::hypervisor::{
-    detect_hypervisor_pure, parse_detect_virt_output, parse_dmi_strings, parse_hostnamectl_output,
-    HypervisorPlatform,
+    HypervisorPlatform, detect_hypervisor_pure, parse_detect_virt_output, parse_dmi_strings,
+    parse_hostnamectl_output,
 };
 
 #[test]
 fn test_parse_detect_virt_all_platforms() {
     assert_eq!(parse_detect_virt_output("kvm"), HypervisorPlatform::Kvm);
     assert_eq!(parse_detect_virt_output("qemu"), HypervisorPlatform::Qemu);
-    assert_eq!(parse_detect_virt_output("vmware"), HypervisorPlatform::Vmware);
-    assert_eq!(parse_detect_virt_output("microsoft"), HypervisorPlatform::Hyperv);
-    assert_eq!(parse_detect_virt_output("hyper-v"), HypervisorPlatform::Hyperv);
-    assert_eq!(parse_detect_virt_output("oracle"), HypervisorPlatform::Virtualbox);
-    assert_eq!(parse_detect_virt_output("virtualbox"), HypervisorPlatform::Virtualbox);
+    assert_eq!(
+        parse_detect_virt_output("vmware"),
+        HypervisorPlatform::Vmware
+    );
+    assert_eq!(
+        parse_detect_virt_output("microsoft"),
+        HypervisorPlatform::Hyperv
+    );
+    assert_eq!(
+        parse_detect_virt_output("hyper-v"),
+        HypervisorPlatform::Hyperv
+    );
+    assert_eq!(
+        parse_detect_virt_output("oracle"),
+        HypervisorPlatform::Virtualbox
+    );
+    assert_eq!(
+        parse_detect_virt_output("virtualbox"),
+        HypervisorPlatform::Virtualbox
+    );
     assert_eq!(parse_detect_virt_output("none"), HypervisorPlatform::None);
-    assert_eq!(parse_detect_virt_output("xen_unknown"), HypervisorPlatform::Unknown);
+    assert_eq!(
+        parse_detect_virt_output("xen_unknown"),
+        HypervisorPlatform::Unknown
+    );
     assert_eq!(parse_detect_virt_output(""), HypervisorPlatform::Unknown);
 }
 
@@ -23,7 +41,9 @@ fn test_qemu_fixture_detection() {
         Some("qemu"),
         Some("QEMU"),
         Some("Standard PC (Q35 + ICH9, 2009)"),
-        Some("flags: fpu vme de pse tsc msr pae mce cx8 apic sep mtrr pge mca cmov pat pse36 clflush mmx fxsr sse sse2 ss syscall nx pdpe1gb rdtscp lm constant_tsc rep_good nopl xtopology cpuid tsc_known_freq pni pclmulqdq ssse3 fma cx16 pcid sse4_1 sse4_2 x2apic movbe popcnt tsc_deadline_timer aes xsave avx f16c rdrand hypervisor lahf_lm abm 3dnowprefetch cpuid_fault invpcid_single pti fsgsbase tsc_adjust bmi1 avx2 smep bmi2 erms invpcid rdseed adx smap clflushopt xsaveopt xsavec xgetbv1 xsaves arat md_clear"),
+        Some(
+            "flags: fpu vme de pse tsc msr pae mce cx8 apic sep mtrr pge mca cmov pat pse36 clflush mmx fxsr sse sse2 ss syscall nx pdpe1gb rdtscp lm constant_tsc rep_good nopl xtopology cpuid tsc_known_freq pni pclmulqdq ssse3 fma cx16 pcid sse4_1 sse4_2 x2apic movbe popcnt tsc_deadline_timer aes xsave avx f16c rdrand hypervisor lahf_lm abm 3dnowprefetch cpuid_fault invpcid_single pti fsgsbase tsc_adjust bmi1 avx2 smep bmi2 erms invpcid rdseed adx smap clflushopt xsaveopt xsavec xgetbv1 xsaves arat md_clear",
+        ),
     );
 
     assert_eq!(report.platform, HypervisorPlatform::Qemu);

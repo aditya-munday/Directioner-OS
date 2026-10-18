@@ -111,10 +111,10 @@ pub fn parse_cpuinfo_hypervisor_flag(cpuinfo: &str) -> bool {
 pub fn parse_hostnamectl_output(out: &str) -> HypervisorPlatform {
     for line in out.lines() {
         let trimmed = line.trim();
-        if trimmed.starts_with("Virtualization:") {
-            if let Some(val) = trimmed.split(':').nth(1) {
-                return parse_detect_virt_output(val);
-            }
+        if trimmed.starts_with("Virtualization:")
+            && let Some(val) = trimmed.split(':').nth(1)
+        {
+            return parse_detect_virt_output(val);
         }
     }
 
@@ -123,14 +123,14 @@ pub fn parse_hostnamectl_output(out: &str) -> HypervisorPlatform {
     let mut model = String::new();
     for line in out.lines() {
         let trimmed = line.trim();
-        if trimmed.starts_with("Hardware Vendor:") {
-            if let Some(v) = trimmed.split(':').nth(1) {
-                vendor = v.to_string();
-            }
-        } else if trimmed.starts_with("Hardware Model:") {
-            if let Some(m) = trimmed.split(':').nth(1) {
-                model = m.to_string();
-            }
+        if trimmed.starts_with("Hardware Vendor:")
+            && let Some(v) = trimmed.split(':').nth(1)
+        {
+            vendor = v.to_string();
+        } else if trimmed.starts_with("Hardware Model:")
+            && let Some(m) = trimmed.split(':').nth(1)
+        {
+            model = m.to_string();
         }
     }
 
@@ -162,15 +162,15 @@ pub fn detect_hypervisor_pure(
     }
 
     // 2. Check DMI vendor / product strings
-    if let (Some(v), Some(p)) = (dmi_vendor, dmi_product) {
-        if let Some(platform) = parse_dmi_strings(v, p) {
-            return HypervisorDetectionReport {
-                platform,
-                primary_source: "dmi_sysfs".to_string(),
-                details: format!("vendor='{v}', product='{p}'"),
-                is_virtualized: true,
-            };
-        }
+    if let (Some(v), Some(p)) = (dmi_vendor, dmi_product)
+        && let Some(platform) = parse_dmi_strings(v, p)
+    {
+        return HypervisorDetectionReport {
+            platform,
+            primary_source: "dmi_sysfs".to_string(),
+            details: format!("vendor='{v}', product='{p}'"),
+            is_virtualized: true,
+        };
     }
 
     // 3. Check CPUID hypervisor flag

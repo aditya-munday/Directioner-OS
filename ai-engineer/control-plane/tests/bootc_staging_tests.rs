@@ -42,7 +42,10 @@ fn test_bootc_verify_staging_detects_staged_deployment() {
         .output()
         .expect("Failed to execute verification script");
 
-    assert!(output.status.success(), "Staged deployment must pass verification");
+    assert!(
+        output.status.success(),
+        "Staged deployment must pass verification"
+    );
     let stdout = String::from_utf8_lossy(&output.stdout);
     assert!(stdout.contains("Verified: Staged deployment exists in status"));
     assert!(stdout.contains("3 failed attempts before automatic grub2/greenboot rollback"));
@@ -79,7 +82,10 @@ fn test_bootc_verify_staging_fails_when_no_staged_deployment() {
         .output()
         .expect("Failed to execute verification script");
 
-    assert!(!output.status.success(), "Missing staged deployment must exit non-zero");
+    assert!(
+        !output.status.success(),
+        "Missing staged deployment must exit non-zero"
+    );
     let stderr = String::from_utf8_lossy(&output.stderr);
     assert!(stderr.contains("No staged deployment found"));
 }

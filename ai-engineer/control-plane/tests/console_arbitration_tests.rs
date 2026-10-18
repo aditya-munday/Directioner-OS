@@ -11,7 +11,11 @@ fn test_serial_probe_rejects_non_existent_device() {
         .unwrap()
         .join("scripts/directioner-serial-probe.sh");
 
-    assert!(script.exists(), "Probe script must exist at {}", script.display());
+    assert!(
+        script.exists(),
+        "Probe script must exist at {}",
+        script.display()
+    );
 
     let status = Command::new(&script)
         .arg("/dev/non_existent_tty_device_999")
