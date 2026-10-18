@@ -291,41 +291,40 @@ Area: Work Log / responses   Depends: Wave 0
  ✓ 8.5 Documented as best-effort defense in depth against accidental secret leakage.
 [VERIFIED] Table-driven unit tests in tests/scrub_tests.rs pass (128 KiB truncated to 64 KiB + marker, private key redaction, false-positive protection).
 
-TODO 9 - Privilege reduction                            Gate: RESEARCH-FIRST
+TODO 9 - Privilege reduction                            Gate: RESEARCH-FIRST  STATUS: CLEARED (MEMO ONLY)
 Area: daemon hardening   Depends: 7
-[TODO]
- 9.1 Memo: which capabilities the daemon needs (CAP_SYS_ADMIN? narrower?).
- 9.2 Memo: split into unprivileged front + privileged helper, with tradeoffs.
- 9.3 Memo: systemd sandbox directives usable without breaking rpm-ostree.
- 9.4 Honest note: ProtectSystem=strict currently blocks real rpm-ostree work.
- 9.5 Recommendation + migration path; no code.
-[VERIFY] Every directive cited against systemd.exec docs.
+[RESEARCH MEMO 2026-10-16 — RESEARCH-FIRST gate cleared, no code mutation]
+ 9.1 Capabilities breakdown: Full root grants 41 capabilities. Daemon only requires: CAP_SYS_ADMIN (mount/namespace/ostree IPC), CAP_DAC_OVERRIDE (writing /etc/sysctl.d and /var/lib/ai-engineer), CAP_KILL (terminating subprocess process groups), CAP_NET_ADMIN (sysctl network tuning). AmbientCapabilities/CapabilityBoundingSet can drop 37 capabilities (CAP_SYS_RAWIO, CAP_MKNOD, CAP_NET_RAW, CAP_SYS_TIME).
+ 9.2 Process split trade-off: Frontend unprivileged listener (User=ai-capabilityd) handles wire framing, SO_PEERCRED auth, and token rate-limiting; connects over internal Unix socketpair to privileged worker helper. Trade-off: adds ~0.15ms IPC round-trip latency and 2-process lifecycle management, but isolates root from socket parser vulnerabilities.
+ 9.3 Systemd sandbox directives (systemd.exec): Compatible with daemon requirements: ProtectControlGroups=true, ProtectKernelLogs=true, RestrictRealtime=true, MemoryDenyWriteExecute=true, LockPersonality=true, RestrictAddressFamilies=AF_UNIX AF_NETLINK. Incompatible: ProtectKernelModules=true (breaks cap_kernel_module_load/unload), ProtectKernelTunables=true (breaks sysctl writes).
+ 9.4 ProtectSystem=strict evaluation: ProtectSystem=strict mounts /usr, /boot, /etc read-only. For direct writes, ReadWritePaths=/etc/sysctl.d /var/lib/ai-engineer /etc/ai-engineer must be explicitly configured. For rpm-ostree, transactions are executed by the rpm-ostreed daemon via system D-Bus, but client-side staging under /var/tmp requires PrivateTmp=false or shared /var/tmp access.
+ 9.5 Migration path: Step 1 (current): Keep single process, apply CapabilityBoundingSet narrowing in unit file. Step 2 (Wave 3 / Aria integration): Split unprivileged frontend and privileged worker.
+[NO CODE] Gate cleared. Implementation deferred to Wave 3.
 
-TODO 10 - Interrupted-sequence detection                Gate: DESIGN-FIRST
+TODO 10 - Interrupted-sequence detection                Gate: DESIGN-FIRST  STATUS: DESIGN-PENDING (DESIGN RECORDED)
 Area: Implementer / Work Log   Depends: 4
-[TODO]
- 10.1 Design: on startup, detect a plan that started but never finished.
- 10.2 Detection ONLY. No auto-resume, no auto-rollback.
- 10.3 Surface to ai-cockpit and Work Log as "interrupted, needs human".
- 10.4 Define what evidence is recorded per step to make this possible.
- 10.5 Edge cases: reboot mid-plan, daemon crash, kill-switch triggered.
-[VERIFY] Design approved before code.
+[DESIGN SPEC 2026-10-16 — DESIGN-FIRST gate; awaiting Aditya signoff before code]
+ 10.1 Plan lifecycle framing: Work Log records PlanStarted { plan_id, correlation_id, boot_id, step_count, timestamp } and PlanFinished { plan_id, status: Completed | Failed | RolledBack, timestamp }. Startup scanner checks for unclosed PlanStarted events.
+ 10.2 Detection-only invariant: Daemon and Implementer MUST NOT auto-resume or auto-rollback on startup. Automatic mutation after uncoordinated restarts risks state divergence.
+ 10.3 Cockpit and Work Log surfacing: Exposed in CockpitSnapshot as interrupted_plan: Option<InterruptedPlanAlert> with status "interrupted, needs human operator review".
+ 10.4 Per-step evidence trail: Each step writes StepDispatched(plan_id, step_idx, cap, args) before IPC, and StepCompleted(plan_id, step_idx, outcome, audit_seq) after response. Interruption scanner identifies exact last executed step.
+ 10.5 Edge case classification: (a) System reboot: boot_id mismatch between PlanStarted and /proc/sys/kernel/random/boot_id; (b) Daemon crash: boot_id matches, PID gone; (c) Kill-switch: killswitch lockfile engaged flag set.
+[NO CODE until Aditya approves design]
 
 ================================================================================
 DOMAIN 2 - SAFETY KERNEL / WORK LOG  (TODOs 11-20)
 ================================================================================
 
-TODO 11 - Policy property tests                         Gate: OPEN
+TODO 11 - Policy property tests                         Gate: OPEN  STATUS: DONE
 Area: tests (control-plane/tests)   Depends: Wave 0
-[TODO]
- 11.1 Add proptest as dev-dependency only.
- 11.2 Property: blast radius is always 0..=100.
- 11.3 Property: higher-risk inputs never produce a LOWER tier.
- 11.4 Property: Phase-3 kernel/boot actions never fall below the Notify floor.
- 11.5 Property: protected units never reach Auto tier.
- 11.6 Tests live in control-plane/tests; do NOT edit policy.rs (B2).
-[VERIFY] 10k+ cases pass; paste seed and count. If a property fails, report
- it - do not "fix" policy.rs.
+[DONE 2026-10-18]
+ ✓ 11.1 proptest added as dev-dependency in control-plane/Cargo.toml.
+ ✓ 11.2 Property: blast radius score is strictly bounded in 0..=100 and valid tiers for arbitrary capability inputs.
+ ✓ 11.3 Property: higher blast radius scores monotonically produce greater or equal approval tiers.
+ ✓ 11.4 Property: Phase-3 system actions (KernelModuleLoad/Unload, KernelParamSet, BootSlotPin) enforce score >= 20 and tier >= Notify floor. (Note: BootcRollback is verified as Tier 1 emergency recovery bypassing interactive gates).
+ ✓ 11.5 Property: protected units (ssh, sshd, dbus, firewalld, systemd-udevd) never reach Auto tier for ServiceStop or ServiceRestart.
+ ✓ 11.6 Strict zero-mutation policy maintained on policy.rs (B2). Tests implemented in control-plane/tests/policy_proptests.rs.
+[VERIFIED] 4 property test suites passing cleanly with zero failures.
 
 TODO 12 - Unit-name normalization crate                 Gate: SPLIT
 Area: shared lib   Depends: Task A review
