@@ -11,7 +11,11 @@ target/
 # Image build output
 image/output/
 image/*.qcow2
-image/bin/ai-*
+image/bin/
+image/scripts/
+image/design/
+image/packaging/
+image/brand.toml
 packaging/rpmbuild/
 
 # Editor / OS

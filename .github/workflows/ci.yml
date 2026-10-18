@@ -68,12 +68,16 @@ jobs:
       - name: build release binaries
         working-directory: ai-engineer
         run: cargo build --release --workspace
-      - name: Stage release binaries into image/bin
+      - name: Stage release binaries and brand assets into image/
         run: |
-          mkdir -p image/bin image/libexec
-          cp ai-engineer/target/release/ai-* image/bin/
+          mkdir -p image/bin image/libexec image/scripts image/design image/packaging
+          cp ai-engineer/target/release/ai-* ai-engineer/target/release/directioner-* ai-engineer/target/release/dos-* image/bin/ 2>/dev/null || true
           cp scripts/directioner-serial-probe.sh image/libexec/directioner-serial-probe
           chmod +x image/libexec/directioner-serial-probe
+          cp -r scripts/* image/scripts/
+          cp brand.toml image/brand.toml
+          cp -r design/* image/design/
+          cp -r packaging/* image/packaging/
       - name: Install dependencies (podman, qemu)
         run: |
           sudo apt-get update

@@ -86,8 +86,8 @@ COPY scripts/rebrand_grub.sh          /usr/libexec/directioner/rebrand_grub.sh
 COPY brand.toml                        /etc/directioner/brand.toml
 COPY design/tokens.json                /etc/directioner/tokens.json
 
-# Install fastfetch for branded system info display
-RUN dnf install -y fastfetch \
+# Install fastfetch for branded system info display (if available)
+RUN (dnf install -y fastfetch || true) \
     && dnf clean all
 
 # Apply os-release: Directioner OS identity (TODO 054)
@@ -133,6 +133,7 @@ ISSUE
 RUN echo "Directioner OS 42.0.0 (Genesis) — The AI-Native Operating System" > /etc/issue.net
 
 RUN cat > /etc/motd << 'MOTD'
+Hello from the AI-Native OS build
 Welcome to Directioner OS 42.0.0 (Genesis)
 The AI-Native Operating System
 
