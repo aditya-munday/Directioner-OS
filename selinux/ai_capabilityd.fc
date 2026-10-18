@@ -1,0 +1,5 @@
+/usr/bin/ai-capabilityd           -- gen_context(system_u:object_r:ai_capabilityd_exec_t,s0)
+/run/ai-capabilityd(/.*)?            gen_context(system_u:object_r:ai_capabilityd_socket_t,s0)
+/etc/ai-engineer(/.*)?               gen_context(system_u:object_r:ai_capabilityd_etc_t,s0)
+/var/lib/ai-engineer(/.*)?           gen_context(system_u:object_r:ai_capabilityd_var_lib_t,s0)
+/var/log/ai-engineer(/.*)?           gen_context(system_u:object_r:ai_capabilityd_var_lib_t,s0)

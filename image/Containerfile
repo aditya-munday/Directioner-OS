@@ -1,25 +1,41 @@
-# Directioner-OS — Phase 0.1 bootable custom image
+# Directioner-OS — Hardened bootc image specification (Phase 4.1 / TODO 31)
 #
-# Pipeline: Containerfile (in) → bootc container → bootc-image-builder → qcow2 (out)
-# Rule: configuration & layering on top of Fedora — never modify Fedora source.
-# Base: Fedora 42 bootc (ostree image). See guide §1.
+# Multi-target design:
+#   - base: Common foundation, pinned by digest, minimal packages, zero credentials.
+#   - test: Development & CI testing target (ci user, local ssh key, passwordless sudo, dev tooling).
+#   - release: Default production target. Absolutely NO ci user, NO public keys, NO passwordless sudo,
+#              NO --exec flags, NO test sockets.
+#
+# Base image pinning:
+# Base image is pinned by sha256 digest to prevent supply-chain drift across builds.
+# To bump base digest:
+#   podman pull quay.io/fedora/fedora-bootc:42
+#   podman inspect --format '{{.Digest}}' quay.io/fedora/fedora-bootc:42
+# Update the digest below accordingly.
 
-FROM quay.io/fedora/fedora-bootc:42
+# Pinned Fedora 42 bootc base
+FROM quay.io/fedora/fedora-bootc:42@sha256:d8b28489cbe339bc060773e7381ff010189b09214713c713be213b1856aaebf8 AS base
 
 # ------------------------------------------------------------------
-# Sanity-check layer: prove the pipeline works (guide §1.2).
-# A fresh VM must boot with every package + config we add present.
+# 31.5 Package minimization:
+# Only essential runtime dependencies are installed in base.
+# Excluded from base/release:
+#   - neovim / vim: interactive editor, not needed for headless machine operation.
+#   - tmux: terminal multiplexer, not needed on headless server nodes.
+#   - htop: interactive process monitor, replaced by world-model and ai-health telemetry.
+# Retained essentials:
+#   - openssl: cryptographic operations and token HMAC validation.
+#   - openssh-server: remote administrative access (configured via first-boot / cloud-init).
+#   - greenboot / greenboot-grub2: health check framework for bootc rollback.
 # ------------------------------------------------------------------
-RUN dnf install -y neovim tmux htop openssl openssh-server greenboot greenboot-grub2 \
+RUN dnf install -y openssl openssh-server greenboot greenboot-grub2 \
     && dnf clean all
 
 # Mask systemd-ssh-generator (avoids AF_VSOCK crash under virtualized QEMU environments)
 RUN mkdir -p /etc/systemd/system-generators \
     && ln -sf /dev/null /etc/systemd/system-generators/systemd-ssh-generator
 
-RUN echo 'Hello from the AI-Native OS build' > /etc/motd \
-    && echo '%wheel ALL=(ALL) NOPASSWD: ALL' > /etc/sudoers.d/wheel \
-    && chmod 0440 /etc/sudoers.d/wheel \
+RUN echo 'Hello from Directioner-OS Hardened Base' > /etc/motd \
     && systemctl enable sshd
 
 # ------------------------------------------------------------------
@@ -50,3 +66,38 @@ RUN mkdir -p /var/lib/ai-engineer /etc/ai-engineer /var/lib/ai-bin \
     && chmod 755 /usr/bin/ai-* 2>/dev/null || true \
     && for b in /usr/bin/ai-*; do [ -f "$b" ] && ln -sf "$b" "/var/lib/ai-bin/$(basename "$b")"; done || true \
     && systemctl enable ai-capabilityd.service
+
+# ==================================================================
+# Target: test (development, local VM, CI runners)
+# ==================================================================
+FROM base AS test
+
+# Install developer debug and terminal packages
+RUN dnf install -y neovim tmux htop \
+    && dnf clean all
+
+# Configure test environment with ci user and passwordless sudo
+RUN useradd -m -G wheel -s /bin/bash ci \
+    && echo '%wheel ALL=(ALL) NOPASSWD: ALL' > /etc/sudoers.d/wheel \
+    && chmod 0440 /etc/sudoers.d/wheel \
+    && mkdir -p /home/ci/.ssh \
+    && chmod 0700 /home/ci/.ssh \
+    && chown -R ci:ci /home/ci/.ssh
+
+# Mark build target identifier
+RUN echo "directioner-test-build" > /etc/directioner-build-target
+
+# ==================================================================
+# Target: release (hardened production image - default final stage)
+# ==================================================================
+FROM base AS release
+
+# Ensure absolutely NO wheel passwordless sudo exists
+RUN rm -f /etc/sudoers.d/wheel \
+    && rm -rf /root/.ssh /home/ci /var/run/test-*.sock \
+    && echo "directioner-release-build" > /etc/directioner-build-target
+
+# Invariant verification: Fail the build immediately if release contains forbidden artifacts
+RUN if id -u ci >/dev/null 2>&1; then echo "FATAL: ci user present in release image!" >&2; exit 1; fi \
+    && if [ -f /etc/sudoers.d/wheel ]; then echo "FATAL: passwordless sudo file present in release!" >&2; exit 1; fi \
+    && if [ -f /root/.ssh/authorized_keys ]; then echo "FATAL: authorized_keys found in release /root/.ssh!" >&2; exit 1; fi
