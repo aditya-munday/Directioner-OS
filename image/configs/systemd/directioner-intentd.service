@@ -1,0 +1,16 @@
+[Unit]
+Description=Directioner OS Aria Intent Broker
+After=network.target
+
+[Service]
+Type=simple
+ExecStart=/usr/bin/directioner-intentd
+Restart=always
+RestartSec=5
+ProtectSystem=strict
+ProtectHome=read-only
+NoNewPrivileges=yes
+PrivateTmp=yes
+
+[Install]
+WantedBy=multi-user.target

@@ -10,27 +10,40 @@
 //! 5. [`verifier::Verifier`] independently confirms that post-execution system state
 //!    matches intent.
 
+pub mod brand_identity;
 pub mod client;
 pub mod cockpit;
 pub mod code_engine;
 pub mod conversational;
+pub mod conversational_isolation;
+pub mod coredump;
+pub mod diagnosis;
 pub mod draft_validator;
 pub mod federation;
 pub mod health_model;
+pub mod health_v2;
 pub mod hwcheck;
 pub mod implementer;
+pub mod incident_persistence;
 pub mod incident_response;
+pub mod invariants;
+pub mod journal_anomaly;
 pub mod localization;
+pub mod network_blackhole;
 pub mod plan;
 pub mod planner;
 pub mod plugin;
 pub mod policy;
+pub mod psi;
 pub mod remediation;
 pub mod reviewer;
 pub mod self_healing;
 pub mod simulation;
+pub mod soak;
 pub mod symbol_graph;
+pub mod telemetry_optin;
 pub mod unit_graph;
+pub mod update_verifier;
 pub mod verifier;
 
 pub use client::{CapabilityClient, ClientError};
@@ -78,4 +91,12 @@ pub use self_healing::{
 };
 pub use simulation::{PlanPreview, Simulator, StepPreview};
 pub use symbol_graph::{SymbolDefinition, SymbolKind, WorkspaceSymbolGraph};
+pub use telemetry_optin::{
+    CrashReportPayload, EphemeralIdentity, FeatureUsagePayload, HardwareHealthPayload,
+    TelemetryCategories, TelemetryConfig, TelemetryManager, TelemetryPayload,
+};
+pub use update_verifier::{
+    GatingHealthCheck, GreenbootController, RollbackDecision, StagedDeployment, UpdateSignature,
+    UpdateVerificationReport,
+};
 pub use verifier::{VerificationCheck, VerificationReport, Verifier};

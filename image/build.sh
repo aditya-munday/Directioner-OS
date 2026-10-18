@@ -39,21 +39,30 @@ if [[ "$CLEAN" == "true" ]]; then
     rm -rf output bin
 fi
 
-# Stage AI Engineer control plane release binaries into bin/
-mkdir -p bin
+# Stage AI Engineer control plane release binaries and brand assets into image context
+mkdir -p bin libexec scripts design packaging
 if [[ "$CLEAN" == "true" ]] || [[ ! -f "../ai-engineer/target/release/ai-capabilityd" ]]; then
     echo "==> Building AI Engineer release workspace..."
     (cd ../ai-engineer && cargo build --release --workspace)
 fi
 echo "==> Staging release binaries into image/bin/..."
-for b in ai-worldmodel ai-benchmark ai-capabilityd ai-worklog ai-killswitch ai-engineer ai-health ai-cockpit ai-hwcheck; do
+for b in ai-worldmodel ai-benchmark ai-capabilityd ai-worklog ai-killswitch ai-engineer ai-health ai-cockpit ai-hwcheck directioner-accountd directioner-cloudd directioner-intentd dos-account; do
     if [[ -f "../ai-engineer/target/release/$b" ]]; then
         cp "../ai-engineer/target/release/$b" bin/
     fi
 done
+if [[ -f "../scripts/directioner-serial-probe.sh" ]]; then
+    cp "../scripts/directioner-serial-probe.sh" libexec/directioner-serial-probe
+    chmod +x libexec/directioner-serial-probe
+fi
+cp -r ../scripts/* scripts/ 2>/dev/null || true
+cp ../brand.toml brand.toml 2>/dev/null || true
+cp -r ../design/* design/ 2>/dev/null || true
+cp -r ../packaging/* packaging/ 2>/dev/null || true
 
-echo "==> building $IMAGE_TAG"
-"$ENGINE" build -t "$IMAGE_TAG" -f Containerfile .
+TARGET="${AI_OS_TARGET:-test}"
+echo "==> building $IMAGE_TAG (target: $TARGET)"
+"$ENGINE" build --target "$TARGET" -t "$IMAGE_TAG" -f Containerfile .
 
 if [[ "$QCW2_FLAG" != "true" ]]; then
     echo "==> done. Use '--qcow2' to also emit a bootable disk image."

@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE policyconfig PUBLIC "-//freedesktop//DTD PolicyKit Policy Configuration 1.0//EN"
+"http://www.freedesktop.org/standards/PolicyKit/1.0/policyconfig.dtd">
+<policyconfig>
+  <vendor>Directioner OS Project</vendor>
+  <vendor_url>https://github.com/aditya-munday/Directioner-OS</vendor_url>
+
+  <action id="org.directioneros.account.manage">
+    <description>Manage Directioner Account and Tokens</description>
+    <message>Authentication is required to modify account credentials or entitlements</message>
+    <defaults>
+      <allow_any>auth_admin</allow_any>
+      <allow_inactive>auth_admin</allow_inactive>
+      <allow_active>auth_self_keep</allow_active>
+    </defaults>
+  </action>
+</policyconfig>

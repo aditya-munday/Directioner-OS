@@ -1,0 +1,16 @@
+[directioner]
+name=Directioner OS $releasever - $basearch
+baseurl=https://repo.directioner.internal/$releasever/$basearch/
+enabled=1
+gpgcheck=1
+gpgkey=file:///etc/pki/rpm-gpg/RPM-GPG-KEY-directioner
+skip_if_unavailable=True
+metadata_expire=6h
+priority=10
+
+[directioner-source]
+name=Directioner OS $releasever - Source
+baseurl=https://repo.directioner.internal/$releasever/source/
+enabled=0
+gpgcheck=1
+gpgkey=file:///etc/pki/rpm-gpg/RPM-GPG-KEY-directioner

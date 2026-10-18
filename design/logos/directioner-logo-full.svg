@@ -1,0 +1,12 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 520 128" width="520" height="128">
+  <defs>
+    <linearGradient id="gradFull" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#00d2ff"/>
+      <stop offset="100%" stop-color="#3a7bd5"/>
+    </linearGradient>
+  </defs>
+  <rect x="8" y="8" width="112" height="112" rx="24" fill="#0a0e17"/>
+  <polygon points="64,24 104,96 24,96" fill="none" stroke="url(#gradFull)" stroke-width="8" stroke-linejoin="round"/>
+  <polygon points="64,48 84,84 44,84" fill="url(#gradFull)"/>
+  <text x="144" y="78" font-family="Inter, system-ui, sans-serif" font-size="44" font-weight="800" fill="#f0f4fc" letter-spacing="2">DIRECTIONER <tspan fill="#00d2ff">OS</tspan></text>
+</svg>

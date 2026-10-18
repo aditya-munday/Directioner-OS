@@ -1,0 +1,6 @@
+base_url = "https://auth.directioner.internal"
+region = "global"
+channel = "stable"
+require_https = true
+poll_interval_secs = 5
+clock_skew_tolerance_secs = 60

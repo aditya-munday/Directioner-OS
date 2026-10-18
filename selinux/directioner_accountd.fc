@@ -1,0 +1,5 @@
+/usr/bin/directioner-accountd          -- gen_context(system_u:object_r:directioner_accountd_exec_t,s0)
+/usr/bin/dos-account                  -- gen_context(system_u:object_r:directioner_accountd_cli_t,s0)
+/run/directioner/accountd\.sock         gen_context(system_u:object_r:directioner_accountd_socket_t,s0)
+/etc/directioner/accountd\.toml        gen_context(system_u:object_r:directioner_accountd_etc_t,s0)
+/var/lib/directioner/account(/.*)?       gen_context(system_u:object_r:directioner_accountd_var_lib_t,s0)

@@ -127,7 +127,8 @@ impl Handler {
 
         let mut stdout_handle = child.stdout.take().map(|out| {
             std::thread::spawn(move || {
-                let (raw, _) = crate::scrub::read_bounded_output(out, crate::scrub::MAX_OUTPUT_BYTES);
+                let (raw, _) =
+                    crate::scrub::read_bounded_output(out, crate::scrub::MAX_OUTPUT_BYTES);
                 if let Ok(text) = std::str::from_utf8(&raw) {
                     let (scrubbed, _) = crate::scrub::scrub_secrets(text);
                     scrubbed.into_bytes()
@@ -138,7 +139,8 @@ impl Handler {
         });
         let mut stderr_handle = child.stderr.take().map(|err| {
             std::thread::spawn(move || {
-                let (raw, _) = crate::scrub::read_bounded_output(err, crate::scrub::MAX_OUTPUT_BYTES);
+                let (raw, _) =
+                    crate::scrub::read_bounded_output(err, crate::scrub::MAX_OUTPUT_BYTES);
                 if let Ok(text) = std::str::from_utf8(&raw) {
                     let (scrubbed, _) = crate::scrub::scrub_secrets(text);
                     scrubbed.into_bytes()
@@ -1164,6 +1166,8 @@ impl Handler {
             is_rollback: req.is_rollback,
             outcome,
             duration_ms: started.elapsed().as_millis() as u64,
+            prev_hash: None,
+            entry_hash: None,
         };
         self.audit
             .append(entry)

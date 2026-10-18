@@ -1,0 +1,14 @@
+{
+  "name": "Directioner Light",
+  "background": "#f8fafc",
+  "surface": "#ffffff",
+  "surface_highlight": "#f1f5f9",
+  "border": "#e2e8f0",
+  "foreground": "#0f172a",
+  "muted": "#64748b",
+  "accent": "#0284c7",
+  "accent_hover": "#0369a1",
+  "success": "#10b981",
+  "warning": "#f59e0b",
+  "error": "#ef4444"
+}

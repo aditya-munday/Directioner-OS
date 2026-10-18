@@ -12,8 +12,9 @@ name: Directioner-OS CI
 
 on:
   push:
-    branches: [main]
+    branches: [main, "plan/**"]
   pull_request:
+    branches: [main]
   workflow_dispatch:
     inputs:
       skip-vm-smoke:
@@ -33,6 +34,17 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
         with:
           components: clippy, rustfmt
+      - name: Cache cargo registry & target
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry/index/
+            ~/.cargo/registry/cache/
+            ~/.cargo/git/db/
+            ai-engineer/target/
+          key: ${{ runner.os }}-cargo-cache-v1-${{ hashFiles('ai-engineer/Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-cargo-cache-v1-
       - name: fmt check
         working-directory: ai-engineer
         run: cargo fmt --all -- --check
@@ -56,10 +68,16 @@ jobs:
       - name: build release binaries
         working-directory: ai-engineer
         run: cargo build --release --workspace
-      - name: Stage release binaries into image/bin
+      - name: Stage release binaries and brand assets into image/
         run: |
-          mkdir -p image/bin
-          cp ai-engineer/target/release/ai-* image/bin/
+          mkdir -p image/bin image/libexec image/scripts image/design image/packaging
+          cp ai-engineer/target/release/ai-* ai-engineer/target/release/directioner-* ai-engineer/target/release/dos-* image/bin/ 2>/dev/null || true
+          cp scripts/directioner-serial-probe.sh image/libexec/directioner-serial-probe
+          chmod +x image/libexec/directioner-serial-probe
+          cp -r scripts/* image/scripts/
+          cp brand.toml image/brand.toml
+          cp -r design/* image/design/
+          cp -r packaging/* image/packaging/
       - name: Install dependencies (podman, qemu)
         run: |
           sudo apt-get update
@@ -69,7 +87,7 @@ jobs:
         run: |
           for attempt in 1 2 3; do
             echo "==> Podman build attempt $attempt of 3..."
-            if sudo podman build --retry 3 --retry-delay 5s -t "${{ env.IMAGE_TAG }}" -f Containerfile .; then
+            if sudo podman build --retry 3 --retry-delay 5s --target test -t "${{ env.IMAGE_TAG }}" -f Containerfile .; then
               break
             fi
             if [ "$attempt" -eq 3 ]; then

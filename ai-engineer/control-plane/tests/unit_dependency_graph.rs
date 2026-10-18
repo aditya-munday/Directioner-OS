@@ -1,4 +1,4 @@
-use control_plane::unit_graph::{UnitDependencyGraph, UnitDependencies};
+use control_plane::unit_graph::{UnitDependencies, UnitDependencyGraph};
 
 const PROTECTED_UNITS: &[&str] = &[
     "ssh",
@@ -20,7 +20,10 @@ Before=shutdown.target
 "#;
 
     let deps = UnitDependencyGraph::parse_systemctl_show(mock_show);
-    assert_eq!(deps.requires, vec!["basic.target", "systemd-journald.socket"]);
+    assert_eq!(
+        deps.requires,
+        vec!["basic.target", "systemd-journald.socket"]
+    );
     assert_eq!(deps.required_by, vec!["multi-user.target"]);
     assert_eq!(deps.wants, vec!["systemd-logind"]);
     assert_eq!(deps.after, vec!["systemd-journald.socket", "basic.target"]);
@@ -84,7 +87,11 @@ fn test_transitive_protected_unit_impact() {
         impacts[0].dependency_chain,
         vec!["mock-storage", "mock-auth-helper", "sshd"]
     );
-    assert!(impacts[0].reason.contains("transitively stops protected unit 'sshd'"));
+    assert!(
+        impacts[0]
+            .reason
+            .contains("transitively stops protected unit 'sshd'")
+    );
 }
 
 #[test]

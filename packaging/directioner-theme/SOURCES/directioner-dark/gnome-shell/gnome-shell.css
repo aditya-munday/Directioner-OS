@@ -1,0 +1,35 @@
+#panel {
+    background-color: rgba(10, 14, 23, 0.85);
+    font-weight: 500;
+    height: 32px;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.panel-button {
+    color: #f0f4fc;
+    padding: 0 12px;
+}
+
+.panel-button:hover {
+    color: #00d2ff;
+    background-color: rgba(255, 255, 255, 0.05);
+}
+
+.popup-menu {
+    background-color: #121824;
+    border: 1px solid #1e293b;
+    border-radius: 12px;
+    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.6);
+}
+
+.popup-menu-item:active {
+    background-color: #00d2ff;
+    color: #0a0e17;
+}
+
+.search-entry {
+    background-color: #1a2233;
+    border: 1px solid #1e293b;
+    border-radius: 8px;
+    color: #f0f4fc;
+}

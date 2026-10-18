@@ -11,7 +11,11 @@ target/
 # Image build output
 image/output/
 image/*.qcow2
-image/bin/ai-*
+image/bin/
+image/scripts/
+image/design/
+image/packaging/
+image/brand.toml
 packaging/rpmbuild/
 
 # Editor / OS
@@ -29,6 +33,6 @@ __pycache__/
 # Local investigation & prompt artifacts
 vmware-forensics/
 yourprompt.txt
-.freebuff/
+
 
 # NOTE: Cargo.lock is committed for this application workspace (reproducible builds).

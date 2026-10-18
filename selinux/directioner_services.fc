@@ -1,0 +1,6 @@
+/usr/bin/directioner-cloudd            -- gen_context(system_u:object_r:directioner_cloudd_exec_t,s0)
+/usr/bin/directioner-intentd           -- gen_context(system_u:object_r:directioner_intentd_exec_t,s0)
+/run/directioner/cloudd\.sock           gen_context(system_u:object_r:directioner_cloudd_socket_t,s0)
+/run/directioner/intentd\.sock          gen_context(system_u:object_r:directioner_intentd_socket_t,s0)
+/var/lib/directioner/cloud(/.*)?        gen_context(system_u:object_r:directioner_cloudd_var_lib_t,s0)
+/var/lib/directioner/intent(/.*)?       gen_context(system_u:object_r:directioner_intentd_var_lib_t,s0)

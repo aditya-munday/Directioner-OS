@@ -1,0 +1,40 @@
+policy_module(directioner_services, 1.0.0)
+
+type directioner_cloudd_t;
+type directioner_cloudd_exec_t;
+init_daemon_domain(directioner_cloudd_t, directioner_cloudd_exec_t)
+
+type directioner_cloudd_socket_t;
+files_type(directioner_cloudd_socket_t)
+
+type directioner_cloudd_var_lib_t;
+files_type(directioner_cloudd_var_lib_t)
+
+type directioner_intentd_t;
+type directioner_intentd_exec_t;
+init_daemon_domain(directioner_intentd_t, directioner_intentd_exec_t)
+
+type directioner_intentd_socket_t;
+files_type(directioner_intentd_socket_t)
+
+type directioner_intentd_var_lib_t;
+files_type(directioner_intentd_var_lib_t)
+
+allow directioner_cloudd_t self:process { fork signal setrlimit };
+allow directioner_cloudd_t self:unix_stream_socket { create_stream_socket_perms connectto };
+allow directioner_cloudd_t directioner_cloudd_socket_t:dir { create_dir_perms rw_dir_perms };
+allow directioner_cloudd_t directioner_cloudd_socket_t:sock_file { create_file_perms rw_file_perms unlink };
+allow directioner_cloudd_t directioner_cloudd_var_lib_t:dir { create_dir_perms rw_dir_perms };
+allow directioner_cloudd_t directioner_cloudd_var_lib_t:file { create_file_perms rw_file_perms };
+
+sysnet_dns_name_resolve(directioner_cloudd_t)
+corenet_tcp_connect_http_port(directioner_cloudd_t)
+
+allow directioner_intentd_t self:process { fork signal setrlimit };
+allow directioner_intentd_t self:unix_stream_socket { create_stream_socket_perms connectto };
+allow directioner_intentd_t directioner_intentd_socket_t:dir { create_dir_perms rw_dir_perms };
+allow directioner_intentd_t directioner_intentd_socket_t:sock_file { create_file_perms rw_file_perms unlink };
+allow directioner_intentd_t directioner_intentd_var_lib_t:dir { create_dir_perms rw_dir_perms };
+allow directioner_intentd_t directioner_intentd_var_lib_t:file { create_file_perms rw_file_perms };
+
+systemd_dbus_chat_systemd(directioner_intentd_t)

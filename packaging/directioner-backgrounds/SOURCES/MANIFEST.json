@@ -1,0 +1,31 @@
+{
+  "_comment": "Directioner OS Background Asset Provenance Manifest (TODO 059)",
+  "generated": "2026-10-18",
+  "license": "CC-BY-SA-4.0",
+  "assets": [
+    {
+      "file": "directioner-dark.svg",
+      "description": "Dark wallpaper — deep space AI theme",
+      "status": "PLACEHOLDER",
+      "resolution": "3840x2160 (SVG scales to any resolution)",
+      "provenance": "Original artwork, Directioner OS Project, 2026-10-18",
+      "license": "CC-BY-SA-4.0",
+      "action_required": "Replace with final artwork from Aditya before release"
+    },
+    {
+      "file": "directioner-light.svg",
+      "description": "Light wallpaper — clean minimal AI theme",
+      "status": "PLACEHOLDER",
+      "resolution": "3840x2160 (SVG scales to any resolution)",
+      "provenance": "Original artwork, Directioner OS Project, 2026-10-18",
+      "license": "CC-BY-SA-4.0",
+      "action_required": "Replace with final artwork from Aditya before release"
+    }
+  ],
+  "forbidden": [
+    "No Fedora artwork",
+    "No Red Hat artwork",
+    "No third-party logos",
+    "No AI-generated artwork with unclear provenance"
+  ]
+}

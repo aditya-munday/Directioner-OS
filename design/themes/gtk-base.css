@@ -1,0 +1,20 @@
+* {
+    -GtkScrollbar-has-backward-stepper: false;
+    -GtkScrollbar-has-forward-stepper: false;
+}
+
+scrollbar {
+    background-color: transparent;
+    transition: all 200ms ease;
+}
+
+scrollbar slider {
+    min-width: 6px;
+    min-height: 6px;
+    border-radius: 9999px;
+    background-color: rgba(148, 163, 184, 0.4);
+}
+
+scrollbar slider:hover {
+    background-color: rgba(148, 163, 184, 0.8);
+}

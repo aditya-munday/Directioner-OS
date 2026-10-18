@@ -5,6 +5,7 @@
 //! hardware/system telemetry.
 
 pub mod db;
+pub mod hypervisor;
 pub mod model;
 pub mod query;
 pub mod sources;

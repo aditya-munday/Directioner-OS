@@ -16,5 +16,12 @@ serde_json = "1"
 name = "ai-worklog"
 path = "src/main.rs"
 
+[[bin]]
+name = "ai-worklog-verify"
+path = "src/bin/ai-worklog-verify.rs"
+
+[dev-dependencies]
+tempfile = "3"
+
 [lints]
 workspace = true

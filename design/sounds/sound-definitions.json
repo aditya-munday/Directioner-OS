@@ -1,0 +1,10 @@
+{
+  "theme": "Directioner",
+  "events": {
+    "bell": { "frequency": 440, "duration_ms": 150 },
+    "dialog_information": { "frequency": 880, "duration_ms": 100 },
+    "dialog_warning": { "frequency": 660, "duration_ms": 200 },
+    "dialog_error": { "frequency": 330, "duration_ms": 300 },
+    "service_ready": { "frequency": 1200, "duration_ms": 80 }
+  }
+}

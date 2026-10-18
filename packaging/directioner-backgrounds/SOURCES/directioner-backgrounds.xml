@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE wallpapers SYSTEM "gnome-wp-list.dtd">
+<wallpapers>
+  <wallpaper deleted="false">
+    <name>Directioner OS Dark</name>
+    <filename>/usr/share/backgrounds/directioner/directioner-dark.svg</filename>
+    <filename-dark>/usr/share/backgrounds/directioner/directioner-dark.svg</filename-dark>
+    <options>zoom</options>
+    <shade_type>solid</shade_type>
+    <pcolor>#0A0E17</pcolor>
+    <scolor>#06080F</scolor>
+  </wallpaper>
+  <wallpaper deleted="false">
+    <name>Directioner OS Light</name>
+    <filename>/usr/share/backgrounds/directioner/directioner-light.svg</filename>
+    <filename-dark>/usr/share/backgrounds/directioner/directioner-dark.svg</filename-dark>
+    <options>zoom</options>
+    <shade_type>solid</shade_type>
+    <pcolor>#F4F7FB</pcolor>
+    <scolor>#DCE8F5</scolor>
+  </wallpaper>
+</wallpapers>

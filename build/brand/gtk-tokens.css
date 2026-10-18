@@ -1,0 +1,26 @@
+/* Directioner OS GTK CSS tokens (auto-generated — do not edit) */
+:root {
+  --dos-color-brand-accent: {'value': '#7F00FF', 'type': 'color'};
+  --dos-color-brand-primary: {'value': '#00D2FF', 'type': 'color'};
+  --dos-color-brand-secondary: {'value': '#3A7BD5', 'type': 'color'};
+  --dos-color-status-error: {'value': '#F85149', 'type': 'color'};
+  --dos-color-status-info: {'value': '#58A6FF', 'type': 'color'};
+  --dos-color-status-success: {'value': '#2EA043', 'type': 'color'};
+  --dos-color-status-warning: {'value': '#D29922', 'type': 'color'};
+  --dos-color-surface-dark: {'value': '#0A0E17', 'type': 'color'};
+  --dos-color-surface-dark_border: {'value': '#2A364F', 'type': 'color'};
+  --dos-color-surface-dark_elevated: {'value': '#161D2B', 'type': 'color'};
+  --dos-color-surface-light: {'value': '#F4F7FB', 'type': 'color'};
+  --dos-color-surface-light_border: {'value': '#D0D7DE', 'type': 'color'};
+  --dos-color-surface-light_elevated: {'value': '#FFFFFF', 'type': 'color'};
+  --dos-color-text-dark_primary: {'value': '#F0F6FC', 'type': 'color'};
+  --dos-color-text-dark_secondary: {'value': '#8B949E', 'type': 'color'};
+  --dos-color-text-light_primary: {'value': '#1F2328', 'type': 'color'};
+  --dos-color-text-light_secondary: {'value': '#656D76', 'type': 'color'};
+  --dos-spacing-lg: {'value': '24px', 'type': 'dimension'};
+  --dos-spacing-md: {'value': '16px', 'type': 'dimension'};
+  --dos-spacing-none: {'value': '0px', 'type': 'dimension'};
+  --dos-spacing-sm: {'value': '8px', 'type': 'dimension'};
+  --dos-spacing-xl: {'value': '32px', 'type': 'dimension'};
+  --dos-spacing-xs: {'value': '4px', 'type': 'dimension'};
+}

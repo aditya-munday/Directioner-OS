@@ -1,16 +1,34 @@
-# Directioner-OS — Phase 0.1 bootable custom image
+# Directioner-OS — Hardened bootc image specification (Phase 4.1 / TODO 31)
 #
-# Pipeline: Containerfile (in) → bootc container → bootc-image-builder → qcow2 (out)
-# Rule: configuration & layering on top of Fedora — never modify Fedora source.
-# Base: Fedora 42 bootc (ostree image). See guide §1.
+# Multi-target design:
+#   - base: Common foundation, pinned by digest, minimal packages, zero credentials.
+#   - test: Development & CI testing target (ci user, local ssh key, passwordless sudo, dev tooling).
+#   - release: Default production target. Absolutely NO ci user, NO public keys, NO passwordless sudo,
+#              NO --exec flags, NO test sockets.
+#
+# Base image pinning:
+# Base image is pinned by sha256 digest to prevent supply-chain drift across builds.
+# To bump base digest:
+#   podman pull quay.io/fedora/fedora-bootc:42
+#   podman inspect --format '{{.Digest}}' quay.io/fedora/fedora-bootc:42
+# Update the digest below accordingly.
 
-FROM quay.io/fedora/fedora-bootc:42
+# Pinned Fedora 42 bootc base
+FROM quay.io/fedora/fedora-bootc:42@sha256:077182b6ba853b3348d0bede602ac30b9e6568c6422bcf0654de5af96f19b9c3 AS base
 
 # ------------------------------------------------------------------
-# Sanity-check layer: prove the pipeline works (guide §1.2).
-# A fresh VM must boot with every package + config we add present.
+# 31.5 Package minimization:
+# Only essential runtime dependencies are installed in base.
+# Excluded from base/release:
+#   - neovim / vim: interactive editor, not needed for headless machine operation.
+#   - tmux: terminal multiplexer, not needed on headless server nodes.
+#   - htop: interactive process monitor, replaced by world-model and ai-health telemetry.
+# Retained essentials:
+#   - openssl: cryptographic operations and token HMAC validation.
+#   - openssh-server: remote administrative access (configured via first-boot / cloud-init).
+#   - greenboot / greenboot-grub2: health check framework for bootc rollback.
 # ------------------------------------------------------------------
-RUN dnf install -y neovim tmux htop openssl openssh-server greenboot greenboot-grub2 \
+RUN dnf install -y openssl openssh-server greenboot greenboot-grub2 \
     && dnf clean all
 
 # Mask systemd-ssh-generator (avoids AF_VSOCK crash under virtualized QEMU environments)
@@ -18,8 +36,6 @@ RUN mkdir -p /etc/systemd/system-generators \
     && ln -sf /dev/null /etc/systemd/system-generators/systemd-ssh-generator
 
 RUN echo 'Hello from the AI-Native OS build' > /etc/motd \
-    && echo '%wheel ALL=(ALL) NOPASSWD: ALL' > /etc/sudoers.d/wheel \
-    && chmod 0440 /etc/sudoers.d/wheel \
     && systemctl enable sshd
 
 # ------------------------------------------------------------------
@@ -41,12 +57,193 @@ RUN chmod 755 /etc/greenboot/check/required.d/01_directioner_milestone.sh \
 # Phase 0: Native AI Engineer Control Plane Binaries & Systemd Units
 # ------------------------------------------------------------------
 COPY bin/ /usr/bin/
+COPY libexec/ /usr/libexec/
 COPY configs/systemd/ai-capabilityd.service /usr/lib/systemd/system/ai-capabilityd.service
 COPY configs/systemd/ai-killswitch.service /usr/lib/systemd/system/ai-killswitch.service
+COPY configs/systemd/directioner-accountd.service /usr/lib/systemd/system/directioner-accountd.service
+COPY configs/systemd/directioner-cloudd.service /usr/lib/systemd/system/directioner-cloudd.service
+COPY configs/systemd/directioner-intentd.service /usr/lib/systemd/system/directioner-intentd.service
 COPY configs/systemd/serial-getty@ttyS0.service.d/ /usr/lib/systemd/system/serial-getty@ttyS0.service.d/
 COPY configs/ai-engineer/ai-capabilityd.default /etc/default/ai-capabilityd
+COPY configs/platform.toml /etc/directioner/platform.toml
 
-RUN mkdir -p /var/lib/ai-engineer /etc/ai-engineer /var/lib/ai-bin \
-    && chmod 755 /usr/bin/ai-* 2>/dev/null || true \
+RUN mkdir -p /var/lib/ai-engineer /etc/ai-engineer /var/lib/ai-bin /var/lib/directioner/accountd /run/directioner \
+    && chmod 755 /usr/bin/ai-* /usr/bin/dos-* /usr/bin/directioner-* /usr/libexec/* 2>/dev/null || true \
     && for b in /usr/bin/ai-*; do [ -f "$b" ] && ln -sf "$b" "/var/lib/ai-bin/$(basename "$b")"; done || true \
-    && systemctl enable ai-capabilityd.service
+    && systemctl enable ai-capabilityd.service directioner-accountd.service directioner-cloudd.service directioner-intentd.service
+
+# ==================================================================
+# Domain 6: Directioner OS Branding Layer (TODOs 054-070, 083-087)
+# ==================================================================
+
+# Install brand token generator dependencies (Python 3.11+ stdlib only)
+# Generate derived brand outputs (GRUB colors, Plymouth colors, GTK/Qt tokens)
+COPY scripts/generate_brand_tokens.py /usr/libexec/directioner/generate_brand_tokens.py
+COPY scripts/validate_brand_toml.py   /usr/libexec/directioner/validate_brand_toml.py
+COPY scripts/rebrand_lint.py          /usr/libexec/directioner/rebrand_lint.py
+COPY scripts/asset_provenance_scan.py /usr/libexec/directioner/asset_provenance_scan.py
+COPY scripts/rebrand_grub.sh          /usr/libexec/directioner/rebrand_grub.sh
+COPY brand.toml                        /etc/directioner/brand.toml
+COPY design/tokens.json                /etc/directioner/tokens.json
+
+# Install fastfetch for branded system info display (if available)
+RUN (dnf install -y fastfetch || true) \
+    && dnf clean all
+
+# Apply os-release: Directioner OS identity (TODO 054)
+# Replace the upstream Fedora os-release with our branded version.
+# ID_LIKE=fedora is intentionally preserved for dnf/rpm-ostree compatibility.
+RUN cat > /etc/os-release << 'OSRELEASE'
+NAME="Directioner OS"
+VERSION="42.0.0 (Genesis)"
+ID=directioner
+ID_LIKE=fedora
+VERSION_ID=42.0.0
+PLATFORM_ID="platform:dos42"
+PRETTY_NAME="Directioner OS 42 (Genesis)"
+ANSI_COLOR="0;34"
+LOGO=directioner-logo
+CPE_NAME="cpe:/o:directioneros:directioner:42.0.0"
+DEFAULT_HOSTNAME="directioner"
+HOME_URL="https://github.com/aditya-munday/Directioner-OS"
+DOCUMENTATION_URL="https://github.com/aditya-munday/Directioner-OS#readme"
+SUPPORT_URL="https://github.com/aditya-munday/Directioner-OS/issues"
+BUG_REPORT_URL="https://github.com/aditya-munday/Directioner-OS/issues"
+VARIANT_ID=server
+VARIANT="Server Edition"
+OSRELEASE
+
+# Apply system-release and system-release-cpe (TODO 054)
+RUN echo "Directioner OS release 42.0.0 (Genesis)" > /etc/system-release \
+    && echo "cpe:/o:directioneros:directioner:42.0.0" > /etc/system-release-cpe
+
+# Apply branded login banners (TODO 055)
+RUN cat > /etc/issue << 'ISSUE'
+ ____  _               _   _                      ___  ____
+|  _ \(_)_ __ ___  ___| |_(_) ___  _ __   ___ _ _/ _ \/ ___|
+| | | | | '__/ _ \/ __| __| |/ _ \| '_ \ / _ \ '__| | | \___ \
+| |_| | | | |  __/ (__| |_| | (_) | | | |  __/ |  | |_| |___) |
+|____/|_|_|  \___|\___|\__|_|\___/|_| |_|\___|_|   \___/|____/
+
+  Directioner OS 42.0.0 (Genesis) — The AI-Native Operating System
+  Kernel \r on \m (\l)
+
+ISSUE
+
+RUN echo "Directioner OS 42.0.0 (Genesis) — The AI-Native Operating System" > /etc/issue.net
+
+RUN cat > /etc/motd << 'MOTD'
+Hello from the AI-Native OS build
+Welcome to Directioner OS 42.0.0 (Genesis)
+The AI-Native Operating System
+
+  docs:    https://github.com/aditya-munday/Directioner-OS#readme
+  issues:  https://github.com/aditya-munday/Directioner-OS/issues
+
+MOTD
+
+# GRUB2 distributor branding (TODO 056)
+RUN if [ -f /etc/default/grub ]; then \
+        sed -i 's|^GRUB_DISTRIBUTOR=.*|GRUB_DISTRIBUTOR="Directioner OS"|' /etc/default/grub || \
+        echo 'GRUB_DISTRIBUTOR="Directioner OS"' >> /etc/default/grub; \
+    fi
+
+# Apply fastfetch config (TODO 063)
+RUN mkdir -p /etc/fastfetch
+COPY packaging/directioner-config/SOURCES/fastfetch.jsonc /etc/fastfetch/config.jsonc
+
+# Install branded logos (ASCII + SVG placeholder) (TODO 058)
+RUN mkdir -p /usr/share/directioner/logos /usr/share/pixmaps
+COPY packaging/directioner-logos/SOURCES/directioner-ascii.txt \
+     /usr/share/directioner/logos/directioner-ascii.txt
+COPY packaging/directioner-logos/SOURCES/directioner-logo.svg \
+     /usr/share/pixmaps/directioner-logo.svg
+
+# Install wallpaper placeholders (TODO 059)
+RUN mkdir -p /usr/share/backgrounds/directioner
+COPY packaging/directioner-backgrounds/SOURCES/directioner-dark.svg \
+     /usr/share/backgrounds/directioner/directioner-dark.svg
+COPY packaging/directioner-backgrounds/SOURCES/directioner-light.svg \
+     /usr/share/backgrounds/directioner/directioner-light.svg
+
+# Shell profile: branded prompt + login banner (TODO 064)
+COPY packaging/directioner-config/SOURCES/directioner-prompt.sh \
+     /etc/profile.d/directioner-prompt.sh
+COPY packaging/directioner-config/SOURCES/directioner-banner.sh \
+     /etc/profile.d/directioner-banner.sh
+RUN chmod 644 /etc/profile.d/directioner-prompt.sh \
+              /etc/profile.d/directioner-banner.sh
+
+# Hostname scheme config (TODO 083)
+COPY packaging/directioner-config/SOURCES/hostname-scheme.conf \
+     /etc/directioner/hostname-scheme.conf
+
+# Shortcut map (TODO 085) — documentation only, DE applies at runtime
+COPY packaging/directioner-config/SOURCES/shortcuts.toml \
+     /usr/share/directioner/config/shortcuts.toml
+
+# Firefox policies (TODO 069) — installed if Firefox is present
+RUN mkdir -p /usr/lib/firefox/distribution
+COPY packaging/directioner-config/SOURCES/policies.json \
+     /usr/lib/firefox/distribution/policies.json
+
+# Repo config (TODO 067) — enabled=0 until hosting is ready (Rule B4)
+COPY packaging/directioner-repos/SPECS/directioner-repos.spec \
+     /usr/share/directioner/config/directioner-repos.spec.ref
+RUN mkdir -p /etc/yum.repos.d && cat > /etc/yum.repos.d/directioner.repo << 'REPO'
+[directioner]
+name=Directioner OS $releasever - $basearch
+baseurl=@DIRECTIONER_REPO_URL@/$releasever/$basearch/
+enabled=0
+gpgcheck=1
+gpgkey=file:///etc/pki/rpm-gpg/RPM-GPG-KEY-directioner
+skip_if_unavailable=True
+REPO
+
+# GPG key placeholder (OWNER-AUTH TODO 497)
+RUN mkdir -p /etc/pki/rpm-gpg \
+    && echo "# PLACEHOLDER — Replace with real Directioner OS GPG key (OWNER-AUTH TODO 497)" \
+       > /etc/pki/rpm-gpg/RPM-GPG-KEY-directioner
+
+# Post-branding invariant check: os-release ID must be 'directioner'
+RUN ID_VALUE=$(grep '^ID=' /etc/os-release | cut -d= -f2 | tr -d '"') \
+    && if [ "$ID_VALUE" != "directioner" ]; then \
+        echo "FATAL: os-release ID='$ID_VALUE' must be 'directioner'" >&2; exit 1; \
+    fi \
+    && echo "Brand check OK: ID=directioner"
+
+
+# ==================================================================
+# Target: test (development, local VM, CI runners)
+# ==================================================================
+FROM base AS test
+
+# Install developer debug and terminal packages
+RUN dnf install -y neovim tmux htop \
+    && dnf clean all
+
+# Configure test environment with ci user and passwordless sudo
+RUN (id -u ci >/dev/null 2>&1 || useradd -m -G wheel -s /bin/bash ci) \
+    && echo '%wheel ALL=(ALL) NOPASSWD: ALL' > /etc/sudoers.d/wheel \
+    && chmod 0440 /etc/sudoers.d/wheel \
+    && mkdir -p /home/ci/.ssh \
+    && chmod 0700 /home/ci/.ssh \
+    && chown -R ci:ci /home/ci/.ssh
+
+# Mark build target identifier
+RUN echo "directioner-test-build" > /etc/directioner-build-target
+
+# ==================================================================
+# Target: release (hardened production image - default final stage)
+# ==================================================================
+FROM base AS release
+
+# Ensure absolutely NO wheel passwordless sudo exists
+RUN rm -f /etc/sudoers.d/wheel \
+    && rm -rf /root/.ssh /home/ci /var/run/test-*.sock \
+    && echo "directioner-release-build" > /etc/directioner-build-target
+
+# Invariant verification: Fail the build immediately if release contains forbidden artifacts
+RUN if id -u ci >/dev/null 2>&1; then echo "FATAL: ci user present in release image!" >&2; exit 1; fi \
+    && if [ -f /etc/sudoers.d/wheel ]; then echo "FATAL: passwordless sudo file present in release!" >&2; exit 1; fi \
+    && if [ -f /root/.ssh/authorized_keys ]; then echo "FATAL: authorized_keys found in release /root/.ssh!" >&2; exit 1; fi

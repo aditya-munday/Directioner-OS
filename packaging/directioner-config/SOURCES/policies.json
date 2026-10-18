@@ -1,0 +1,79 @@
+{
+    "_comment": "Directioner OS — Firefox browser policies (TODO 069, 070)",
+    "_policy_version": "1.0.0",
+    "_compliance": "Telemetry OFF by default per Rule B14. All URLs from platform config.",
+
+    "policies": {
+        "DisableAppUpdate": false,
+        "DisableTelemetry": true,
+        "DisableFirefoxStudies": true,
+        "DisablePocket": true,
+        "DisableFirefoxAccounts": false,
+
+        "Preferences": {
+            "browser.startup.homepage": {
+                "Value": "about:home",
+                "Status": "default"
+            },
+            "browser.newtabpage.enabled": {
+                "Value": true,
+                "Status": "default"
+            },
+            "datareporting.healthreport.uploadEnabled": {
+                "Value": false,
+                "Status": "locked"
+            },
+            "app.shield.optoutstudies.enabled": {
+                "Value": false,
+                "Status": "locked"
+            },
+            "browser.crashReports.unsubmittedCheck.autoSubmit2": {
+                "Value": false,
+                "Status": "locked"
+            },
+            "toolkit.telemetry.enabled": {
+                "Value": false,
+                "Status": "locked"
+            }
+        },
+
+        "Homepage": {
+            "URL": "about:home",
+            "Locked": false,
+            "StartPage": "homepage"
+        },
+
+        "Bookmarks": [
+            {
+                "Title": "Directioner OS",
+                "URL": "https://github.com/aditya-munday/Directioner-OS",
+                "Placement": "toolbar",
+                "Folder": "Directioner OS"
+            },
+            {
+                "Title": "Docs",
+                "URL": "https://github.com/aditya-munday/Directioner-OS#readme",
+                "Placement": "toolbar",
+                "Folder": "Directioner OS"
+            },
+            {
+                "Title": "Issues / Support",
+                "URL": "https://github.com/aditya-munday/Directioner-OS/issues",
+                "Placement": "toolbar",
+                "Folder": "Directioner OS"
+            }
+        ],
+
+        "SearchBar": "unified",
+
+        "EnableTrackingProtection": {
+            "Value": true,
+            "Locked": false,
+            "Cryptomining": true,
+            "Fingerprinting": true
+        },
+
+        "OverrideFirstRunPage": "",
+        "OverridePostUpdatePage": ""
+    }
+}
