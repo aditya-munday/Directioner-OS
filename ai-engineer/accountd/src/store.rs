@@ -122,11 +122,13 @@ mod tests {
 
     #[test]
     fn nothing_is_written_to_disk() {
-        let sentinel: PathBuf = std::env::temp_dir()
-            .join(format!("store_disk_test_{}", std::process::id()));
+        let sentinel: PathBuf =
+            std::env::temp_dir().join(format!("store_disk_test_{}", std::process::id()));
 
         let store = StateStore::new();
-        store.save_session(&dummy_record(Some(dummy_token()))).unwrap();
+        store
+            .save_session(&dummy_record(Some(dummy_token())))
+            .unwrap();
         store.save_devices(&[dummy_device()]).unwrap();
 
         assert!(
@@ -139,8 +141,14 @@ mod tests {
         let devices_json = sentinel.join("devices.json");
         let store_key = sentinel.join(".store.key");
 
-        assert!(!session_json.exists(), "session.json must not exist on disk");
-        assert!(!devices_json.exists(), "devices.json must not exist on disk");
+        assert!(
+            !session_json.exists(),
+            "session.json must not exist on disk"
+        );
+        assert!(
+            !devices_json.exists(),
+            "devices.json must not exist on disk"
+        );
         assert!(!store_key.exists(), ".store.key must not exist on disk");
     }
 
