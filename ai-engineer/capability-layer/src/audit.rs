@@ -51,6 +51,10 @@ pub struct AuditEntry {
     pub outcome: AuditOutcome,
     /// Execution latency in milliseconds.
     pub duration_ms: u64,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub prev_hash: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub entry_hash: Option<String>,
 }
 
 impl AuditEntry {
@@ -69,20 +73,21 @@ impl AuditEntry {
                 reason: "placeholder".into(),
             },
             duration_ms: 0,
+            prev_hash: None,
+            entry_hash: None,
         }
     }
 }
 
-/// Append-only audit journal manager backed by a JSONL file.
 #[derive(Debug)]
 pub struct AuditLog {
     path: PathBuf,
     file: File,
     next_seq: u64,
+    last_hash: Option<String>,
 }
 
 impl AuditLog {
-    /// Opens or creates an append-only audit log at the given path.
     pub fn open(path: impl AsRef<Path>) -> std::io::Result<Self> {
         let path = path.as_ref().to_path_buf();
         if let Some(parent) = path.parent()
@@ -92,45 +97,58 @@ impl AuditLog {
         }
         let file = OpenOptions::new().create(true).append(true).open(&path)?;
         let already = count_lines(File::open(&path)?)?;
+        let last_hash = scan_last_hash(&path)?;
         Ok(Self {
             path,
             file,
             next_seq: already,
+            last_hash,
         })
     }
 
-    /// Opens an existing audit log in read-only mode.
     pub fn open_read_only(path: impl AsRef<Path>) -> std::io::Result<Self> {
         let path = path.as_ref().to_path_buf();
         let file = File::open(&path)?;
         let already = count_lines(File::open(&path)?)?;
+        let last_hash = scan_last_hash(&path)?;
         Ok(Self {
             path,
             file,
             next_seq: already,
+            last_hash,
         })
     }
 
-    /// Returns the filesystem path to the audit log.
     pub fn path(&self) -> &Path {
         &self.path
     }
 
-    /// Returns the next monotonic sequence number that will be assigned.
     pub fn next_seq(&self) -> u64 {
         self.next_seq
     }
 
-    /// Appends an entry to the audit log, flushing to disk.
+    pub fn last_hash(&self) -> Option<&str> {
+        self.last_hash.as_deref()
+    }
+
     pub fn append(&mut self, mut entry: AuditEntry) -> std::io::Result<u64> {
         entry.seq = self.next_seq;
         self.next_seq += 1;
+        entry.prev_hash = self.last_hash.clone();
+        let computed = compute_entry_hash(self.last_hash.as_deref(), &entry);
+        entry.entry_hash = Some(computed.clone());
+        self.last_hash = Some(computed);
         let mut line = serde_json::to_vec(&entry).map_err(std::io::Error::other)?;
         line.push(b'\n');
         self.file.write_all(&line)?;
         self.file.flush()?;
         self.file.sync_all()?;
         Ok(entry.seq)
+    }
+
+    pub fn verify(&self) -> std::io::Result<VerifyReport> {
+        let entries = self.read_all()?;
+        Ok(verify_entries(&entries))
     }
 
     /// Reads all entries from the audit log.
@@ -193,6 +211,132 @@ pub fn rewind(file: &mut File) -> std::io::Result<()> {
     Ok(())
 }
 
+pub fn compute_entry_hash(prev_hash: Option<&str>, entry: &AuditEntry) -> String {
+    use sha2::{Digest, Sha256};
+    let mut hasher = Sha256::new();
+    if let Some(prev) = prev_hash {
+        hasher.update(prev.as_bytes());
+    } else {
+        hasher.update(b"GENESIS");
+    }
+    hasher.update(b"|");
+    hasher.update(entry.seq.to_le_bytes());
+    hasher.update(b"|");
+    hasher.update(entry.timestamp.as_bytes());
+    hasher.update(b"|");
+    hasher.update(entry.request_id.as_bytes());
+    hasher.update(b"|");
+    hasher.update(entry.capability.as_bytes());
+    hasher.update(b"|");
+    let args_str = serde_json::to_string(&entry.args).unwrap_or_default();
+    hasher.update(args_str.as_bytes());
+    hasher.update(b"|");
+    hasher.update(entry.requester.as_bytes());
+    hasher.update(b"|");
+    hasher.update(entry.token.as_bytes());
+    hasher.update(b"|");
+    hasher.update(if entry.is_rollback { b"1" } else { b"0" });
+    hasher.update(b"|");
+    let outcome_str = serde_json::to_string(&entry.outcome).unwrap_or_default();
+    hasher.update(outcome_str.as_bytes());
+    hasher.update(b"|");
+    hasher.update(entry.duration_ms.to_le_bytes());
+    format!("{:x}", hasher.finalize())
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct VerifyReport {
+    pub count_verified: usize,
+    pub count_unchained: usize,
+    pub broken_index: Option<u64>,
+    pub error_message: Option<String>,
+}
+
+impl VerifyReport {
+    pub fn is_valid(&self) -> bool {
+        self.broken_index.is_none()
+    }
+}
+
+pub fn verify_entries(entries: &[AuditEntry]) -> VerifyReport {
+    let mut count_verified = 0;
+    let mut count_unchained = 0;
+    let mut prev_expected_hash: Option<String> = None;
+
+    for (idx, entry) in entries.iter().enumerate() {
+        if entry.seq != idx as u64 {
+            return VerifyReport {
+                count_verified,
+                count_unchained,
+                broken_index: Some(entry.seq),
+                error_message: Some(format!("sequence gap: expected seq {}, found {}", idx, entry.seq)),
+            };
+        }
+        match &entry.entry_hash {
+            None => {
+                count_unchained += 1;
+                prev_expected_hash = None;
+            }
+            Some(actual_hash) => {
+                if entry.prev_hash != prev_expected_hash {
+                    return VerifyReport {
+                        count_verified,
+                        count_unchained,
+                        broken_index: Some(entry.seq),
+                        error_message: Some(format!(
+                            "broken chain at seq {}: prev_hash {:?} != expected {:?}",
+                            entry.seq, entry.prev_hash, prev_expected_hash
+                        )),
+                    };
+                }
+                let computed = compute_entry_hash(entry.prev_hash.as_deref(), entry);
+                if computed != *actual_hash {
+                    return VerifyReport {
+                        count_verified,
+                        count_unchained,
+                        broken_index: Some(entry.seq),
+                        error_message: Some(format!(
+                            "tampered entry at seq {}: computed hash {} != stored hash {}",
+                            entry.seq, computed, actual_hash
+                        )),
+                    };
+                }
+                count_verified += 1;
+                prev_expected_hash = Some(actual_hash.clone());
+            }
+        }
+    }
+
+    VerifyReport {
+        count_verified,
+        count_unchained,
+        broken_index: None,
+        error_message: None,
+    }
+}
+
+fn scan_last_hash(path: &Path) -> std::io::Result<Option<String>> {
+    if !path.exists() {
+        return Ok(None);
+    }
+    let f = File::open(path)?;
+    let reader = BufReader::new(f);
+    let mut last = None;
+    for line in reader.lines() {
+        let line = line?;
+        let line = line.trim();
+        if line.is_empty() {
+            continue;
+        }
+        if let Ok(entry) = serde_json::from_str::<AuditEntry>(line) {
+            if entry.entry_hash.is_some() {
+                last = entry.entry_hash;
+            }
+        }
+    }
+    Ok(last)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -211,6 +355,8 @@ mod tests {
                 result: Value::Null,
             },
             duration_ms: 1,
+            prev_hash: None,
+            entry_hash: None,
         }
     }
 
@@ -228,6 +374,7 @@ mod tests {
         let all = log.read_all().unwrap();
         assert_eq!(all.len(), 1);
         assert_eq!(all[0].capability, "ping");
+        assert!(all[0].entry_hash.is_some());
     }
 
     #[test]
@@ -260,5 +407,26 @@ mod tests {
         let reopened = log.reopen().unwrap();
         assert_eq!(reopened.next_seq(), 1);
         assert_eq!(reopened.read_all().unwrap().len(), 1);
+    }
+
+    #[test]
+    fn hash_chain_verification_detects_tampering() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("tamper.jsonl");
+        let mut log = AuditLog::open(&path).unwrap();
+        log.append(entry("cap1")).unwrap();
+        log.append(entry("cap2")).unwrap();
+        log.append(entry("cap3")).unwrap();
+
+        let report = log.verify().unwrap();
+        assert!(report.is_valid());
+        assert_eq!(report.count_verified, 3);
+        assert_eq!(report.count_unchained, 0);
+
+        let mut entries = log.read_all().unwrap();
+        entries[1].capability = "tampered".into();
+        let tampered_report = verify_entries(&entries);
+        assert!(!tampered_report.is_valid());
+        assert_eq!(tampered_report.broken_index, Some(1));
     }
 }

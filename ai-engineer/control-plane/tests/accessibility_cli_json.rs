@@ -81,6 +81,8 @@ fn test_accessibility_json_worklog() {
                 result: serde_json::json!({"bytes_written": 42}),
             },
             duration_ms: 5,
+            prev_hash: None,
+            entry_hash: None,
         };
         log.append(entry).unwrap();
     }

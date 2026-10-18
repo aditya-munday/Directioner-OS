@@ -10,6 +10,7 @@ publish = false
 [dependencies]
 capability-layer = { path = "../capability-layer" }
 world-model = { path = "../world-model" }
+unit-name = { path = "../unit-name" }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 toml = "0.8"

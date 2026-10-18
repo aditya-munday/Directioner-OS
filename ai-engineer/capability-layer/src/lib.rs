@@ -20,6 +20,7 @@
 //!    typed `dnf5`/`systemctl`/file adapters, writes an audit row, and replies.
 
 pub mod audit;
+pub mod breaker;
 pub mod handler;
 pub mod killswitch;
 pub mod notify;

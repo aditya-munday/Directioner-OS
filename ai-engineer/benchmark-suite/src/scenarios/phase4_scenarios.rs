@@ -196,6 +196,8 @@ impl BenchmarkScenario for AccessibilityJsonWorklogCompletenessScenario {
                     result: serde_json::json!({"status": "active"}),
                 },
                 duration_ms: 12,
+                prev_hash: None,
+                entry_hash: None,
             })
             .unwrap();
         }

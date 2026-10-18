@@ -1164,6 +1164,8 @@ impl Handler {
             is_rollback: req.is_rollback,
             outcome,
             duration_ms: started.elapsed().as_millis() as u64,
+            prev_hash: None,
+            entry_hash: None,
         };
         self.audit
             .append(entry)

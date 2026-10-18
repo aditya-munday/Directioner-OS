@@ -20,6 +20,7 @@ pub mod health_model;
 pub mod hwcheck;
 pub mod implementer;
 pub mod incident_response;
+pub mod invariants;
 pub mod localization;
 pub mod plan;
 pub mod planner;

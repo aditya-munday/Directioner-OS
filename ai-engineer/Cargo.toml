@@ -6,6 +6,7 @@ members = [
     "world-model",
     "control-plane",
     "benchmark-suite",
+    "unit-name",
 ]
 
 [workspace.package]
