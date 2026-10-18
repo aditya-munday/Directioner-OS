@@ -1,5 +1,5 @@
-use serde::{Deserialize, Serialize};
 use crate::types::{AccountState, AuthToken, DeviceRegistration, Entitlements, UserProfile};
+use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(tag = "action", content = "params")]
@@ -50,7 +50,11 @@ pub enum ResponseData {
     DeviceCollection(Vec<DeviceRegistration>),
     EntitlementsInfo(Entitlements),
     LoggedOut,
-    DeviceRevoked { device_id: String },
-    ExportArchive { json_payload: String },
+    DeviceRevoked {
+        device_id: String,
+    },
+    ExportArchive {
+        json_payload: String,
+    },
     AccountDeleted,
 }

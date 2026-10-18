@@ -53,7 +53,11 @@ fn test_device_code_login_flow() {
 
     let start_resp = engine.handle_request(AccountRequest::LoginStartDevice, 1000, 10000);
     let dev_code = match start_resp {
-        AccountResponse::Ok(ResponseData::DeviceCodeInitiated { device_code, user_code, .. }) => {
+        AccountResponse::Ok(ResponseData::DeviceCodeInitiated {
+            device_code,
+            user_code,
+            ..
+        }) => {
             assert!(user_code.starts_with("DIR-"));
             device_code
         }
@@ -61,7 +65,9 @@ fn test_device_code_login_flow() {
     };
 
     let poll_pending = engine.handle_request(
-        AccountRequest::LoginPollDevice { device_code: dev_code.clone() },
+        AccountRequest::LoginPollDevice {
+            device_code: dev_code.clone(),
+        },
         1000,
         10001,
     );
@@ -73,7 +79,9 @@ fn test_device_code_login_flow() {
     engine.backend.approve_device_code(&dev_code);
 
     let poll_success = engine.handle_request(
-        AccountRequest::LoginPollDevice { device_code: dev_code },
+        AccountRequest::LoginPollDevice {
+            device_code: dev_code,
+        },
         1000,
         10002,
     );
@@ -87,7 +95,9 @@ fn test_device_code_login_flow() {
 
     let status = engine.handle_request(AccountRequest::Status, 1000, 10003);
     match status {
-        AccountResponse::Ok(ResponseData::StatusInfo { state, user, plan, .. }) => {
+        AccountResponse::Ok(ResponseData::StatusInfo {
+            state, user, plan, ..
+        }) => {
             assert_eq!(state, AccountState::SignedIn);
             assert!(user.is_some());
             assert_eq!(plan, Some("pro".to_string()));
@@ -148,7 +158,10 @@ fn test_refresh_token_rotation_and_reuse_detection() {
     };
 
     let refresh_2 = engine.handle_request(AccountRequest::RefreshToken, 1000, 30002);
-    assert!(matches!(refresh_2, AccountResponse::Ok(ResponseData::TokenIssued(_))));
+    assert!(matches!(
+        refresh_2,
+        AccountResponse::Ok(ResponseData::TokenIssued(_))
+    ));
 
     let reuse_attempt = engine.backend.refresh_token(&old_rt, 30003);
     assert!(reuse_attempt.is_err());
@@ -173,9 +186,16 @@ fn test_scoped_audience_token_exchange() {
         40000,
     );
 
-    for aud in &[Audience::Cli, Audience::Aria, Audience::Cloud, Audience::Update] {
+    for aud in &[
+        Audience::Cli,
+        Audience::Aria,
+        Audience::Cloud,
+        Audience::Update,
+    ] {
         let resp = engine.handle_request(
-            AccountRequest::TokenGet { audience: aud.as_str().to_string() },
+            AccountRequest::TokenGet {
+                audience: aud.as_str().to_string(),
+            },
             1000,
             40001,
         );
@@ -249,7 +269,9 @@ fn test_devices_list_and_revocation() {
     }
 
     let revoke_resp = engine.handle_request(
-        AccountRequest::DeviceRevoke { device_id: "dev-laptop-02".to_string() },
+        AccountRequest::DeviceRevoke {
+            device_id: "dev-laptop-02".to_string(),
+        },
         1000,
         50001,
     );
@@ -284,7 +306,10 @@ fn test_atomic_state_store_persistence() {
     };
 
     store.save_session(&rec).unwrap();
-    let loaded = store.load_session().unwrap().expect("must load saved session");
+    let loaded = store
+        .load_session()
+        .unwrap()
+        .expect("must load saved session");
     assert_eq!(loaded.state, AccountState::SignedIn);
 
     store.clear_session().unwrap();
@@ -348,10 +373,19 @@ fn test_encrypted_token_storage_zero_disk_plaintext_leak() {
     store.save_session(&rec).unwrap();
 
     let session_file_raw = std::fs::read_to_string(dir.path().join("session.json")).unwrap();
-    assert!(!session_file_raw.contains(secret_token), "Plaintext access token leaked to disk");
-    assert!(!session_file_raw.contains(secret_refresh), "Plaintext refresh token leaked to disk");
+    assert!(
+        !session_file_raw.contains(secret_token),
+        "Plaintext access token leaked to disk"
+    );
+    assert!(
+        !session_file_raw.contains(secret_refresh),
+        "Plaintext refresh token leaked to disk"
+    );
 
-    let loaded = store.load_session().unwrap().expect("must decrypt stored token");
+    let loaded = store
+        .load_session()
+        .unwrap()
+        .expect("must decrypt stored token");
     let loaded_tok = loaded.token.expect("must contain token");
     assert_eq!(loaded_tok.access_token, secret_token);
     assert_eq!(loaded_tok.refresh_token, secret_refresh);
@@ -381,14 +415,14 @@ fn test_live_unix_socket_ipc() {
         if let Ok((mut stream, _)) = listener.accept() {
             let mut reader = BufReader::new(stream.try_clone().unwrap());
             let mut line = String::new();
-            if reader.read_line(&mut line).is_ok() {
-                if let Ok(req) = serde_json::from_str::<AccountRequest>(&line) {
-                    let resp = engine.handle_request(req, 1000, 100000);
-                    let out = serde_json::to_string(&resp).unwrap();
-                    let _ = stream.write_all(out.as_bytes());
-                    let _ = stream.write_all(b"\n");
-                    let _ = stream.flush();
-                }
+            if reader.read_line(&mut line).is_ok()
+                && let Ok(req) = serde_json::from_str::<AccountRequest>(&line)
+            {
+                let resp = engine.handle_request(req, 1000, 100000);
+                let out = serde_json::to_string(&resp).unwrap();
+                let _ = stream.write_all(out.as_bytes());
+                let _ = stream.write_all(b"\n");
+                let _ = stream.flush();
             }
         }
     });
@@ -417,5 +451,3 @@ fn test_live_unix_socket_ipc() {
     drop(reader);
     let _ = handle.join();
 }
-
-

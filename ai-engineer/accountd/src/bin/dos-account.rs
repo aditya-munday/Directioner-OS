@@ -1,8 +1,8 @@
+use accountd::{AccountRequest, AccountResponse, ResponseData};
 use std::env;
 use std::io::{BufRead, BufReader, Write};
 use std::os::unix::net::UnixStream;
 use std::path::PathBuf;
-use accountd::{AccountRequest, AccountResponse, ResponseData};
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let args: Vec<String> = env::args().collect();
@@ -45,9 +45,14 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     if !socket_path.exists() {
         if is_json {
-            println!(r#"{{"error":"accountd_unavailable","message":"account daemon socket not found"}}"#);
+            println!(
+                r#"{{"error":"accountd_unavailable","message":"account daemon socket not found"}}"#
+            );
         } else {
-            eprintln!("Error: account daemon socket not found at {:?}", socket_path);
+            eprintln!(
+                "Error: account daemon socket not found at {:?}",
+                socket_path
+            );
             eprintln!("Ensure directioner-accountd is running.");
         }
         std::process::exit(1);
@@ -81,7 +86,12 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
 fn format_human_readable(data: ResponseData) {
     match data {
-        ResponseData::DeviceCodeInitiated { user_code, verification_uri, interval, .. } => {
+        ResponseData::DeviceCodeInitiated {
+            user_code,
+            verification_uri,
+            interval,
+            ..
+        } => {
             println!("To sign in, open the following URL on any device:");
             println!("  {}", verification_uri);
             println!("Enter this one-time code:");
@@ -94,7 +104,13 @@ fn format_human_readable(data: ResponseData) {
             println!("Scopes:   {}", t.scopes.join(", "));
             println!("Expires in: {}s", t.expires_in);
         }
-        ResponseData::StatusInfo { state, user, device_id, plan, offline_grace_remaining_secs } => {
+        ResponseData::StatusInfo {
+            state,
+            user,
+            device_id,
+            plan,
+            offline_grace_remaining_secs,
+        } => {
             println!("Account State: {:?}", state);
             println!("Device ID:     {}", device_id);
             if let Some(u) = user {
@@ -107,7 +123,11 @@ fn format_human_readable(data: ResponseData) {
                 println!("Offline Grace: {}s remaining", g);
             }
         }
-        ResponseData::WhoamiInfo { user_id, user_hash, device_name } => {
+        ResponseData::WhoamiInfo {
+            user_id,
+            user_hash,
+            device_name,
+        } => {
             println!("User ID:     {}", user_id);
             println!("User Hash:   {}", user_hash);
             println!("Device Name: {}", device_name);
@@ -115,8 +135,17 @@ fn format_human_readable(data: ResponseData) {
         ResponseData::DeviceCollection(devices) => {
             println!("Registered Devices ({}):", devices.len());
             for d in devices {
-                let status = if d.revoked { "REVOKED" } else if d.is_current { "CURRENT" } else { "ACTIVE" };
-                println!("  - {} ({}, {}) [{}]", d.device_name, d.device_id, d.os_version, status);
+                let status = if d.revoked {
+                    "REVOKED"
+                } else if d.is_current {
+                    "CURRENT"
+                } else {
+                    "ACTIVE"
+                };
+                println!(
+                    "  - {} ({}, {}) [{}]",
+                    d.device_name, d.device_id, d.os_version, status
+                );
             }
         }
         ResponseData::EntitlementsInfo(e) => {

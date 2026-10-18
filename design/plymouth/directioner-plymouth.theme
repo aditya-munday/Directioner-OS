@@ -1,0 +1,18 @@
+[Plymouth Theme]
+Name=Directioner OS Spinner
+Description=Directioner OS Modern Spinner Boot Splash
+ModuleName=two-step
+
+[two-step]
+Font=Inter 12
+Title=Directioner OS
+ImageDir=/usr/share/plymouth/themes/directioner
+HorizontalAlignment=.5
+VerticalAlignment=.5
+WatermarkHorizontalAlignment=.5
+WatermarkVerticalAlignment=.85
+Transition=none
+TransitionDuration=0.0
+BackgroundStartColor=0x0a0e17
+BackgroundEndColor=0x0a0e17
+ProgressBarShowAnimation=false

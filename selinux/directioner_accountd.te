@@ -1,0 +1,36 @@
+policy_module(directioner_accountd, 1.0.0)
+
+type directioner_accountd_t;
+type directioner_accountd_exec_t;
+init_daemon_domain(directioner_accountd_t, directioner_accountd_exec_t)
+
+type directioner_accountd_cli_t;
+type directioner_accountd_cli_exec_t;
+init_daemon_domain(directioner_accountd_cli_t, directioner_accountd_cli_exec_t)
+
+type directioner_accountd_socket_t;
+files_type(directioner_accountd_socket_t)
+
+type directioner_accountd_etc_t;
+files_config_file(directioner_accountd_etc_t)
+
+type directioner_accountd_var_lib_t;
+files_type(directioner_accountd_var_lib_t)
+
+allow directioner_accountd_t self:process { fork signal setrlimit };
+allow directioner_accountd_t self:unix_stream_socket { create_stream_socket_perms connectto };
+
+allow directioner_accountd_t directioner_accountd_socket_t:dir { create_dir_perms rw_dir_perms };
+allow directioner_accountd_t directioner_accountd_socket_t:sock_file { create_file_perms rw_file_perms unlink };
+
+allow directioner_accountd_t directioner_accountd_etc_t:dir list_dir_perms;
+allow directioner_accountd_t directioner_accountd_etc_t:file read_file_perms;
+
+allow directioner_accountd_t directioner_accountd_var_lib_t:dir { create_dir_perms rw_dir_perms };
+allow directioner_accountd_t directioner_accountd_var_lib_t:file { create_file_perms rw_file_perms };
+
+allow directioner_accountd_cli_t directioner_accountd_socket_t:sock_file { write getattr };
+allow directioner_accountd_cli_t directioner_accountd_t:unix_stream_socket connectto;
+
+sysnet_dns_name_resolve(directioner_accountd_t)
+corenet_tcp_connect_http_port(directioner_accountd_t)

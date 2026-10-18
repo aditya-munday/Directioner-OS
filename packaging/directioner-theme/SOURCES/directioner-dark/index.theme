@@ -1,0 +1,12 @@
+[Desktop Entry]
+Type=X-GNOME-Metatheme
+Name=Directioner-Dark
+Comment=Directioner OS Dark Glass Theme
+Encoding=UTF-8
+
+[X-GNOME-Metatheme]
+GtkTheme=Directioner-Dark
+MetacityTheme=Directioner-Dark
+IconTheme=Adwaita
+CursorTheme=Adwaita
+ButtonLayout=:minimize,maximize,close

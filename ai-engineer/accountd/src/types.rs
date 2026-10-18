@@ -13,28 +13,28 @@ pub enum AccountState {
 
 impl AccountState {
     pub fn can_transition_to(&self, next: AccountState) -> bool {
-        match (self, next) {
-            (AccountState::SignedOut, AccountState::SigningIn) => true,
-            (AccountState::SignedOut, AccountState::SignedIn) => true,
-            (AccountState::SigningIn, AccountState::SignedIn) => true,
-            (AccountState::SigningIn, AccountState::SignedOut) => true,
-            (AccountState::SignedIn, AccountState::Expiring) => true,
-            (AccountState::SignedIn, AccountState::OfflineGrace) => true,
-            (AccountState::SignedIn, AccountState::Revoked) => true,
-            (AccountState::SignedIn, AccountState::SignedOut) => true,
-            (AccountState::Expiring, AccountState::SignedIn) => true,
-            (AccountState::Expiring, AccountState::Expired) => true,
-            (AccountState::Expiring, AccountState::Revoked) => true,
-            (AccountState::Expiring, AccountState::SignedOut) => true,
-            (AccountState::Expired, AccountState::SignedIn) => true,
-            (AccountState::Expired, AccountState::SignedOut) => true,
-            (AccountState::OfflineGrace, AccountState::SignedIn) => true,
-            (AccountState::OfflineGrace, AccountState::Expired) => true,
-            (AccountState::OfflineGrace, AccountState::Revoked) => true,
-            (AccountState::OfflineGrace, AccountState::SignedOut) => true,
-            (AccountState::Revoked, AccountState::SignedOut) => true,
-            _ => false,
-        }
+        matches!(
+            (self, next),
+            (AccountState::SignedOut, AccountState::SigningIn)
+                | (AccountState::SignedOut, AccountState::SignedIn)
+                | (AccountState::SigningIn, AccountState::SignedIn)
+                | (AccountState::SigningIn, AccountState::SignedOut)
+                | (AccountState::SignedIn, AccountState::Expiring)
+                | (AccountState::SignedIn, AccountState::OfflineGrace)
+                | (AccountState::SignedIn, AccountState::Revoked)
+                | (AccountState::SignedIn, AccountState::SignedOut)
+                | (AccountState::Expiring, AccountState::SignedIn)
+                | (AccountState::Expiring, AccountState::Expired)
+                | (AccountState::Expiring, AccountState::Revoked)
+                | (AccountState::Expiring, AccountState::SignedOut)
+                | (AccountState::Expired, AccountState::SignedIn)
+                | (AccountState::Expired, AccountState::SignedOut)
+                | (AccountState::OfflineGrace, AccountState::SignedIn)
+                | (AccountState::OfflineGrace, AccountState::Expired)
+                | (AccountState::OfflineGrace, AccountState::Revoked)
+                | (AccountState::OfflineGrace, AccountState::SignedOut)
+                | (AccountState::Revoked, AccountState::SignedOut)
+        )
     }
 }
 
@@ -58,6 +58,7 @@ impl Audience {
         }
     }
 
+    #[allow(clippy::should_implement_trait)]
     pub fn from_str(s: &str) -> Option<Self> {
         match s {
             "os" => Some(Audience::Os),
@@ -135,12 +136,25 @@ impl Entitlements {
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub enum AccountEvent {
-    LoggedIn { user_hash: String, device_id: String },
-    LoggedOut { device_id: String },
-    TokenRefreshed { audience: String },
-    QuotaWarning { remaining: u64 },
-    Revoked { reason: String },
-    OfflineGraceActive { expires_at: i64 },
+    LoggedIn {
+        user_hash: String,
+        device_id: String,
+    },
+    LoggedOut {
+        device_id: String,
+    },
+    TokenRefreshed {
+        audience: String,
+    },
+    QuotaWarning {
+        remaining: u64,
+    },
+    Revoked {
+        reason: String,
+    },
+    OfflineGraceActive {
+        expires_at: i64,
+    },
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

@@ -39,6 +39,12 @@ pub struct DesktopCoordinator {
     next_notification_id: u64,
 }
 
+impl Default for DesktopCoordinator {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl DesktopCoordinator {
     pub fn new() -> Self {
         DesktopCoordinator {
@@ -57,7 +63,13 @@ impl DesktopCoordinator {
         self.glow_state = state;
     }
 
-    pub fn post_notification(&mut self, title: &str, body: &str, urgency: UrgencyLevel, now: i64) -> u64 {
+    pub fn post_notification(
+        &mut self,
+        title: &str,
+        body: &str,
+        urgency: UrgencyLevel,
+        now: i64,
+    ) -> u64 {
         let id = self.next_notification_id;
         self.next_notification_id += 1;
 

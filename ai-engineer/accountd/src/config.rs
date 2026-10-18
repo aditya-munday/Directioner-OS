@@ -31,6 +31,7 @@ impl PlatformConfig {
         Self::from_str(&content)
     }
 
+    #[allow(clippy::should_implement_trait)]
     pub fn from_str(content: &str) -> Result<Self, String> {
         let cfg: PlatformConfig = toml::from_str(content).map_err(|e| e.to_string())?;
         cfg.validate()?;
@@ -48,5 +49,13 @@ impl PlatformConfig {
             return Err("poll_interval_secs must be greater than zero".to_string());
         }
         Ok(())
+    }
+}
+
+impl std::str::FromStr for PlatformConfig {
+    type Err = String;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        Self::from_str(s)
     }
 }

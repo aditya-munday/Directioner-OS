@@ -1,0 +1,35 @@
+#panel {
+    background-color: rgba(248, 250, 252, 0.85);
+    font-weight: 500;
+    height: 32px;
+    border-bottom: 1px solid rgba(0, 0, 0, 0.08);
+}
+
+.panel-button {
+    color: #0f172a;
+    padding: 0 12px;
+}
+
+.panel-button:hover {
+    color: #0284c7;
+    background-color: rgba(0, 0, 0, 0.05);
+}
+
+.popup-menu {
+    background-color: #ffffff;
+    border: 1px solid #e2e8f0;
+    border-radius: 12px;
+    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.1);
+}
+
+.popup-menu-item:active {
+    background-color: #0284c7;
+    color: #ffffff;
+}
+
+.search-entry {
+    background-color: #f1f5f9;
+    border: 1px solid #e2e8f0;
+    border-radius: 8px;
+    color: #0f172a;
+}

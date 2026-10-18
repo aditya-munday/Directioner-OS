@@ -1,8 +1,8 @@
-use std::collections::{HashMap, HashSet};
-use sha2::{Digest, Sha256};
 use crate::types::{AuthToken, DeviceRegistration, Entitlements};
+use sha2::{Digest, Sha256};
+use std::collections::{HashMap, HashSet};
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Default)]
 pub struct MockBackend {
     pub fault_slow: bool,
     pub fault_status: Option<u16>,
@@ -24,21 +24,6 @@ struct DeviceFlowState {
     interval: u64,
 }
 
-impl Default for MockBackend {
-    fn default() -> Self {
-        MockBackend {
-            fault_slow: false,
-            fault_status: None,
-            fault_rate_limit: None,
-            server_time_offset_secs: 0,
-            device_flows: HashMap::new(),
-            refresh_tokens: HashMap::new(),
-            used_refresh_tokens: HashSet::new(),
-            devices: Vec::new(),
-        }
-    }
-}
-
 impl MockBackend {
     pub fn new() -> Self {
         Self::default()
@@ -48,7 +33,10 @@ impl MockBackend {
         local_now + self.server_time_offset_secs
     }
 
-    pub fn start_device_code_flow(&mut self, now: i64) -> Result<(String, String, String, u64), String> {
+    pub fn start_device_code_flow(
+        &mut self,
+        now: i64,
+    ) -> Result<(String, String, String, u64), String> {
         self.check_faults()?;
 
         let device_code = format!("devcode-{}", now);
@@ -56,13 +44,16 @@ impl MockBackend {
         let verification_uri = "https://auth.directioner.internal/activate".to_string();
         let interval = 5;
 
-        self.device_flows.insert(device_code.clone(), DeviceFlowState {
-            user_code: user_code.clone(),
-            device_code: device_code.clone(),
-            approved: false,
-            expires_at: now + 300,
-            interval,
-        });
+        self.device_flows.insert(
+            device_code.clone(),
+            DeviceFlowState {
+                user_code: user_code.clone(),
+                device_code: device_code.clone(),
+                approved: false,
+                expires_at: now + 300,
+                interval,
+            },
+        );
 
         Ok((device_code, user_code, verification_uri, interval))
     }
@@ -73,10 +64,17 @@ impl MockBackend {
         }
     }
 
-    pub fn poll_device_code_token(&mut self, device_code: &str, now: i64) -> Result<AuthToken, String> {
+    pub fn poll_device_code_token(
+        &mut self,
+        device_code: &str,
+        now: i64,
+    ) -> Result<AuthToken, String> {
         self.check_faults()?;
 
-        let flow = self.device_flows.get(device_code).ok_or_else(|| "invalid_request".to_string())?;
+        let flow = self
+            .device_flows
+            .get(device_code)
+            .ok_or_else(|| "invalid_request".to_string())?;
         if now > flow.expires_at {
             return Err("expired_token".to_string());
         }
@@ -86,7 +84,8 @@ impl MockBackend {
 
         let at = format!("at-{}", now);
         let rt = format!("rt-{}", now);
-        self.refresh_tokens.insert(rt.clone(), "user-123".to_string());
+        self.refresh_tokens
+            .insert(rt.clone(), "user-123".to_string());
 
         Ok(AuthToken {
             access_token: at,
@@ -99,7 +98,12 @@ impl MockBackend {
         })
     }
 
-    pub fn exchange_pkce(&mut self, verifier: &str, challenge: &str, now: i64) -> Result<AuthToken, String> {
+    pub fn exchange_pkce(
+        &mut self,
+        verifier: &str,
+        challenge: &str,
+        now: i64,
+    ) -> Result<AuthToken, String> {
         self.check_faults()?;
 
         let mut hasher = Sha256::new();
@@ -112,7 +116,8 @@ impl MockBackend {
 
         let at = format!("at-pkce-{}", now);
         let rt = format!("rt-pkce-{}", now);
-        self.refresh_tokens.insert(rt.clone(), "user-123".to_string());
+        self.refresh_tokens
+            .insert(rt.clone(), "user-123".to_string());
 
         Ok(AuthToken {
             access_token: at,
@@ -132,7 +137,10 @@ impl MockBackend {
             return Err("token_compromised: refresh token reuse detected".to_string());
         }
 
-        let uid = self.refresh_tokens.remove(old_rt).ok_or_else(|| "invalid_grant".to_string())?;
+        let uid = self
+            .refresh_tokens
+            .remove(old_rt)
+            .ok_or_else(|| "invalid_grant".to_string())?;
         self.used_refresh_tokens.insert(old_rt.to_string());
 
         let new_at = format!("at-refreshed-{}", now);
@@ -155,7 +163,11 @@ impl MockBackend {
 
         Ok(Entitlements {
             plan: "pro".to_string(),
-            features: vec!["cloud_sync".to_string(), "aria_assist".to_string(), "diagnostics".to_string()],
+            features: vec![
+                "cloud_sync".to_string(),
+                "aria_assist".to_string(),
+                "diagnostics".to_string(),
+            ],
             quota_remaining: 50000,
             reset_epoch: now + 86400,
             grace_expiry: now + (7 * 86400),

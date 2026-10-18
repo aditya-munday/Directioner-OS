@@ -13,6 +13,12 @@ pub struct HardwarePowerManager {
     thermal_throttled: bool,
 }
 
+impl Default for HardwarePowerManager {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl HardwarePowerManager {
     pub fn new() -> Self {
         HardwarePowerManager {

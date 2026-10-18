@@ -1,10 +1,10 @@
+use crate::types::{AccountState, AuthToken, DeviceRegistration, Entitlements, UserProfile};
+use serde::{Deserialize, Serialize};
+use sha2::{Digest, Sha256};
 use std::fs::{self, OpenOptions};
 use std::io::Write;
 use std::os::unix::fs::OpenOptionsExt;
 use std::path::{Path, PathBuf};
-use serde::{Deserialize, Serialize};
-use sha2::{Digest, Sha256};
-use crate::types::{AccountState, AuthToken, DeviceRegistration, Entitlements, UserProfile};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SessionRecord {
@@ -117,7 +117,8 @@ impl StateStore {
             Some(env) => {
                 let cipher_bytes = hex_decode(&env.ciphertext_hex)?;
                 let plain_bytes = self.crypt_bytes(&env.nonce, &cipher_bytes);
-                let tok: AuthToken = serde_json::from_slice(&plain_bytes).map_err(|e| e.to_string())?;
+                let tok: AuthToken =
+                    serde_json::from_slice(&plain_bytes).map_err(|e| e.to_string())?;
                 Some(tok)
             }
             None => None,
@@ -152,7 +153,8 @@ impl StateStore {
             return Ok(Vec::new());
         }
         let data = fs::read_to_string(&path).map_err(|e| e.to_string())?;
-        let list: Vec<DeviceRegistration> = serde_json::from_str(&data).map_err(|e| e.to_string())?;
+        let list: Vec<DeviceRegistration> =
+            serde_json::from_str(&data).map_err(|e| e.to_string())?;
         Ok(list)
     }
 
@@ -164,7 +166,7 @@ impl StateStore {
             let mut hasher = Sha256::new();
             hasher.update(&self.key_material);
             hasher.update(nonce.as_bytes());
-            hasher.update(&block_idx.to_be_bytes());
+            hasher.update(block_idx.to_be_bytes());
             let block = hasher.finalize();
 
             for &b in block.iter() {
@@ -181,7 +183,11 @@ impl StateStore {
     }
 
     fn atomic_write(&self, target: &Path, content: &[u8]) -> Result<(), String> {
-        let temp_name = format!("{}.tmp.{}", target.file_name().unwrap().to_str().unwrap(), std::process::id());
+        let temp_name = format!(
+            "{}.tmp.{}",
+            target.file_name().unwrap().to_str().unwrap(),
+            std::process::id()
+        );
         let temp_path = self.root_dir.join(temp_name);
 
         let mut file = OpenOptions::new()
@@ -210,7 +216,7 @@ fn hex_encode(bytes: &[u8]) -> String {
 }
 
 fn hex_decode(s: &str) -> Result<Vec<u8>, String> {
-    if s.len() % 2 != 0 {
+    if !s.len().is_multiple_of(2) {
         return Err("invalid hex length".to_string());
     }
     let mut out = Vec::with_capacity(s.len() / 2);

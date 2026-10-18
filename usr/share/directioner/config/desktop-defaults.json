@@ -1,0 +1,20 @@
+{
+  "org.gnome.desktop.interface": {
+    "color-scheme": "prefer-dark",
+    "gtk-theme": "Directioner-Dark",
+    "icon-theme": "Adwaita",
+    "font-name": "Inter 10",
+    "monospace-font-name": "JetBrains Mono 10"
+  },
+  "org.gnome.desktop.wm.preferences": {
+    "theme": "Directioner-Dark",
+    "button-layout": ":minimize,maximize,close"
+  },
+  "org.gnome.shell": {
+    "favorite-apps": [
+      "org.gnome.Terminal.desktop",
+      "org.gnome.Nautilus.desktop",
+      "org.gnome.Settings.desktop"
+    ]
+  }
+}

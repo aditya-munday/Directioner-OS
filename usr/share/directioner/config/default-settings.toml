@@ -1,0 +1,21 @@
+[system]
+hostname_prefix = "directioner"
+locale = "en_US.UTF-8"
+timezone = "UTC"
+first_boot_wizard = true
+
+[desktop]
+theme = "Directioner-Dark"
+icon_theme = "Adwaita"
+cursor_theme = "Adwaita"
+font_interface = "Inter 10"
+font_monospace = "JetBrains Mono 10"
+scaling_factor = 1.0
+
+[ai_engine]
+control_plane_socket = "/run/ai-capabilityd/ai-capabilityd.sock"
+intent_broker_socket = "/run/directioner/intentd.sock"
+accountd_socket = "/run/directioner/accountd.sock"
+cloudd_socket = "/run/directioner/cloudd.sock"
+rule_b1_enforced = true
+offline_grace_hours = 72

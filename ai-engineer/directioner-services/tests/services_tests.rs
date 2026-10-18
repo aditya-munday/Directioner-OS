@@ -88,7 +88,11 @@ fn test_domain_10_intent_broker_and_rule_b1_guard() {
     };
     let res_unauth = broker.dispatch(req_unauth);
     match res_unauth {
-        IntentResult::DraftPreview { action_summary, dry_run_output, .. } => {
+        IntentResult::DraftPreview {
+            action_summary,
+            dry_run_output,
+            ..
+        } => {
             assert!(action_summary.contains("Draft execution"));
             assert!(dry_run_output.contains("Rule B1"));
         }
@@ -117,7 +121,8 @@ fn test_domain_11_desktop_coordinator() {
     coordinator.set_glow_state(AriaEdgeGlowState::Thinking);
     assert_eq!(coordinator.glow_state, AriaEdgeGlowState::Thinking);
 
-    let id = coordinator.post_notification("Alert", "System update ready", UrgencyLevel::Normal, 1000);
+    let id =
+        coordinator.post_notification("Alert", "System update ready", UrgencyLevel::Normal, 1000);
     assert_eq!(coordinator.get_notifications().len(), 1);
     assert!(coordinator.clear_notification(id));
     assert_eq!(coordinator.get_notifications().len(), 0);
@@ -126,10 +131,16 @@ fn test_domain_11_desktop_coordinator() {
 #[test]
 fn test_domain_12_system_actions() {
     let mut actions = SystemActionsManager::new();
-    assert_eq!(actions.get_system_setting("volume"), Some(&"70".to_string()));
+    assert_eq!(
+        actions.get_system_setting("volume"),
+        Some(&"70".to_string())
+    );
 
     actions.set_system_setting("volume", "95").unwrap();
-    assert_eq!(actions.get_system_setting("volume"), Some(&"95".to_string()));
+    assert_eq!(
+        actions.get_system_setting("volume"),
+        Some(&"95".to_string())
+    );
     assert!(actions.set_system_setting("volume", "150").is_err());
 
     actions.set_alarm("alarm-1", "Wakeup", 200000);
@@ -150,7 +161,11 @@ fn test_domain_13_security_and_trust() {
     assert!(sec.verify_pcr(1, "digest-abc-123"));
     assert!(!sec.verify_pcr(1, "digest-tampered"));
 
-    let audit_trail = ["booted kernel", "initialized ai-capabilityd", "started accountd"];
+    let audit_trail = [
+        "booted kernel",
+        "initialized ai-capabilityd",
+        "started accountd",
+    ];
     assert!(sec.evaluate_audit_chain(&audit_trail));
 }
 

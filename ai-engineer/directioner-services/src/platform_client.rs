@@ -1,13 +1,6 @@
 use serde::{Deserialize, Serialize};
+use sha2::{Digest, Sha256};
 use std::collections::HashMap;
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-pub enum SyncStatus {
-    Synced,
-    PendingUpload,
-    PendingDownload,
-    Conflict,
-}
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct CloudFileRecord {
@@ -16,6 +9,14 @@ pub struct CloudFileRecord {
     pub size_bytes: u64,
     pub modified_epoch: i64,
     pub status: SyncStatus,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub enum SyncStatus {
+    Synced,
+    PendingUpload,
+    PendingDownload,
+    Conflict,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -35,12 +36,19 @@ impl Default for RetryConfig {
     }
 }
 
-pub struct CircuitBreaker {
-    pub failure_threshold: u32,
-    pub failure_count: u32,
-    pub state: CircuitState,
-    pub last_failure_epoch: i64,
-    pub recovery_timeout_secs: i64,
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SyncBatch {
+    pub paths: Vec<String>,
+    pub batch_id: String,
+    pub epoch: i64,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct UploadResult {
+    pub path: String,
+    pub uploaded_hash: String,
+    pub uploaded_bytes: u64,
+    pub success: bool,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -48,6 +56,14 @@ pub enum CircuitState {
     Closed,
     Open,
     HalfOpen,
+}
+
+pub struct CircuitBreaker {
+    pub failure_threshold: u32,
+    pub failure_count: u32,
+    pub state: CircuitState,
+    pub last_failure_epoch: i64,
+    pub recovery_timeout_secs: i64,
 }
 
 impl CircuitBreaker {
@@ -88,11 +104,24 @@ impl CircuitBreaker {
             self.state = CircuitState::Open;
         }
     }
+
+    pub fn reset(&mut self) {
+        self.failure_count = 0;
+        self.state = CircuitState::Closed;
+        self.last_failure_epoch = 0;
+    }
 }
 
 pub struct CloudSyncEngine {
     files: HashMap<String, CloudFileRecord>,
     offline_queue: Vec<String>,
+    upload_history: Vec<UploadResult>,
+}
+
+impl Default for CloudSyncEngine {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl CloudSyncEngine {
@@ -100,6 +129,7 @@ impl CloudSyncEngine {
         CloudSyncEngine {
             files: HashMap::new(),
             offline_queue: Vec::new(),
+            upload_history: Vec::new(),
         }
     }
 
@@ -112,13 +142,21 @@ impl CloudSyncEngine {
             status: SyncStatus::PendingUpload,
         };
         self.files.insert(path.to_string(), rec);
-        self.offline_queue.push(path.to_string());
+        if !self.offline_queue.contains(&path.to_string()) {
+            self.offline_queue.push(path.to_string());
+        }
     }
 
-    pub fn reconcile_remote(&mut self, path: &str, remote_hash: &str, remote_modified: i64) -> SyncStatus {
+    pub fn reconcile_remote(
+        &mut self,
+        path: &str,
+        remote_hash: &str,
+        remote_modified: i64,
+    ) -> SyncStatus {
         if let Some(local) = self.files.get_mut(path) {
             if local.content_hash == remote_hash {
                 local.status = SyncStatus::Synced;
+                self.offline_queue.retain(|p| p != path);
             } else if local.modified_epoch > remote_modified {
                 local.status = SyncStatus::PendingUpload;
             } else if local.modified_epoch < remote_modified {
@@ -160,6 +198,56 @@ impl CloudSyncEngine {
     }
 
     pub fn pending_count(&self) -> usize {
-        self.files.values().filter(|f| f.status != SyncStatus::Synced).count()
+        self.files
+            .values()
+            .filter(|f| f.status != SyncStatus::Synced)
+            .count()
     }
+
+    pub fn offline_queue_len(&self) -> usize {
+        self.offline_queue.len()
+    }
+
+    pub fn mark_uploaded(&mut self, path: &str, uploaded_hash: &str) {
+        if let Some(rec) = self.files.get_mut(path) {
+            let result = UploadResult {
+                path: path.to_string(),
+                uploaded_hash: uploaded_hash.to_string(),
+                uploaded_bytes: rec.size_bytes,
+                success: true,
+            };
+            self.upload_history.push(result);
+            rec.content_hash = uploaded_hash.to_string();
+            rec.status = SyncStatus::Synced;
+            self.offline_queue.retain(|p| p != path);
+        }
+    }
+
+    pub fn compute_batch(&self, max_items: usize, now_epoch: i64) -> SyncBatch {
+        let paths: Vec<String> = self.offline_queue.iter().take(max_items).cloned().collect();
+        let batch_id = content_hash_str(&format!("{}{}", now_epoch, paths.join(",")));
+        SyncBatch {
+            paths,
+            batch_id,
+            epoch: now_epoch,
+        }
+    }
+
+    pub fn file_status(&self, path: &str) -> Option<SyncStatus> {
+        self.files.get(path).map(|r| r.status)
+    }
+
+    pub fn upload_history(&self) -> &[UploadResult] {
+        &self.upload_history
+    }
+}
+
+pub fn content_hash_str(input: &str) -> String {
+    let mut hasher = Sha256::new();
+    hasher.update(input.as_bytes());
+    let result = hasher.finalize();
+    result.iter().fold(String::new(), |mut acc, b| {
+        acc.push_str(&format!("{:02x}", b));
+        acc
+    })
 }

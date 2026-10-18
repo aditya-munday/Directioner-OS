@@ -1,0 +1,7 @@
+[Sound Theme]
+Name=Directioner
+Comment=Directioner Sound Theme
+Directories=stereo
+
+[stereo]
+OutputProfile=stereo

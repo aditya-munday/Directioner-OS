@@ -65,11 +65,9 @@ impl IntentBroker {
                     result_message: format!("Launching {}", app),
                 }
             }
-            IntentKind::QuerySystemStatus => {
-                IntentResult::Executed {
-                    result_message: "System status: all healthy".to_string(),
-                }
-            }
+            IntentKind::QuerySystemStatus => IntentResult::Executed {
+                result_message: "System status: all healthy".to_string(),
+            },
             IntentKind::SetSystemSetting => {
                 let key = req.slots.get("key").cloned().unwrap_or_default();
                 let val = req.slots.get("val").cloned().unwrap_or_default();
@@ -83,11 +81,9 @@ impl IntentBroker {
                     result_message: format!("Alarm scheduled for {}", time),
                 }
             }
-            IntentKind::ExecuteAction => {
-                IntentResult::Executed {
-                    result_message: format!("Executed authorized action: {}", req.raw_utterance),
-                }
-            }
+            IntentKind::ExecuteAction => IntentResult::Executed {
+                result_message: format!("Executed authorized action: {}", req.raw_utterance),
+            },
         }
     }
 }

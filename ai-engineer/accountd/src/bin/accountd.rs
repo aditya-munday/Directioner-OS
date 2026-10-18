@@ -1,10 +1,10 @@
+use accountd::{AccountEngine, AccountRequest, AccountResponse, MockBackend, PlatformConfig};
 use std::env;
 use std::fs;
 use std::io::{BufRead, BufReader, Write};
 use std::os::unix::fs::PermissionsExt;
 use std::os::unix::net::{UnixListener, UnixStream};
 use std::path::PathBuf;
-use accountd::{AccountEngine, AccountRequest, AccountResponse, MockBackend, PlatformConfig};
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let args: Vec<String> = env::args().collect();
@@ -13,8 +13,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let config = PlatformConfig::default();
     let backend = MockBackend::new();
-    let mut engine = AccountEngine::new(&data_dir, config, backend)
-        .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e))?;
+    let mut engine =
+        AccountEngine::new(&data_dir, config, backend).map_err(std::io::Error::other)?;
 
     if let Some(parent) = socket_path.parent() {
         fs::create_dir_all(parent)?;

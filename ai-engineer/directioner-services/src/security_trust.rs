@@ -20,6 +20,12 @@ pub struct SecurityTrustEvaluator {
     trusted_pcr_digests: std::collections::HashMap<u32, String>,
 }
 
+impl Default for SecurityTrustEvaluator {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl SecurityTrustEvaluator {
     pub fn new() -> Self {
         SecurityTrustEvaluator {
@@ -44,7 +50,8 @@ impl SecurityTrustEvaluator {
             return true;
         }
 
-        let mut prev_hash = String::from("0000000000000000000000000000000000000000000000000000000000000000");
+        let mut prev_hash =
+            String::from("0000000000000000000000000000000000000000000000000000000000000000");
         for entry in entries {
             let mut hasher = Sha256::new();
             hasher.update(prev_hash.as_bytes());
