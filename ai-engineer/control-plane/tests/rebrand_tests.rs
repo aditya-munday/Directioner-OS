@@ -3,7 +3,7 @@
 use std::io::Write;
 use std::process::Command;
 
-use control_plane::brand_identity::{parse_os_release, render_os_release, BrandIdentity};
+use control_plane::brand_identity::{BrandIdentity, parse_os_release, render_os_release};
 
 fn write_temp(content: &str) -> tempfile::NamedTempFile {
     let mut f = tempfile::NamedTempFile::new().unwrap();
@@ -25,9 +25,17 @@ fn repo_root() -> std::path::PathBuf {
 #[test]
 fn rendered_os_release_id_is_directioner() {
     let s = render_os_release(
-        "Directioner OS", "directioner", "42.0.0 (Genesis)", "42.0.0",
-        "Directioner OS 42 (Genesis)", "server", "b1", "img1",
-        "https://example.com", "https://example.com", "https://example.com",
+        "Directioner OS",
+        "directioner",
+        "42.0.0 (Genesis)",
+        "42.0.0",
+        "Directioner OS 42 (Genesis)",
+        "server",
+        "b1",
+        "img1",
+        "https://example.com",
+        "https://example.com",
+        "https://example.com",
     );
     let map = parse_os_release(&s);
     assert_eq!(map["ID"], "directioner");
@@ -36,36 +44,72 @@ fn rendered_os_release_id_is_directioner() {
 #[test]
 fn rendered_os_release_has_id_like_fedora() {
     let s = render_os_release(
-        "Directioner OS", "directioner", "42.0.0 (Genesis)", "42.0.0",
-        "Directioner OS 42 (Genesis)", "server", "b1", "img1",
-        "https://example.com", "https://example.com", "https://example.com",
+        "Directioner OS",
+        "directioner",
+        "42.0.0 (Genesis)",
+        "42.0.0",
+        "Directioner OS 42 (Genesis)",
+        "server",
+        "b1",
+        "img1",
+        "https://example.com",
+        "https://example.com",
+        "https://example.com",
     );
-    assert!(s.contains("ID_LIKE=fedora"), "ID_LIKE=fedora must be present for dnf compat");
+    assert!(
+        s.contains("ID_LIKE=fedora"),
+        "ID_LIKE=fedora must be present for dnf compat"
+    );
 }
 
 #[test]
 fn rendered_os_release_name_not_fedora_linux() {
     let s = render_os_release(
-        "Directioner OS", "directioner", "42.0.0 (Genesis)", "42.0.0",
-        "Directioner OS 42 (Genesis)", "server", "b1", "img1",
-        "https://example.com", "https://example.com", "https://example.com",
+        "Directioner OS",
+        "directioner",
+        "42.0.0 (Genesis)",
+        "42.0.0",
+        "Directioner OS 42 (Genesis)",
+        "server",
+        "b1",
+        "img1",
+        "https://example.com",
+        "https://example.com",
+        "https://example.com",
     );
     let map = parse_os_release(&s);
     assert_ne!(map.get("NAME").map(|s| s.as_str()), Some("Fedora Linux"));
-    assert!(!map.get("PRETTY_NAME").unwrap_or(&String::new()).contains("Fedora Linux"));
+    assert!(
+        !map.get("PRETTY_NAME")
+            .unwrap_or(&String::new())
+            .contains("Fedora Linux")
+    );
 }
 
 #[test]
 fn rendered_os_release_has_required_fields() {
     let s = render_os_release(
-        "Directioner OS", "directioner", "42.0.0 (Genesis)", "42.0.0",
-        "Directioner OS 42 (Genesis)", "desktop", "build-42", "img-42",
+        "Directioner OS",
+        "directioner",
+        "42.0.0 (Genesis)",
+        "42.0.0",
+        "Directioner OS 42 (Genesis)",
+        "desktop",
+        "build-42",
+        "img-42",
         "https://github.com/aditya-munday/Directioner-OS",
         "https://github.com/aditya-munday/Directioner-OS/issues",
         "https://github.com/aditya-munday/Directioner-OS/issues",
     );
     let map = parse_os_release(&s);
-    for field in &["NAME", "ID", "VERSION_ID", "PRETTY_NAME", "VARIANT_ID", "BUILD_ID"] {
+    for field in &[
+        "NAME",
+        "ID",
+        "VERSION_ID",
+        "PRETTY_NAME",
+        "VARIANT_ID",
+        "BUILD_ID",
+    ] {
         assert!(map.contains_key(*field), "Missing required field: {field}");
     }
 }
@@ -230,7 +274,11 @@ fn token_generator_is_deterministic() {
         .current_dir(repo_root())
         .output()
         .expect("Token generator run 1 failed");
-    assert!(out1.status.success(), "Token generator failed (run 1):\n{}", String::from_utf8_lossy(&out1.stderr));
+    assert!(
+        out1.status.success(),
+        "Token generator failed (run 1):\n{}",
+        String::from_utf8_lossy(&out1.stderr)
+    );
 
     let out2 = Command::new("python3")
         .arg(&token_gen)
@@ -271,8 +319,10 @@ fn rebrand_lint_passes_on_source_tree() {
         .and_then(|n| n.parse().ok())
         .unwrap_or(0);
 
-    assert_eq!(count, 0,
-        "rebrand_lint found {count} unallowlisted 'Fedora' strings in source tree");
+    assert_eq!(
+        count, 0,
+        "rebrand_lint found {count} unallowlisted 'Fedora' strings in source tree"
+    );
 }
 
 #[test]
@@ -303,6 +353,12 @@ fn rebrand_lint_detects_planted_string() {
         .and_then(|n| n.parse().ok())
         .unwrap_or(0);
 
-    assert!(count >= 1, "rebrand_lint must detect planted 'Fedora' string (got {count})");
-    assert!(!output.status.success(), "rebrand_lint must exit non-zero on violations");
+    assert!(
+        count >= 1,
+        "rebrand_lint must detect planted 'Fedora' string (got {count})"
+    );
+    assert!(
+        !output.status.success(),
+        "rebrand_lint must exit non-zero on violations"
+    );
 }

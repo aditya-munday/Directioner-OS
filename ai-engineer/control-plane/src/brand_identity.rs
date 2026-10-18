@@ -27,8 +27,8 @@ pub struct BrandIdentity {
 impl BrandIdentity {
     /// Load from /etc/os-release (or TEST_OS_RELEASE env var for tests).
     pub fn load() -> Self {
-        let path = std::env::var("TEST_OS_RELEASE")
-            .unwrap_or_else(|_| "/etc/os-release".to_string());
+        let path =
+            std::env::var("TEST_OS_RELEASE").unwrap_or_else(|_| "/etc/os-release".to_string());
         Self::from_path(path)
     }
 
@@ -43,23 +43,59 @@ impl BrandIdentity {
         let map = parse_os_release(content);
 
         BrandIdentity {
-            name:          map.get("NAME").cloned().unwrap_or_else(|| "Directioner OS".to_string()),
-            id:            map.get("ID").cloned().unwrap_or_else(|| "directioner".to_string()),
-            version:       map.get("VERSION").cloned().unwrap_or_else(|| "42.0.0 (Genesis)".to_string()),
-            version_id:    map.get("VERSION_ID").cloned().unwrap_or_else(|| "42.0.0".to_string()),
-            pretty_name:   map.get("PRETTY_NAME").cloned().unwrap_or_else(|| "Directioner OS 42 (Genesis)".to_string()),
-            variant_id:    map.get("VARIANT_ID").cloned().unwrap_or_else(|| "server".to_string()),
-            build_id:      map.get("BUILD_ID").cloned().unwrap_or_else(|| "dev".to_string()),
-            image_id:      map.get("IMAGE_ID").cloned().unwrap_or_else(|| "unknown".to_string()),
-            home_url:      map.get("HOME_URL").cloned().unwrap_or_else(|| "https://github.com/aditya-munday/Directioner-OS".to_string()),
-            support_url:   map.get("SUPPORT_URL").cloned().unwrap_or_else(|| "https://github.com/aditya-munday/Directioner-OS/issues".to_string()),
-            bug_report_url: map.get("BUG_REPORT_URL").cloned().unwrap_or_else(|| "https://github.com/aditya-munday/Directioner-OS/issues".to_string()),
+            name: map
+                .get("NAME")
+                .cloned()
+                .unwrap_or_else(|| "Directioner OS".to_string()),
+            id: map
+                .get("ID")
+                .cloned()
+                .unwrap_or_else(|| "directioner".to_string()),
+            version: map
+                .get("VERSION")
+                .cloned()
+                .unwrap_or_else(|| "42.0.0 (Genesis)".to_string()),
+            version_id: map
+                .get("VERSION_ID")
+                .cloned()
+                .unwrap_or_else(|| "42.0.0".to_string()),
+            pretty_name: map
+                .get("PRETTY_NAME")
+                .cloned()
+                .unwrap_or_else(|| "Directioner OS 42 (Genesis)".to_string()),
+            variant_id: map
+                .get("VARIANT_ID")
+                .cloned()
+                .unwrap_or_else(|| "server".to_string()),
+            build_id: map
+                .get("BUILD_ID")
+                .cloned()
+                .unwrap_or_else(|| "dev".to_string()),
+            image_id: map
+                .get("IMAGE_ID")
+                .cloned()
+                .unwrap_or_else(|| "unknown".to_string()),
+            home_url: map
+                .get("HOME_URL")
+                .cloned()
+                .unwrap_or_else(|| "https://github.com/aditya-munday/Directioner-OS".to_string()),
+            support_url: map.get("SUPPORT_URL").cloned().unwrap_or_else(|| {
+                "https://github.com/aditya-munday/Directioner-OS/issues".to_string()
+            }),
+            bug_report_url: map.get("BUG_REPORT_URL").cloned().unwrap_or_else(|| {
+                "https://github.com/aditya-munday/Directioner-OS/issues".to_string()
+            }),
         }
     }
 
     /// Format a --version line for a given binary name and contract version.
     /// Format: "<name> <ver> (build <build_id>; contract v<contract>)\nDirectioner OS <version>"
-    pub fn version_line(&self, binary_name: &str, binary_version: &str, contract_version: u32) -> String {
+    pub fn version_line(
+        &self,
+        binary_name: &str,
+        binary_version: &str,
+        contract_version: u32,
+    ) -> String {
         format!(
             "{} {} (build {}; contract v{})\n{} {}",
             binary_name,
@@ -118,6 +154,7 @@ pub fn parse_os_release(content: &str) -> HashMap<String, String> {
 
 /// Generate the content for /etc/os-release from brand parameters.
 /// Used by directioner-release package build and tests.
+#[allow(clippy::too_many_arguments)]
 pub fn render_os_release(
     name: &str,
     id: &str,
@@ -229,17 +266,23 @@ BUILD_ID=abc123
             "https://github.com/aditya-munday/Directioner-OS/issues",
         );
         // NAME must not say "Fedora Linux"
-        assert!(!rendered.contains("Fedora Linux"), "os-release must not say 'Fedora Linux'");
+        assert!(
+            !rendered.contains("Fedora Linux"),
+            "os-release must not say 'Fedora Linux'"
+        );
         // ID must be directioner
         assert!(rendered.contains("ID=directioner"));
         // ID_LIKE=fedora IS expected (technical compat field)
         assert!(rendered.contains("ID_LIKE=fedora"));
         // PRETTY_NAME must not say "Fedora"
-        let pretty = rendered.lines()
+        let pretty = rendered
+            .lines()
             .find(|l| l.starts_with("PRETTY_NAME="))
             .unwrap_or("");
-        assert!(!pretty.to_lowercase().contains("fedora linux"),
-            "PRETTY_NAME must not say 'Fedora Linux'");
+        assert!(
+            !pretty.to_lowercase().contains("fedora linux"),
+            "PRETTY_NAME must not say 'Fedora Linux'"
+        );
     }
 
     #[test]
