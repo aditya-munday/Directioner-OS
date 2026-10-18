@@ -81,42 +81,43 @@ fn test_domain_10_intent_broker_and_rule_b1_guard() {
         kind: IntentKind::LaunchApplication,
         slots,
         confidence: 0.9,
-        execution_authorized: false,
     };
     let res = broker.dispatch(req_launch);
-    assert!(matches!(res, IntentResult::Executed { .. }));
+    assert!(matches!(res, IntentResult::DraftPreview { .. }));
 
     let mut slots_exec = HashMap::new();
     slots_exec.insert("target".to_string(), "network".to_string());
-    let req_unauth = IntentRequest {
+    let req_exec = IntentRequest {
         raw_utterance: "restart network".to_string(),
         kind: IntentKind::ExecuteAction,
-        slots: slots_exec.clone(),
+        slots: slots_exec,
         confidence: 0.95,
-        execution_authorized: false,
     };
-    let res_unauth = broker.dispatch(req_unauth);
-    match res_unauth {
+    let res_exec = broker.dispatch(req_exec);
+    match res_exec {
         IntentResult::DraftPreview {
             action_summary,
             dry_run_output,
             ..
         } => {
-            assert!(action_summary.contains("Draft execution"));
+            assert!(action_summary.contains("restart network"));
             assert!(dry_run_output.contains("Rule B1"));
         }
         _ => panic!("Expected DraftPreview under Rule B1"),
     }
 
-    let req_auth = IntentRequest {
-        raw_utterance: "restart network".to_string(),
-        kind: IntentKind::ExecuteAction,
-        slots: slots_exec,
-        confidence: 0.95,
-        execution_authorized: true,
+    let req_low = IntentRequest {
+        raw_utterance: "status".to_string(),
+        kind: IntentKind::QuerySystemStatus,
+        slots: HashMap::new(),
+        confidence: 0.3,
     };
-    let res_auth = broker.dispatch(req_auth);
-    assert!(matches!(res_auth, IntentResult::Executed { .. }));
+    assert_eq!(
+        broker.dispatch(req_low),
+        IntentResult::Rejected {
+            reason: "confidence_too_low".to_string()
+        }
+    );
 }
 
 #[test]

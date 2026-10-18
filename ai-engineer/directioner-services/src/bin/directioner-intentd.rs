@@ -113,7 +113,6 @@ fn handle_connection(stream: UnixStream, state: &Arc<Mutex<IntentDaemonState>>) 
                     kind: parsed_kind,
                     slots,
                     confidence,
-                    execution_authorized: authorized,
                 };
                 let mut guard = state.lock().unwrap();
                 let res = guard.broker.dispatch(req);

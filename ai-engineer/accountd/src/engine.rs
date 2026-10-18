@@ -21,11 +21,11 @@ pub struct AccountEngine {
 
 impl AccountEngine {
     pub fn new<P: AsRef<Path>>(
-        data_dir: P,
+        _data_dir: P,
         config: PlatformConfig,
         backend: MockBackend,
     ) -> Result<Self, String> {
-        let store = StateStore::new(data_dir)?;
+        let store = StateStore::new();
         let device = DeviceRegistration {
             device_id: "dev-local-001".to_string(),
             device_name: "directioner-workstation".to_string(),

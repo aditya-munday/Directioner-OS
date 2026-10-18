@@ -1,7 +1,8 @@
 use crate::types::{AccountState, AuthToken, DeviceRegistration, Entitlements, UserProfile};
+use serde::{Deserialize, Serialize};
 use std::sync::{Arc, RwLock};
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SessionRecord {
     pub state: AccountState,
     pub profile: Option<UserProfile>,
