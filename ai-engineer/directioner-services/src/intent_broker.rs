@@ -8,6 +8,17 @@ pub enum IntentKind {
     QuerySystemStatus,
     ScheduleAlarm,
     ExecuteAction,
+    DiagnoseIncident,
+    MediaPlayback,
+    NetworkSwitch,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub enum ImpactRating {
+    Readonly,
+    UserScope,
+    SystemConfig,
+    PrivilegedMutation,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -43,6 +54,19 @@ impl IntentBroker {
         IntentBroker { min_confidence }
     }
 
+    pub fn classify_impact(&self, kind: &IntentKind) -> ImpactRating {
+        match kind {
+            IntentKind::QuerySystemStatus => ImpactRating::Readonly,
+            IntentKind::MediaPlayback | IntentKind::ScheduleAlarm => ImpactRating::UserScope,
+            IntentKind::LaunchApplication | IntentKind::SetSystemSetting => {
+                ImpactRating::SystemConfig
+            }
+            IntentKind::ExecuteAction
+            | IntentKind::DiagnoseIncident
+            | IntentKind::NetworkSwitch => ImpactRating::PrivilegedMutation,
+        }
+    }
+
     pub fn dispatch(&self, req: IntentRequest) -> IntentResult {
         if req.confidence < self.min_confidence {
             return IntentResult::Rejected {
@@ -50,11 +74,18 @@ impl IntentBroker {
             };
         }
 
-        if req.kind == IntentKind::ExecuteAction && !req.execution_authorized {
+        let impact = self.classify_impact(&req.kind);
+        if impact == ImpactRating::PrivilegedMutation && !req.execution_authorized {
             return IntentResult::DraftPreview {
                 action_summary: format!("Draft execution for: {}", req.raw_utterance),
-                target_subsystem: req.slots.get("target").cloned().unwrap_or_else(|| "system".to_string()),
-                dry_run_output: "Preview only: Rule B1 prohibits conversational execution without explicit owner authorization".to_string(),
+                target_subsystem: req
+                    .slots
+                    .get("target")
+                    .cloned()
+                    .unwrap_or_else(|| "system".to_string()),
+                dry_run_output:
+                    "Preview only: Rule B1 prohibits conversational execution without explicit owner authorization"
+                        .to_string(),
             };
         }
 
@@ -84,6 +115,24 @@ impl IntentBroker {
             IntentKind::ExecuteAction => IntentResult::Executed {
                 result_message: format!("Executed authorized action: {}", req.raw_utterance),
             },
+            IntentKind::DiagnoseIncident => {
+                let target = req.slots.get("target").cloned().unwrap_or_default();
+                IntentResult::Executed {
+                    result_message: format!("Diagnosis completed for: {}", target),
+                }
+            }
+            IntentKind::MediaPlayback => {
+                let action = req.slots.get("action").cloned().unwrap_or_default();
+                IntentResult::Executed {
+                    result_message: format!("Media playback: {}", action),
+                }
+            }
+            IntentKind::NetworkSwitch => {
+                let profile = req.slots.get("profile").cloned().unwrap_or_default();
+                IntentResult::Executed {
+                    result_message: format!("Network switched to: {}", profile),
+                }
+            }
         }
     }
 }

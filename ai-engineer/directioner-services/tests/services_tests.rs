@@ -1,9 +1,9 @@
 use directioner_services::{
-    AriaEdgeGlowState, CircuitBreaker, CircuitState, CliIntegrationBroker, CloudSyncEngine,
-    DesktopCoordinator, HardwarePowerManager, IntentBroker, IntentKind, IntentRequest,
-    IntentResult, PowerProfile, QaConformanceRunner, ReleaseManifest, SandboxLevel,
-    SecurityTrustEvaluator, SyncStatus, SystemActionsManager, ThemeMode, UpdateController,
-    UrgencyLevel,
+    AriaEdgeGlowState, BootSlot, CircuitBreaker, CircuitState, CliIntegrationBroker,
+    CloudSyncEngine, DeploymentState, DesktopCoordinator, HardwarePowerManager, ImpactRating,
+    IntentBroker, IntentKind, IntentRequest, IntentResult, PowerProfile, PowerSource,
+    QaConformanceRunner, ReleaseManifest, SandboxLevel, SecureBootMode, SecurityTrustEvaluator,
+    SyncStatus, SystemActionsManager, ThemeMode, ThermalSeverity, UpdateController, UrgencyLevel,
 };
 use std::collections::HashMap;
 
@@ -65,6 +65,15 @@ fn test_domain_9_cli_integration_broker() {
 fn test_domain_10_intent_broker_and_rule_b1_guard() {
     let broker = IntentBroker::new(0.6);
 
+    assert_eq!(
+        broker.classify_impact(&IntentKind::QuerySystemStatus),
+        ImpactRating::Readonly
+    );
+    assert_eq!(
+        broker.classify_impact(&IntentKind::ExecuteAction),
+        ImpactRating::PrivilegedMutation
+    );
+
     let mut slots = HashMap::new();
     slots.insert("app_name".to_string(), "terminal".to_string());
     let req_launch = IntentRequest {
@@ -117,15 +126,32 @@ fn test_domain_11_desktop_coordinator() {
 
     coordinator.set_theme(ThemeMode::Light);
     assert_eq!(coordinator.theme, ThemeMode::Light);
+    let css = coordinator.render_theme_css_variables();
+    assert!(css.contains("--bg-primary"));
 
     coordinator.set_glow_state(AriaEdgeGlowState::Thinking);
     assert_eq!(coordinator.glow_state, AriaEdgeGlowState::Thinking);
+    let params = coordinator.glow_parameters();
+    assert_eq!(params.color_hex, "#818cf8");
 
     let id =
         coordinator.post_notification("Alert", "System update ready", UrgencyLevel::Normal, 1000);
     assert_eq!(coordinator.get_notifications().len(), 1);
+
+    coordinator.set_do_not_disturb(true);
+    assert!(coordinator.is_do_not_disturb());
+    assert_eq!(coordinator.get_visible_notifications().len(), 0);
+
+    coordinator.set_do_not_disturb(false);
+    assert_eq!(coordinator.get_visible_notifications().len(), 1);
+
     assert!(coordinator.clear_notification(id));
     assert_eq!(coordinator.get_notifications().len(), 0);
+
+    assert_eq!(coordinator.active_workspace(), 0);
+    coordinator.switch_workspace(2).unwrap();
+    assert_eq!(coordinator.active_workspace(), 2);
+    assert!(coordinator.switch_workspace(99).is_err());
 }
 
 #[test]
@@ -148,9 +174,21 @@ fn test_domain_12_system_actions() {
     assert!(actions.cancel_alarm("alarm-1"));
     assert_eq!(actions.list_alarms().len(), 0);
 
+    actions.set_timer("t1", "Tea Timer", 60);
+    let finished_first = actions.tick_timers(30);
+    assert!(finished_first.is_empty());
+    let finished_second = actions.tick_timers(35);
+    assert_eq!(finished_second, vec!["t1".to_string()]);
+
     assert!(!actions.a11y.high_contrast);
     assert!(actions.toggle_high_contrast());
     assert!(actions.a11y.high_contrast);
+
+    actions.set_font_scale(1.5).unwrap();
+    assert!(actions.a11y.large_text);
+    assert!(actions.set_font_scale(5.0).is_err());
+
+    assert!(!actions.audit_log().is_empty());
 }
 
 #[test]
@@ -167,6 +205,20 @@ fn test_domain_13_security_and_trust() {
         "started accountd",
     ];
     assert!(sec.evaluate_audit_chain(&audit_trail));
+
+    let root = sec.compute_merkle_root(&["hash1", "hash2", "hash3"]);
+    assert_eq!(root.len(), 64);
+
+    assert_eq!(sec.get_secure_boot_mode(), SecureBootMode::DeployedMode);
+    assert!(sec.is_secure_boot_active());
+
+    sec.revoke_binary_hash("DEADBEEF1234");
+    assert!(sec.is_binary_revoked("deadbeef1234"));
+    assert!(!sec.is_binary_revoked("cafebeef1234"));
+
+    let posture = sec.generate_posture_report();
+    assert_eq!(posture.overall_trust_score, 100);
+    assert_eq!(posture.revocation_db_count, 1);
 }
 
 #[test]
@@ -174,6 +226,7 @@ fn test_domain_14_release_installer_and_rollback() {
     let mut updater = UpdateController::new("42.0.0");
     assert_eq!(updater.boot_counter, 3);
     assert!(!updater.rolled_back);
+    assert_eq!(updater.active_slot(), BootSlot::SlotA);
 
     let manifest_same = ReleaseManifest {
         os_version: "42.0.0".to_string(),
@@ -195,6 +248,14 @@ fn test_domain_14_release_installer_and_rollback() {
     };
     assert!(updater.validate_manifest(&manifest_new).is_ok());
 
+    let target = updater.stage_update(&manifest_new).unwrap();
+    assert_eq!(target, BootSlot::SlotB);
+    assert_eq!(updater.deployment_state(), DeploymentState::Staged);
+
+    updater.pin_deployment("deploy-42.0.0");
+    assert!(updater.is_pinned("deploy-42.0.0"));
+    assert!(!updater.is_pinned("deploy-unknown"));
+
     assert!(!updater.record_boot_failure());
     assert_eq!(updater.boot_counter, 2);
     assert!(!updater.record_boot_failure());
@@ -202,6 +263,7 @@ fn test_domain_14_release_installer_and_rollback() {
     assert!(updater.record_boot_failure());
     assert_eq!(updater.boot_counter, 0);
     assert!(updater.rolled_back);
+    assert_eq!(updater.deployment_state(), DeploymentState::RolledBack);
 }
 
 #[test]
@@ -220,12 +282,31 @@ fn test_domain_15_hardware_power() {
     assert!(!hw.is_thermal_throttled());
     hw.set_thermal_throttle(true);
     assert!(hw.is_thermal_throttled());
+
+    hw.record_thermal_reading("cpu-die", 65.0, 1000);
+    assert_eq!(hw.evaluate_thermal_severity(), ThermalSeverity::Normal);
+    hw.record_thermal_reading("cpu-die", 88.0, 1001);
+    assert_eq!(hw.evaluate_thermal_severity(), ThermalSeverity::Throttled);
+    assert!(hw.is_thermal_throttled());
+
+    hw.update_battery_telemetry(98, 25, PowerSource::Battery);
+    assert_eq!(hw.get_power_source(), PowerSource::Battery);
+    assert_eq!(hw.get_battery_health(), 98);
+    assert_eq!(hw.get_battery_cycles(), 25);
+
+    let lease = hw.acquire_sleep_inhibition("backup-tool", "System backup in progress", 300, 1000);
+    assert_eq!(hw.active_inhibition_count(1000), 1);
+    assert!(hw.is_sleep_inhibited(1050));
+    assert!(hw.release_sleep_inhibition(&lease));
+    assert_eq!(hw.active_inhibition_count(1000), 0);
+    assert!(!hw.is_sleep_inhibited(1050));
 }
 
 #[test]
 fn test_domain_16_qa_conformance() {
     let report = QaConformanceRunner::run_full_suite();
     assert_eq!(report.failed_checks, 0);
-    assert_eq!(report.passed_checks, 9);
-    assert_eq!(report.details.len(), 9);
+    assert_eq!(report.passed_checks, 12);
+    assert_eq!(report.details.len(), 12);
+    assert_eq!(report.checks.len(), 12);
 }
