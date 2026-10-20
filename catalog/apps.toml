@@ -1,0 +1,31 @@
+domain = "apps"
+
+[[entries]]
+id = "apps.launcher.launch"
+domain = "apps"
+summary = "Launch an installed application by desktop ID"
+params = { type = "object", required = ["desktop_id"], properties = { desktop_id = { type = "string" }, uri_args = { type = "array", items = { type = "string" } } } }
+scope = "user"
+tier_hint = "tier2_user_non_destructive"
+preview = true
+undo = true
+backend = "dbus"
+consent_level = 1
+status = "real"
+help_text = "Spawns application binary via org.freedesktop.Application or systemd --user app scope"
+gui_route = "org.kde.krunner"
+
+[[entries]]
+id = "apps.installed.list"
+domain = "apps"
+summary = "List all installed desktop applications and flatpaks"
+params = { type = "object", properties = { filter = { type = "string" } } }
+scope = "session"
+tier_hint = "tier1_read"
+preview = false
+undo = false
+backend = "internal"
+consent_level = 0
+status = "real"
+help_text = "Reads standard XDG application directories and Flatpak appstream records"
+gui_route = "org.kde.discover"

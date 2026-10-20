@@ -1,0 +1,46 @@
+domain = "audio"
+
+[[entries]]
+id = "audio.volume.set"
+domain = "audio"
+summary = "Set output master volume level"
+params = { type = "object", required = ["volume_percent"], properties = { volume_percent = { type = "integer", minimum = 0, maximum = 150 } } }
+scope = "user"
+tier_hint = "tier2_user_non_destructive"
+preview = true
+undo = true
+backend = "dbus"
+consent_level = 1
+status = "real"
+help_text = "Adjusts output volume percentage across active audio sinks via PipeWire/WirePlumber"
+gui_route = "settings/sound"
+
+[[entries]]
+id = "audio.volume.get"
+domain = "audio"
+summary = "Read current output master volume level"
+params = { type = "object" }
+scope = "session"
+tier_hint = "tier1_read"
+preview = false
+undo = false
+backend = "dbus"
+consent_level = 0
+status = "real"
+help_text = "Queries PipeWire/WirePlumber for the current master output volume level and mute status"
+gui_route = "settings/sound"
+
+[[entries]]
+id = "audio.mute.toggle"
+domain = "audio"
+summary = "Toggle mute state on master audio sink"
+params = { type = "object" }
+scope = "user"
+tier_hint = "tier2_user_non_destructive"
+preview = true
+undo = true
+backend = "dbus"
+consent_level = 1
+status = "real"
+help_text = "Toggles mute state of current default audio output"
+gui_route = "settings/sound"

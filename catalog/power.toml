@@ -1,0 +1,31 @@
+domain = "power"
+
+[[entries]]
+id = "power.system.reboot"
+domain = "power"
+summary = "Reboot the system into default or specified boot target"
+params = { type = "object", properties = { delay_seconds = { type = "integer", minimum = 0 } } }
+scope = "system"
+tier_hint = "tier3_privileged_or_mutating"
+preview = true
+undo = false
+backend = "systemd"
+consent_level = 1
+status = "real"
+help_text = "Initiates a clean system reboot via systemd/logind, broadcasting shutdown notification to active sessions"
+gui_route = "kcm_powerdevil"
+
+[[entries]]
+id = "power.system.shutdown"
+domain = "power"
+summary = "Power off the system cleanly"
+params = { type = "object", properties = { delay_seconds = { type = "integer", minimum = 0 } } }
+scope = "system"
+tier_hint = "tier3_privileged_or_mutating"
+preview = true
+undo = false
+backend = "systemd"
+consent_level = 1
+status = "real"
+help_text = "Transitions all services to shutdown.target and powers off hardware via logind"
+gui_route = "kcm_powerdevil"

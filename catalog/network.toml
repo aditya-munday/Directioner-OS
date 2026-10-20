@@ -1,0 +1,46 @@
+domain = "network"
+
+[[entries]]
+id = "network.wifi.scan"
+domain = "network"
+summary = "Scan for nearby Wi-Fi access points"
+params = { type = "object", properties = { rescan = { type = "boolean" } } }
+scope = "user"
+tier_hint = "tier1_read"
+preview = false
+undo = false
+backend = "dbus"
+consent_level = 1
+status = "real"
+help_text = "Requests NetworkManager Wi-Fi interface to scan and return available SSIDs and signal strengths"
+gui_route = "kcm_networkmanagement"
+
+[[entries]]
+id = "network.wifi.connect"
+domain = "network"
+summary = "Connect to a Wi-Fi wireless network"
+params = { type = "object", required = ["ssid"], properties = { ssid = { type = "string" }, password = { type = "string" } } }
+scope = "user"
+tier_hint = "tier2_user_non_destructive"
+preview = true
+undo = true
+backend = "dbus"
+consent_level = 2
+status = "real"
+help_text = "Creates or activates a NetworkManager connection for the target Wi-Fi SSID"
+gui_route = "kcm_networkmanagement"
+
+[[entries]]
+id = "network.status.get"
+domain = "network"
+summary = "Get overall network connectivity status"
+params = { type = "object" }
+scope = "session"
+tier_hint = "tier1_read"
+preview = false
+undo = false
+backend = "dbus"
+consent_level = 0
+status = "real"
+help_text = "Returns active interfaces, IP addresses, gateway, and primary connectivity state"
+gui_route = "kcm_networkmanagement"

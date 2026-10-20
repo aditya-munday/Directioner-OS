@@ -9,6 +9,7 @@ members = [
     "unit-name",
     "accountd",
     "directioner-services",
+    "../crates/dos-catalog",
 ]
 
 [workspace.package]

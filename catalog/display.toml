@@ -1,0 +1,31 @@
+domain = "display"
+
+[[entries]]
+id = "display.brightness.set"
+domain = "display"
+summary = "Set display backlight brightness level"
+params = { type = "object", required = ["brightness_percent"], properties = { brightness_percent = { type = "integer", minimum = 0, maximum = 100 } } }
+scope = "user"
+tier_hint = "tier2_user_non_destructive"
+preview = true
+undo = true
+backend = "dbus"
+consent_level = 1
+status = "real"
+help_text = "Adjusts display backlight percentage via systemd/logind or PowerDevil D-Bus service"
+gui_route = "kcm_powerdevil"
+
+[[entries]]
+id = "display.nightcolor.toggle"
+domain = "display"
+summary = "Toggle blue-light reduction night color mode"
+params = { type = "object", properties = { enabled = { type = "boolean" } } }
+scope = "user"
+tier_hint = "tier2_user_non_destructive"
+preview = true
+undo = true
+backend = "dbus"
+consent_level = 1
+status = "real"
+help_text = "Enables or disables KWin color temperature adjustment for night light"
+gui_route = "kcm_nightcolor"

@@ -1,0 +1,25 @@
+[package]
+name = "dos-catalog"
+description = "Directioner OS Capability Catalog Schema, Loader, Registry and Linter (U062-U064)"
+workspace = "../../ai-engineer"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+publish = false
+
+[dependencies]
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+toml = "0.8"
+thiserror = "1"
+
+[dev-dependencies]
+tempfile = "3"
+
+[[bin]]
+name = "dos-catalog"
+path = "src/bin/dos-catalog.rs"
+
+[lints.rust]
+missing_docs = "allow"
