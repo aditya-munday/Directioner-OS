@@ -218,12 +218,14 @@ COPY configs/issue /etc/issue
 COPY configs/motd /etc/motd
 COPY configs/directioner.repo /etc/yum.repos.d/directioner.repo
 
-# Install guest hypervisor tools not in Kinoite base
+# Install guest hypervisor tools and greenboot rollback framework
 RUN dnf install -y \
     open-vm-tools \
     open-vm-tools-desktop \
     qemu-guest-agent \
     spice-vdagent \
+    greenboot \
+    greenboot-grub2 \
     && dnf clean all
 
 # Deploy Directioner OS control plane binaries
@@ -234,7 +236,8 @@ COPY libexec/ /usr/libexec/
 COPY configs/systemd/directioner-milestone.service /usr/lib/systemd/system/directioner-milestone.service
 COPY configs/greenboot/01_directioner_milestone.sh /etc/greenboot/check/required.d/01_directioner_milestone.sh
 RUN chmod 755 /etc/greenboot/check/required.d/01_directioner_milestone.sh \
-    && systemctl enable greenboot-healthcheck.service directioner-milestone.service \
+    && systemctl enable directioner-milestone.service \
+    && { systemctl enable greenboot-healthcheck.service 2>/dev/null || true; } \
     && systemctl enable sddm \
     && { systemctl enable vmtoolsd.service 2>/dev/null || true; } \
     && { systemctl enable qemu-guest-agent.service 2>/dev/null || true; } \
