@@ -1,0 +1,238 @@
+name: Directioner-OS Desktop Image & VMware Artifacts (M1)
+
+on:
+  workflow_dispatch:
+    inputs:
+      skip-vm-smoke:
+        description: 'Skip VM smoke test'
+        required: false
+        default: 'false'
+        type: boolean
+  schedule:
+    - cron: '0 3 * * *'
+
+concurrency:
+  group: desktop-image-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+env:
+  IMAGE_TAG: localhost/directioner-desktop:ci
+
+jobs:
+  build-desktop:
+    name: Build Desktop Image, ISO, VMDK & VM Smoke Test
+    runs-on: ubuntu-24.04
+    timeout-minutes: 90
+    steps:
+      - name: Free runner disk space
+        run: |
+          echo "=== Disk space before cleanup ==="
+          df -h
+          sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /usr/local/share/powershell /opt/hostedtoolcache
+          echo "=== Disk space after cleanup ==="
+          df -h
+
+      - uses: actions/checkout@v4
+
+      - name: Setup Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Build release binaries
+        working-directory: ai-engineer
+        run: cargo build --release
+
+      - name: Stage release binaries and brand assets into image/
+        run: |
+          mkdir -p image/bin image/libexec image/scripts image/design image/packaging
+          cp ai-engineer/target/release/ai-* ai-engineer/target/release/directioner-* ai-engineer/target/release/dos-* image/bin/ 2>/dev/null || true
+          cp scripts/directioner-serial-probe.sh image/libexec/directioner-serial-probe
+          chmod +x image/libexec/directioner-serial-probe
+          cp -r scripts/* image/scripts/
+          cp brand.toml image/brand.toml
+          cp -r design/* image/design/
+          cp -r packaging/* image/packaging/
+
+      - name: Install dependencies (podman, qemu, ovmf)
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq podman qemu-system-x86 ovmf netcat-openbsd imagemagick
+          # Enable KVM permissions
+          if [ -e /dev/kvm ]; then sudo chmod 666 /dev/kvm || true; fi
+          ls -la /dev/kvm || true
+
+      - name: Build desktop container image (desktop-test target)
+        working-directory: image
+        run: |
+          echo "==> Building desktop container image..."
+          sudo podman build --target desktop-test -t "${{ env.IMAGE_TAG }}" -f Containerfile .
+          sudo podman images
+
+      - name: Emit VMDK, ISO, and QCOW2 via bootc-image-builder
+        working-directory: image
+        run: |
+          mkdir -p output
+          PUBKEY="$(tr -d '\n' < ../vm-test/ci_key.pub)"
+          cat > config.toml <<EOF
+          [[customizations.user]]
+          name = "ci"
+          key = "${PUBKEY}"
+          groups = ["wheel"]
+          EOF
+
+          # Build VMDK for VMware Workstation Pro (U017)
+          echo "==> Emitting VMDK disk image..."
+          sudo podman run --rm --privileged \
+            --security-opt label=type:unconfined_t \
+            -v "$(pwd)/output":/output \
+            -v "$(pwd)/config.toml":/config.toml:ro \
+            -v /var/lib/containers/storage:/var/lib/containers/storage \
+            quay.io/centos-bootc/bootc-image-builder:latest \
+            --type vmdk --rootfs xfs --config /config.toml \
+            "${{ env.IMAGE_TAG }}"
+
+          # Build Installer ISO (U016)
+          echo "==> Emitting Installer ISO image..."
+          sudo podman run --rm --privileged \
+            --security-opt label=type:unconfined_t \
+            -v "$(pwd)/output":/output \
+            -v "$(pwd)/config.toml":/config.toml:ro \
+            -v /var/lib/containers/storage:/var/lib/containers/storage \
+            quay.io/centos-bootc/bootc-image-builder:latest \
+            --type iso --rootfs xfs --config /config.toml \
+            "${{ env.IMAGE_TAG }}"
+
+          # Build QCOW2 for QEMU smoke test
+          echo "==> Emitting QCOW2 disk image..."
+          sudo podman run --rm --privileged \
+            --security-opt label=type:unconfined_t \
+            -v "$(pwd)/output":/output \
+            -v "$(pwd)/config.toml":/config.toml:ro \
+            -v /var/lib/containers/storage:/var/lib/containers/storage \
+            quay.io/centos-bootc/bootc-image-builder:latest \
+            --type qcow2 --rootfs xfs --config /config.toml \
+            "${{ env.IMAGE_TAG }}"
+
+          echo "==> Output contents:"
+          find output -type f -exec ls -lh {} +
+
+      - name: Boot desktop image under QEMU, wait for GUI & capture QMP screendump
+        if: ${{ !(github.event.inputs['skip-vm-smoke'] == 'true') }}
+        run: |
+          set -euo pipefail
+          mkdir -p vm screenshots
+          chmod 600 vm-test/ci_key
+
+          ACCEL=tcg
+          if [ -r /dev/kvm ] && [ -w /dev/kvm ]; then
+            ACCEL=kvm
+          fi
+          echo "==> Acceleration mode: $ACCEL"
+
+          qemu-img create -f qcow2 -F qcow2 \
+            -b "$(pwd)/image/output/qcow2/disk.qcow2" vm/desktop-run.qcow2
+
+          qemu-system-x86_64 \
+            -machine accel=$ACCEL -cpu max -m 4096 -smp 4 \
+            -drive file=vm/desktop-run.qcow2,format=qcow2,if=virtio \
+            -netdev user,id=n0,hostfwd=tcp:127.0.0.1:2222-:22 \
+            -device virtio-net-pci,netdev=n0 \
+            -device virtio-vga \
+            -display none \
+            -qmp unix:vm/qmp.sock,server,nowait \
+            -serial file:vm/console.log \
+            -pidfile vm/qemu.pid &
+          QEMU_PID=$!
+
+          cleanup() { kill $QEMU_PID 2>/dev/null || true; }
+          trap cleanup EXIT
+
+          echo "==> Waiting for QMP socket..."
+          for i in $(seq 1 30); do
+            [ -S vm/qmp.sock ] && break
+            sleep 1
+          done
+
+          # Negotiate QMP capabilities
+          echo '{"execute": "qmp_capabilities"}' | nc -U vm/qmp.sock >/dev/null 2>&1 || true
+
+          SSH_OPTS="-i vm-test/ci_key -p 2222 -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR -o ConnectTimeout=5 -o BatchMode=yes"
+          echo "==> Waiting for SSH & GUI boot..."
+          reachable=""
+          for i in $(seq 1 120); do
+            # Take periodic QMP screendumps
+            echo "{\"execute\": \"screendump\", \"arguments\": {\"filename\": \"vm/screen-$i.ppm\"}}" | nc -U vm/qmp.sock >/dev/null 2>&1 || true
+
+            if ssh $SSH_OPTS ci@127.0.0.1 'echo up' 2>/dev/null | grep -q '^up$'; then
+              reachable=yes
+              echo "==> SSH reachable after ~$((i*5))s"
+              break
+            fi
+            sleep 5
+          done
+
+          if [ -z "$reachable" ]; then
+            echo "FATAL: VM failed to reach SSH within timeout"
+            cat vm/console.log | tail -n 100 || true
+            exit 1
+          fi
+
+          # Assert systemd status and check SDDM / Plasma processes
+          ssh $SSH_OPTS ci@127.0.0.1 'systemctl is-system-running || true'
+          ssh $SSH_OPTS ci@127.0.0.1 'systemctl status sddm.service --no-pager || true'
+          ssh $SSH_OPTS ci@127.0.0.1 'ps aux | grep -E "sddm|plasma|kwin|Xwayland" || true'
+
+          # Capture final desktop screenshot
+          echo '{"execute": "screendump", "arguments": {"filename": "vm/desktop_final.ppm"}}' | nc -U vm/qmp.sock >/dev/null 2>&1 || true
+          sleep 2
+
+          # Convert ppm to png
+          if [ -f vm/desktop_final.ppm ]; then
+            convert vm/desktop_final.ppm screenshots/desktop_boot.png || true
+            ls -lh screenshots/
+          fi
+
+      - name: Compress VMDK for VMware Workstation Pro
+        working-directory: image/output
+        run: |
+          if [ -d vmdk ]; then
+            tar -czf directioner-os-vmware.tar.gz -C vmdk .
+            ls -lh directioner-os-vmware.tar.gz
+          fi
+
+      - name: Compress Installer ISO
+        working-directory: image/output
+        run: |
+          if [ -d bootiso ]; then
+            ls -lh bootiso/
+          fi
+
+      - name: Upload VMware VMDK Bundle (Private Artifact)
+        uses: actions/upload-artifact@v4
+        with:
+          name: directioner-os-vmdk
+          path: image/output/directioner-os-vmware.tar.gz
+          retention-days: 7
+          if-no-files-found: warn
+
+      - name: Upload Installer ISO (Private Artifact)
+        uses: actions/upload-artifact@v4
+        with:
+          name: directioner-os-installer-iso
+          path: image/output/bootiso/*.iso
+          retention-days: 7
+          if-no-files-found: warn
+
+      - name: Upload Desktop Screenshots (Private Artifact)
+        uses: actions/upload-artifact@v4
+        with:
+          name: desktop-screenshots
+          path: screenshots/*.png
+          retention-days: 7
+          if-no-files-found: warn
+
+      - name: Print console log on failure
+        if: failure()
+        run: cat vm/console.log | tail -n 200 || true

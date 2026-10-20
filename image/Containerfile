@@ -202,3 +202,36 @@ RUN rm -f /etc/sudoers.d/wheel \
 RUN if id -u ci >/dev/null 2>&1; then echo "FATAL: ci user present in release image!" >&2; exit 1; fi \
     && if [ -f /etc/sudoers.d/wheel ]; then echo "FATAL: passwordless sudo file present in release!" >&2; exit 1; fi \
     && if [ -f /root/.ssh/authorized_keys ]; then echo "FATAL: authorized_keys found in release /root/.ssh!" >&2; exit 1; fi
+
+# ==================================================================
+# Target: desktop (KDE Plasma Wayland desktop base - M1 / U010)
+# ==================================================================
+FROM base AS desktop
+
+# Install KDE Plasma Wayland minimal desktop and guest hypervisor tools
+RUN dnf install -y \
+    plasma-desktop \
+    plasma-workspace-wayland \
+    kwin-wayland \
+    sddm \
+    open-vm-tools \
+    open-vm-tools-desktop \
+    qemu-guest-agent \
+    spice-vdagent \
+    mesa-dri-drivers \
+    xorg-x11-server-Xwayland \
+    && dnf clean all
+
+# Enable SDDM display manager and guest agents
+RUN systemctl enable sddm open-vm-tools qemu-guest-agent \
+    && echo "directioner-desktop-build" > /etc/directioner-build-target
+
+# ==================================================================
+# Target: desktop-test (Desktop with autologin test user for CI verification)
+# ==================================================================
+FROM desktop AS desktop-test
+
+RUN (id -u testuser >/dev/null 2>&1 || useradd -m -G wheel -s /bin/bash testuser) \
+    && echo 'testuser:directioner' | chpasswd \
+    && mkdir -p /etc/sddm.conf.d \
+    && printf "[Autologin]\nUser=testuser\nSession=plasmawayland\n" > /etc/sddm.conf.d/autologin.conf
