@@ -1,5 +1,133 @@
 ================================================================================
-DIRECTIONER-OS  --  ULTIMATE PLAN v3:  "MAKE IT REAL"
+DIRECTIONER-OS  --  ULTIMATE PLAN v4:  "MAKE IT REAL, MAKE IT VISIBLE, SHIP IT"
+Everything graphical. A VMware Workstation Pro image Aditya can boot and judge.
+Fully rebranded on screen, at boot, at login and in the installer.
+================================================================================
+Owner: Aditya.  For the main OS agent (Antigravity IDE).
+v4 = v3 (U001-U345, kept verbatim below as PART 1) + the v4 EXTENSION
+(U346-U535, PART 2) + the FILE MANIFEST (PART 3: which new files to create and
+what each must contain) + the final Definition of Done.
+Aditya's four demands behind v4:
+  (1) "Do everything at the best version" -> COMPLETION CONTRACT (CC) below.
+  (2) "Every feature is code/CLI; make it graphical" -> GUI PARITY RULE (GP)
+      and milestone M13.
+  (3) "A GUI ISO/boot image for VMware Workstation Pro, fully rebranded, not a
+      trace of Fedora, color themes" -> M14 (themes), M15 (purge), M16 (VMware).
+  (4) "Tell the agent what new files and what they contain" -> PART 3.
+
+--------------------------------------------------------------------------------
+V4-A. COMPLETION CONTRACT (CC) - overrides any softer wording in this file
+--------------------------------------------------------------------------------
+CC1  "Complete" means finished end to end: code + service wiring + GUI surface +
+     docs + a real-effect test (RET, rule RR1) that passed on main in CI, with
+     the evidence committed. A task with no GUI surface (when it is user-facing)
+     is NOT complete (see GP1).
+CC2  NO STUBS: no `todo!()`, `unimplemented!()`, `// TODO`, `pass`-bodies,
+     hard-coded fake data, "coming soon" screens, or disabled buttons presented
+     as working. A CI step (`dos-nostub`, U348) greps and fails
+     the build on them outside tests and files labeled SCAFFOLD.
+CC3  HONEST STATUS: use NOT-STARTED / SCAFFOLD / REAL-PARTIAL / REAL-DONE only.
+     If something cannot be completed in your environment (no KVM, no network,
+     cargo missing, upstream bug), write the exact blocker + smallest next step
+     (RR10) and mark UNVERIFIED. Never claim "done" to move on.
+CC4  RUN-ALL MODE. Aditya may write `run all` (or `run M13-M16`). Then:
+     work milestone by milestone in order, commit directly on main in small
+     commits, STOP at the first red RET or at any OWNER-AUTH gate, and write a
+     status block to docs/plan-status.md so a fresh session can resume exactly
+     there. This replaces the one-task-per-session rhythm (RR7) for that range
+     only. Boundaries B1-B14 and the restricted-file rule never relax.
+CC5  CONTEXT HYGIENE FOR LONG RUNS: after every milestone, write
+     docs/handoff/<milestone>.md (what changed, commands to re-verify, open
+     blockers). A new session starts by reading plan-status.md + the latest
+     handoff.
+CC6  QUALITY BAR BEFORE EVERY PUSH: fmt, clippy -D warnings, tests, `dos-nostub`,
+     `dos-purge-scan` (once U429 exists), QML lint (qmllint), shellcheck, and the
+     RET for the touched task. Red -> fix before pushing; never push red.
+CC7  NO SCOPE SHRINKING: if a task looks too big, split it into smaller tasks
+     in plan-status.md and keep every piece, rather than silently doing less.
+CC8  Visual work is judged by screenshots, not by "it compiled": each GUI task
+     attaches before/after screenshots (dark + light) from the booted image.
+CC9  PERFORMANCE SANITY: record numbers (boot time, idle RAM, frame time) in
+     docs/evidence; regressions >20% versus the previous milestone are fixed or
+     explained before moving on.
+CC10 THE AGENT'S LIMITS ARE STATED UP FRONT: this plan was written without repo
+     access. All paths in PART 3 are PROPOSALS: check `git ls-files`, extend an
+     equivalent that exists, and note deviations in docs/plan-status.md.
+
+--------------------------------------------------------------------------------
+V4-B. GUI PARITY RULE (GP)  - "if it exists in code, a human can use it in the GUI"
+--------------------------------------------------------------------------------
+GP1  Every user-facing capability, daemon and setting gets a graphical surface
+     reachable by mouse/touch/keyboard with no terminal. The CLI/`dosctl` is a
+     power-user alternative, never the only way.
+GP2  Parity is measured, not claimed: `dos-parity` (U347) joins the capability
+     catalog + daemon list against a GUI route table and prints the gaps. CI
+     fails if a REAL catalog entry has no GUI route.
+GP3  Every GUI action goes through the same Control Fabric path as the CLI (same
+     approval cards, same Work Log, same undo). The GUI never gets a private
+     back door to root, and never calls ai-capabilityd directly (B9).
+GP4  Every screen has: loading, empty, error, offline and permission-denied
+     states; keyboard navigation; screen-reader names; dark/light; HiDPI.
+GP5  Terminal-free guarantee (U382): all journeys in U261 are doable by mouse.
+
+--------------------------------------------------------------------------------
+V4-C. "NOT A SINGLE TRACE OF FEDORA" - what that can and cannot mean (ZF)
+--------------------------------------------------------------------------------
+Aditya wants zero Fedora. Be precise about what is achievable (and do all of it):
+ZF1  ACHIEVABLE AND REQUIRED = ZERO on anything a user can SEE or TYPE for
+     identity: boot menu, UEFI boot entry label, Plymouth, SDDM, desktop, lock
+     screen, About page, installer screens, app launcher entries, wallpapers,
+     default bookmarks/start pages, `cat /etc/os-release`, `/etc/issue`, motd,
+     hostname, `hostnamectl`, `rpm-ostree status` product label, `bootc status`
+     product text, `neofetch`-style output, VMware VM settings. Proven by (a)
+     rootfs scan, (b) OCR of every gallery screenshot, (c) boot-log scan.
+ZF2  MUST REMAIN BY LAW/SAFETY (allowlisted with a written reason, U428):
+     license texts, copyright headers, changelogs, package names/metadata of
+     upstream packages (e.g. `rpm -qi bash` says Fedora Project as vendor),
+     GPG keys used to verify upstream packages, SBOM entries, source URLs.
+     Removing these would violate licenses or break security verification.
+ZF3  CANNOT BE CHANGED WITHOUT REBUILDING UPSTREAM: the kernel release string
+     (`uname -r` ends in `.fcNN`) and the EFI path `\EFI\fedora\` that Fedora's
+     signed shim/GRUB expect. Rebuilding/re-signing the kernel or shim breaks
+     Secure Boot trust. DEFAULT: leave them, label the UEFI boot entry
+     "Directioner OS", document as residual (U435, U437). Aditya decides if a
+     custom kernel build is worth it (it is a large separate project).
+ZF4  NETWORK HOSTNAMES: upstream RPM mirrors/metadata live at fedoraproject.org
+     and the base image at registry.fedoraproject.org. Directioner-hosted
+     mirrors would mean publishing (B4). DEFAULT: our image updates come from a
+     private registry; layered-package fetches still use upstream mirrors unless
+     Aditya approves hosting (U445). Egress is listed honestly in Privacy.
+ZF5  WORDING: nominative statements such as "built on open-source components
+     including packages from the Fedora Project" may be legally required or
+     permitted; U426 researches and cites the rules. Marketing copy never uses
+     the Fedora name/logo as branding.
+ZF6  The product claim is therefore: "no Fedora branding anywhere in the user
+     experience", NOT "zero strings anywhere on disk". The purge report (U448)
+     shows both numbers.
+
+--------------------------------------------------------------------------------
+V4-D. UPDATED MILESTONE MAP
+--------------------------------------------------------------------------------
+ PART 1 (v3, unchanged)  M0-M12 + X       U001-U345
+ PART 2 (v4 extension):
+ M13 GUI parity: every feature graphical        U346-U395
+ M14 Themes + brand engine (color themes)       U396-U425
+ M15 Zero-Fedora purge (user-visible = 0)       U426-U450
+ M16 VMware Workstation Pro image + bundle      U451-U480
+ M17 Daily-driver completeness + improvements   U481-U520
+ M18 Show-it-working: final E2E + handover      U521-U535
+RECOMMENDED EXECUTION ORDER (dependencies, not numeric order):
+ M0 -> M1 -> M2 -> M3 -> M14(U396-U409 core) -> M4 -> M5 -> M6 + M13 -> M15 ->
+ M16 -> M7-M12 -> M17 -> M18.  M16's first image (U451-U459) can ship right
+ after M1+M2 so Aditya has something to boot early; later images add features.
+ EARLY-WIN RULE: the moment M1 passes, the agent publishes a private ISO+VMDK
+ and tells Aditya, even though later milestones will replace it.
+
+================================================================================
+PART 1  (v3 body, unchanged below this line except renamed headings)
+================================================================================
+================================================================================
+PART 1: DIRECTIONER-OS ULTIMATE PLAN v3 "MAKE IT REAL" (kept intact)
 A bootable GUI ISO, a Control Fabric the AI engineer can see and drive,
 and every claim backed by a real effect on a real running system.
 ================================================================================
@@ -1208,24 +1336,837 @@ U345 [PROPOSED] Enterprise/managed profile design (policy lock-down, audit
   export) - memo only.
 
 ================================================================================
-DEFINITION OF DONE  (whole plan)
-================================================================================
-DD1  Aditya downloads the private ISO artifact, boots it in VMware/QEMU or on a
-     UEFI PC, installs, and sees a graphical Directioner OS desktop (U040).
-DD2  Rebrand verified inside the image, remaining Fedora strings explained (U060).
-DD3  The CLI, on that desktop, can: read live system state; list the catalog;
-     propose actions that appear as approval cards; and, after Aditya's U171
-     authorization, perform the journeys in U261 with real, independently
-     observed effects and undo.
-DD4  Coverage matrix exists and is honest (U087/U320). No "everything" claims.
-DD5  Every REAL-DONE task has commit hash, green CI run id, RET log (and a
-     screenshot if visual).
-DD6  Safety intact: kill-switch, SELinux Enforcing, 0600 sockets, B1/B2/B4.
-DD7  Remaining SCAFFOLD items are listed in docs/scaffold-register.md.
+
+################################################################################
+PART 2  v4 EXTENSION  (U346-U535)
+################################################################################
 
 ================================================================================
-OWNER DECISIONS NEEDED (Aditya)
+M13  GUI PARITY: EVERY FEATURE BECOMES GRAPHICAL  (U346-U395)
 ================================================================================
+Goal: nothing Aditya's agents built stays "code and CLI only". Each existing
+daemon/feature gets a real screen, driven through the Control Fabric.
+
+U346 [DESIGN-FIRST] Parity matrix definition
+  a) Rows: every daemon, every catalog entry, every setting; columns: GUI route,
+     a11y name, screenshot, GUI test, CLI equivalent (`dosctl ...`).
+  b) Also define `dos-nostub` (CC2) and `dos-parity` (GP2) behavior.
+  RET: design approved; matrix skeleton generated from the live catalog.
+U347 [OPEN] `dos-parity` tool + CI gate (fails on a REAL catalog entry with no
+  GUI route; prints gaps by domain).
+  RET: red on a deliberately unrouted entry, green after routing.
+U348 [OPEN] `dos-nostub` CI gate (CC2): greps for todo!/unimplemented!/TODO/
+  "coming soon"/fake-data markers outside tests and SCAFFOLD files.
+  RET: red on a planted stub.
+U349 [OPEN] "System Changes" app page for ai-capabilityd: pending, approved,
+  applied, failed proposals with tier, diff, who asked.
+  RET: real proposal flows through; screenshots.
+U350 [OPEN] Policy viewer: tiers, blast-radius meter, "why was this denied/asked"
+  explanations. READ-ONLY (policy.rs stays restricted).
+  RET: screenshots for Auto/Notify/Confirm/ExpertReview examples.
+U351 [OPEN] Reviewer verdict view: red lines hit, reasons, safe alternatives.
+  RET: a red-line draft shows a plain-language refusal.
+U352 [OPEN] Implementer/Verifier progress view: steps, verification results,
+  retry guidance; raw logs behind a "details" expander (scrubbed).
+  RET: induced failure shows human-readable cause.
+U353 [OPEN] Work Log viewer: timeline, filter by origin/domain/result, search,
+  export, verification badge.
+  RET: matches `ai-worklog` contents.
+U354 [OPEN] Health dashboard (World/Health Model): gauges, history, top issues,
+  recommendations as one-click DRAFTS (never silent fixes).
+  RET: induced degradation appears and clears.
+U355 [OPEN] Incident center: list/status, guided steps, draft-only remediation.
+  RET: induced incident visible and resolvable.
+U356 [OPEN] Self-healing panel: ships DISABLED, plain explanation, shows what it
+  WOULD do; enabling is an OWNER-AUTH config change (patch file only).
+  RET: toggle is visibly locked; explanation screenshot.
+U357 [OPEN] Emergency panel: giant kill-switch, Safe Mode (U182), "stop all AI
+  activity", status. Also reachable from the tray and lock screen.
+  RET: timing test; screenshots.
+U358 [OPEN] Account/devices/sessions pages complete (all states from accountd).
+  RET: screenshots per state.
+U359 [OPEN] Cloud page: sync status, per-folder toggles, egress list.
+  RET: toggles change real config.
+U360 [OPEN] Intent stream viewer (power users): live intents, origins, results.
+  RET: real stream during a CLI session.
+U361 [OPEN] User-actions history (actd) with undo buttons.
+  RET: undo from the GUI restores real state.
+U362 [OPEN] AI task manager (taskd): queue, pause/cancel, CPU/RAM per task,
+  AI-Engineer sessions (Pro 3 / Ultimate 5 display).
+  RET: cancel kills the task.
+U363 [OPEN] System Explorer: browse the statd tree visually with search and
+  redaction badges.
+  RET: tree equals `dosctl state` output.
+U364 [OPEN] Capability browser with "Try preview" (U210 extended).
+  RET: preview from GUI equals CLI preview.
+U365 [OPEN] Schema-driven form engine (QML): builds parameter forms from catalog
+  JSON Schema; validation; secret fields masked; enum -> dropdown.
+  RET: every catalog entry renders a form (automated check).
+U366 [OPEN] CONTROL CENTER app: one window, sidebar of domains (Network,
+  Bluetooth, Sound, Display, Power, Apps, Files, Services, Updates, Security,
+  Users, Storage, Printers, Hardware, Accessibility, AI). Shell + routing +
+  search. (Pages below are separate tasks.)
+  RET: opens, every route loads without error.
+U367 [OPEN] Network page: wired/Wi-Fi list with signal, connect dialog (password
+  via secure prompt), VPN, hotspot, DNS, airplane mode.
+  RET: GUI-only connect/disconnect observed with nmcli.
+U368 [OPEN] Bluetooth page: devices, pair/connect/forget.
+  RET: observed with bluetoothctl.
+U369 [OPEN] Sound page: volume, per-app mixer, output/input switch, mic privacy.
+  RET: observed with wpctl.
+U370 [OPEN] Display page: layout arranger (drag monitors), resolution, scale,
+  night color, brightness, confirm-or-revert countdown.
+  RET: kscreen-doctor + screenshot.
+U371 [OPEN] Power page: profiles, battery, sleep timers, lid actions.
+  RET: powerprofilesctl + config read-back.
+U372 [OPEN] Apps page: installed apps with size, launch, uninstall (Flatpak/
+  layered), permissions editor, default apps.
+  RET: GUI uninstall observed with flatpak list.
+U373 [OPEN] Files & Trash page: recently deleted, restore, empty trash with
+  counts; protected-path explanations.
+  RET: restore returns identical bytes.
+U374 [OPEN] Services page: units with state, start/stop/restart; protected units
+  shown locked with the reason.
+  RET: restart observed; protected refused with message.
+U375 [OPEN] Updates page: current/staged/rollback deployments, "update now",
+  "restart to apply", "roll back".
+  RET: matches rpm-ostree status.
+U376 [OPEN] Security center: SELinux mode, firewall zone + rules (guarded
+  editor), Secure Boot, disk encryption, TPM, security keys.
+  RET: matches getenforce/firewall-cmd/mokutil.
+U377 [OPEN] Users page: list, add/remove (ExpertReview re-auth), password change.
+  RET: test user lifecycle in VM.
+U378 [OPEN] Storage page: disks, usage map, mount/unmount, cleanup suggestions;
+  format flow only via ExpertReview with typed confirmation of device name.
+  RET: lsblk matches; format refused without the flow.
+U379 [OPEN] Printers & scanners page.
+  RET: lpstat matches.
+U380 [OPEN] Hardware page: CPU/GPU/RAM/disks/sensors/battery/firmware.
+  RET: matches lscpu/lspci.
+U381 [OPEN] Accessibility page: all toggles from U128 plus screen reader setup.
+  RET: Orca + config verified.
+U382 [OPEN] TERMINAL-FREE GUARANTEE: every journey in U261 performed by GUI only
+  via an automated driver.
+  RET: scripted GUI run with screenshots per journey.
+U383 [OPEN] GUI test framework chosen and built (Qt Quick Test and/or AT-SPI
+  driver + QMP input injection; memo first, verify tooling on the image).
+  RET: sample test clicking through Control Center in CI.
+U384 [OPEN] Per-page screenshot goldens (tolerance) in CI for light+dark.
+  RET: CI run.
+U385 [OPEN] Command palette (Ctrl+K) in Control Center: every catalog entry
+  reachable by name.
+  RET: type "wifi off" -> preview card appears.
+U386 [OPEN] "Ask" box on every page: natural-language -> draft card (no
+  execution before U171 authorization).
+  RET: draft appears from Aria/CLI path.
+U387 [OPEN] Undo Center: last N actions across domains with one-click undo.
+  RET: real undo.
+U388 [OPEN] Approval & grants history page.
+  RET: reflects real approvals.
+U389 [OPEN] Notification center for AI events with filters.
+  RET: events appear.
+U390 [OPEN] Plasma widgets (plasmoids): Health, AI activity, Quick toggles,
+  Pending approvals.
+  RET: widgets on the default panel; screenshots.
+U391 [OPEN] Quick Settings flyout (Wi-Fi, BT, DND, dark mode, Aria, Safe Mode,
+  brightness, volume).
+  RET: toggles observed with independent tools.
+U392 [OPEN] Coach marks / first-use hints (dismissible, never nagging).
+  RET: screenshots; dismissal persists.
+U393 [OPEN] Offline Help Center: searchable articles generated from catalog docs
+  + hand-written guides.
+  RET: every catalog entry has a help page.
+U394 [OPEN] "What can the AI control?" page: live coverage (U087) + parity
+  numbers, honest wording, links to un-covered areas with "request support".
+  RET: numbers match tools.
+U395 [OPEN] M13 acceptance pack + gallery.
+  RET: docs/evidence/M13/ with `dos-parity` output at 0 gaps for REAL entries.
+
+================================================================================
+M14  THEMES + BRAND ENGINE  (U396-U425)   <- do U396-U409 right after M2
+================================================================================
+Goal: one set of design tokens drives EVERYTHING (Plasma, GTK, Qt apps, SDDM,
+GRUB, Plymouth, terminal, installer, web pages) and the user can switch color
+themes live.
+
+U396 [DESIGN-FIRST] Theme model: tokens for color roles (bg, surface, text,
+  accent, success/warn/danger, focus), radii, spacing scale, type scale,
+  motion, shadows, wallpapers, sounds, cursor, icon accent. JSON Schema +
+  light/dark/auto + accent color + high-contrast variants.
+  RET: schema approved; 2 sample themes validate.
+U397 [OPEN] Token compiler `dos-theme` (Rust or Python; new file): ONE JSON ->
+  Plasma color scheme (.colors), Plasma look-and-feel/global theme, QML Theme
+  singleton, GTK3/4 CSS (+libadwaita overrides), SDDM theme.conf, GRUB
+  theme.txt, Plymouth script, Konsole profile, wallpaper SVG, installer
+  stylesheet. Deterministic output; verify each target format on the image.
+  RET: regenerate twice -> identical hashes; applying shows in screenshots.
+U398 [OPEN] Built-in themes (all dark+light): Directioner Dark, Directioner
+  Light, Midnight, Aurora, Graphite, Sunset, High Contrast. Original palettes.
+  RET: gallery screenshots; contrast numbers (U414).
+U399 [OPEN] System-wide accent picker applying LIVE where possible; list what
+  needs re-login (honest).
+  RET: change accent -> screenshot of Qt app, GTK app, Flatpak app, panel.
+U400 [OPEN] Wallpaper engine: bundled ORIGINAL wallpapers (generated or
+  licensed, provenance file), time-of-day dynamic wallpaper, gradient/solid
+  generator.
+  RET: provenance scan + screenshots.
+U401 [OPEN] Theme editor GUI (in Control Center > Appearance): live preview,
+  contrast warnings, save as custom theme.
+  RET: edit -> apply -> screenshot.
+U402 [OPEN] Theme pack import/export (.dtheme = zip of tokens + assets, NO
+  scripts), schema-validated, size-capped, local only.
+  RET: malformed pack rejected; valid pack applies.
+U403 [OPEN] Flatpak + GTK app theming follows tokens (portals, flatpak
+  overrides, verify what Flatpak apps can actually follow).
+  RET: screenshots of a GTK Flatpak app in 2 themes.
+U404 [OPEN] Icon theme accent variants generated from the master set; no
+  missing icons (scan).
+  RET: scan + screenshots.
+U405 [OPEN] Cursor theme + sizes.
+  RET: screenshot.
+U406 [OPEN] Sound theme (original or clearly licensed), volume-safe.
+  RET: provenance + playback test.
+U407 [OPEN] Font choices UI + bundled open fonts incl. Indic scripts, CJK, emoji.
+  RET: render test sheet screenshot per script.
+U408 [OPEN] Boot chain themed from tokens (GRUB, Plymouth) and regenerated
+  deterministically.
+  RET: boot screenshots match the active theme.
+U409 [OPEN] SDDM + lock screen + login follow the active theme.
+  RET: screenshots.
+U410 [OPEN] Konsole/terminal profile follows theme (ANSI palette contrast
+  checked).
+  RET: screenshot.
+U411 [OPEN] Browser theming through enterprise policy / theme package if the
+  browser supports it (verify); else document.
+  RET: screenshot or documented limit.
+U412 [OPEN] Auto light/dark schedule (sunrise/sunset or custom) via catalog
+  intents.
+  RET: time-jump test in VM.
+U413 [OPEN] Color-blind safe palette checks (simulate protan/deutan/tritan) for
+  status colors in all themes.
+  RET: simulation images + pass/fail table.
+U414 [OPEN] Theme contrast linter in CI (WCAG AA for text/UI), blocks failing
+  built-in themes.
+  RET: red on a bad theme.
+U415 [OPEN] Motion presets (Calm/Snappy/Off) tied to reduced-motion setting.
+  RET: frame-time numbers.
+U416 [OPEN] Window decoration, blur, transparency presets; auto-throttle under
+  software rendering/VM (see U419).
+  RET: screenshots + frame times.
+U417 [OPEN] Layout switcher presets: Windows-like (bottom taskbar), macOS-like
+  (top bar + dock), Minimal, Tablet; undo supported.
+  RET: screenshots of each.
+U418 [OPEN] Desktop icons/widgets/grid options (show/hide, size).
+  RET: screenshots.
+U419 [OPEN] VM-aware performance profile: detect hypervisor (systemd-detect-
+  virt) and pick effects level; user override in Settings.
+  RET: numbers on vmware-svga vs virtio profiles.
+U420 [OPEN] Theme regression matrix: every theme x key screens (login, desktop,
+  Control Center pages, OOBE, installer) screenshot compare.
+  RET: CI artifact reel.
+U421 [OPEN] Brand asset pipeline: logo SVG master -> all sizes (app icons,
+  favicons, Plymouth, GRUB, installer sidebar, About, VMware bundle icon);
+  provenance file.
+  RET: regenerate -> identical; asset scan.
+U422 [OWNER-AUTH] Logo/wordmark: if Aditya has final assets, use them; otherwise
+  generate a clearly-labeled PLACEHOLDER mark and ask him to approve or replace.
+  RET: Aditya's decision.
+U423 [OPEN] Brand guideline page (colors, spacing, voice, do/don't) generated
+  from tokens.
+  RET: reviewed.
+U424 [OPEN] Theme developer docs (how to add a theme).
+  RET: follow the doc to add a theme from scratch.
+U425 [OPEN] M14 acceptance: gallery of ALL themes dark+light across all key
+  screens.
+  RET: docs/evidence/M14/.
+
+
+================================================================================
+M15  ZERO-FEDORA PURGE  (U426-U450)     see V4-C (ZF1-ZF6) for what is possible
+================================================================================
+Target: ZERO Fedora traces on everything user-visible (ZF1). Remaining traces
+are enumerated, justified and shown in a report (ZF2-ZF4, ZF6).
+
+U426 [RESEARCH-FIRST] Fedora trademark + licensing rules
+  a) What MUST remain (license/copyright notices, changelogs, package metadata),
+     what may be removed/replaced, what nominative wording is allowed. Cite the
+     official pages; extends U057.
+  RET: memo with citations and a legal-risk note (not legal advice).
+U427 [OPEN] Trace taxonomy and policy table:
+  T1 on-screen/boot/login/installer text and images (target ZERO)
+  T2 system identity (os-release, issue, hostname, uname/rpm release tags, EFI
+     boot entry label, cpe) (target ZERO except ZF3 items)
+  T3 package metadata (names/vendor/packager/URL/buildhost)  (residual, listed)
+  T4 legal notices, licenses, changelogs, GPG keys (must remain, allowlisted)
+  T5 network hostnames (mirrors, registries) (residual, listed)
+  T6 docs/man pages/help (hide from UI, keep files)
+  T7 binary strings (ignored unless shown to users)
+  RET: docs/purge/TAXONOMY.md.
+U428 [OPEN] purge-allowlist.toml: one entry per allowed residual with class,
+  path/glob, reason, license citation. CI fails on anything not allowlisted in
+  classes T1/T2.
+  RET: file + red/green demonstration.
+U429 [OPEN] `dos-purge-scan` (new crate/script): scans the BUILT image
+  (case-insensitive "fedora", "redhat", "rhel", "silverblue/kinoite" brand
+  strings, "fc4x" release tags, "FEDORA" in env/units) over text files, desktop
+  entries, symlinks, filenames, rpmdb fields (Vendor, Packager, URL, BuildHost),
+  systemd unit descriptions, boot configs, ESP contents; groups by class.
+  RET: first report on the current image (expected: many; record the number).
+U430 [OPEN] Replace identity packages: swap fedora-release*/fedora-logos*/
+  fedora-bookmarks/fedora-backgrounds/fedora-chromium-config & other branded
+  packages with generic-* equivalents where Fedora provides them (VERIFY the
+  names on the image) and then install `directioner-release` + our branding
+  packages via rpm-ostree override/replace. Not editing upstream files in place.
+  RET: `rpm -qa | grep -i fedora` listing before/after; rpm-ostree still works;
+  `bootc upgrade --check` OK.
+U431 [OPEN] os-release complete: NAME, PRETTY_NAME, ID=directioner, VERSION,
+  VARIANT, HOME_URL/SUPPORT_URL/BUG_REPORT_URL (placeholders labeled), LOGO,
+  ANSI_COLOR; decide ID_LIKE (see Q12): removing "fedora" can break third-
+  party scripts/repos, keeping it is a residual trace.
+  RET: `cat /etc/os-release` in VM; sample 3rd-party installer test.
+U432 [OPEN] /etc/fedora-release, /etc/redhat-release, /etc/system-release,
+  system-release-cpe, /etc/issue*, motd, lsb-release equivalents: ours.
+  RET: listing + contents in VM.
+U433 [OPEN] Package repo definitions: repo ids/names/descriptions rebranded
+  (e.g. "Directioner Base"), still pointing at upstream metalinks/mirrors
+  unless U445 says otherwise; GPG key files stay (T4).
+  RET: `rpm-ostree status`, `dnf repolist` (if present), no "Fedora" in names.
+U434 [OPEN] Keep upstream package-signing keys but present them neutrally in UI
+  ("Upstream package signing key"); allowlist the key files.
+  RET: allowlist entries + UI text.
+U435 [RESEARCH-FIRST] Kernel release string (`.fcNN`): options (a) leave as-is
+  (default; Secure Boot stays valid), (b) rebuild kernel with custom
+  LOCALVERSION/dist tag and sign it (needs own Secure Boot key + MOK enrolment
+  by users; large project). Memo with effort/risk; owner decides (Q11).
+  RET: memo.
+U436 [OPEN] Anaconda installer fully branded: product.img/anaconda conf, title
+  bars, sidebar logo, welcome text, "Fedora" strings in all pages; installer
+  runs on the ISO, so test the ISO.
+  RET: screenshots of EVERY installer screen + OCR scan = 0 hits (U438).
+U437 [OPEN] Boot path: GRUB/BLS titles, UEFI boot entry label via efibootmgr
+  ("Directioner OS"), Plymouth text, kernel cmdline contains no Fedora tokens;
+  the `\EFI\fedora\` directory name stays (ZF3, residual, documented).
+  RET: `efibootmgr -v` + boot screenshots + residual note.
+U438 [OPEN] OCR gate: every screenshot in the gallery and the boot/installer
+  reels is OCR'd (tesseract; verify availability) for "fedora"; CI fails on a
+  hit outside allowlisted legal screens.
+  RET: red on a planted image, green on the real reel.
+U439 [OPEN] Desktop entries and apps: remove/hide "Fedora Media Writer", "Fedora
+  Documentation", "Welcome to Fedora", "Get Fedora" etc. by package removal
+  (rpm-ostree override remove, verify) or NoDisplay override; no upstream file
+  edits.
+  RET: launcher listing before/after.
+U440 [OPEN] Default browser start page/bookmarks/search/policies: no Fedora
+  URLs/branding.
+  RET: first-run screenshot offline and online.
+U441 [OPEN] Our own packages carry Vendor/Packager = Beyonders, URL = ours,
+  clean changelogs.
+  RET: `rpm -qi` for each.
+U442 [OPEN] Man pages/docs: leave files (T6) but ensure no UI links to
+  Fedora documentation; help center is ours (U393).
+  RET: launcher/help link scan.
+U443 [OPEN] Hostname default "directioner" (not "fedora"/"localhost-live");
+  DHCP hostname; Avahi name.
+  RET: `hostnamectl` and DHCP client log.
+U444 [OPEN] Telemetry sweep: disable Fedora countme/other stats pings (B14);
+  capture egress for 30 minutes after first boot.
+  RET: pcap summary lists only expected hostnames; unexpected = fix.
+U445 [OPEN] Update source decision (owner): private bootc registry for our image;
+  layered RPM fetches from upstream mirrors vs our own mirror (hosting is
+  B4-gated). Egress list shown in Privacy.
+  RET: memo + Aditya's decision (Q13).
+U446 [OPEN] Flatpak remotes: replace the default Fedora-named remote with
+  Flathub (or curated) under neutral names; no "fedora" remote left.
+  RET: `flatpak remotes` output.
+U447 [OPEN] Container/registry refs in `bootc status`/`rpm-ostree status`: our
+  private image ref; upstream base layer references only inside layer
+  metadata (residual, listed).
+  RET: status output.
+U448 [OPEN] FINAL PURGE RUN on the RC image: scan by class; T1 = 0; T2 = 0 except
+  ZF3 residuals; T3-T5 listed with reasons; T6/T7 counted. Two headline
+  numbers: "on-screen/identity = 0" and "total strings = N (all allowlisted)".
+  RET: report in docs/evidence/M15/ and in the artifact bundle.
+U449 [OPEN] "Straight talk" page (docs): what remains, why, and the approved
+  attribution wording from U426.
+  RET: reviewed against U448.
+U450 [OPEN] M15 acceptance pack.
+  RET: docs/evidence/M15/.
+
+================================================================================
+M16  VMWARE WORKSTATION PRO IMAGE + BUNDLE  (U451-U480)
+================================================================================
+Goal: Aditya opens VMware Workstation Pro, loads our image, and sees the full
+rebranded GUI. Ship three formats: installer ISO, pre-installed VMDK + .vmx,
+and an OVA. CI approximates VMware's virtual hardware with QEMU (it can emulate
+vmware-svga, vmxnet3, pvscsi); the real VMware run is Aditya's (U480).
+
+U451 [RESEARCH-FIRST] VMware Workstation Pro facts
+  a) Current version(s) and licensing, supported guest settings, VMDK subformat
+     needed (monolithic sparse vs stream-optimized; what bootc-image-builder's
+     vmdk output is), UEFI/Secure Boot settings, 3D acceleration + vmwgfx
+     status for Plasma/Wayland, HGFS shared folders, OVA/OVF import. Cite
+     VMware/Broadcom and Fedora/bootc-image-builder docs; do not guess.
+  RET: memo with citations + decisions.
+U452 [OPEN] Three deliverables per build: `directioner-os-<ver>-<date>-x86_64.iso`,
+  `...vmdk` (+ generated .vmx), `...ova`; plus SHA256SUMS, build.json, SBOM,
+  README-VMWARE.txt, ACCEPTANCE_CHECKLIST.txt. Private CI artifacts (B4).
+  RET: artifact listing with sizes + hashes.
+U453 [OPEN] `.vmx` template generator (`vmware/template.vmx.in`). Must set:
+  guestOS to a GENERIC Linux value (e.g. other6xlinux-64; verify) so VMware's
+  UI never shows "Fedora"; firmware="efi"; memsize>=8192 (min 4096); numvcpus
+  4; NVMe or pvscsi disk; vmxnet3 NIC (NAT); svga with 3D enabled and
+  graphics memory >= 256MB; HD audio; USB xhci; time sync tools; clipboard/
+  drag-drop + shared-folder hooks; displayName "Directioner OS"; icon.
+  RET: .vmx validated by loading in QEMU-equivalent profile + Aditya U480.
+U454 [OPEN] Guest tools verified: open-vm-tools(+desktop) running; clipboard,
+  drag-drop, auto-resize, graceful shutdown, time sync, HGFS shared folders at
+  /mnt/hgfs via vmhgfs-fuse (verify packaging).
+  RET: service status + QEMU vmware-profile checks where emulatable;
+  remainder in Aditya's checklist.
+U455 [OPEN] 3D/graphics path: check renderer (SVGA3D/vmwgfx via Mesa) vs
+  llvmpipe fallback; KWin compositing works either way; no black screen.
+  RET: `eglinfo`/`glxinfo` output + screenshots under vmware-svga.
+U456 [OPEN] Wayland vs X11 default per environment: test Plasma Wayland and X11
+  on vmware-svga; pick the more reliable default for VMware guests (auto via
+  systemd-detect-virt) and document the reason.
+  RET: both screenshots + decision note.
+U457 [OPEN] Auto-resize/fullscreen/multi-monitor/HiDPI host scaling behavior
+  checked (QEMU can resize; VMware-specific parts go to the checklist).
+  RET: screenshots at 3 resolutions.
+U458 [OPEN] Root filesystem grows on first boot when the VMDK is enlarged
+  (systemd-growfs or ostree-compatible method; verify).
+  RET: enlarge qcow2/vmdk 20->40GB in the rig; `df -h` shows new size.
+U459 [OPEN] First boot in VM: OOBE creates the user (no default password),
+  hostname, timezone, keyboard, theme choice; accountless allowed.
+  RET: scripted OOBE run + screenshots.
+U460 [OPEN] Time-to-desktop and idle RAM/CPU measured on the VMware-like profile.
+  RET: numbers.
+U461 [OPEN] Snapshot-friendliness: document taking a VMware snapshot right after
+  OOBE; verify the OS tolerates snapshot revert (machine-id, clock, NM).
+  RET: revert simulation in QEMU savevm/loadvm + clock handling.
+U462 [OPEN] Network modes NAT/bridged/host-only: NM behavior verified on the
+  emulated vmxnet3; captive/DHCP edge cases.
+  RET: `nmcli` output per mode where emulatable.
+U463 [OPEN] `dos-vmware-check` (inside the guest, user-run, read-only): detects
+  hypervisor, tools state, resolution, renderer, audio, clipboard agent,
+  network, disk, boot time; writes a scrubbed report ~/dos-vmware-report.txt.
+  RET: report from the QEMU vmware profile.
+U464 [OPEN] GUI button "Test my VM integration" in Control Center > Hardware that
+  runs U463 and shows pass/fail rows with fix hints.
+  RET: screenshots.
+U465 [OPEN] CI job `vmware-profile`: QEMU with `-device vmware-svga`, `vmxnet3`,
+  `pvscsi` (or lsi), `intel-hda`, OVMF; boots ISO and VMDK images; runs the
+  GUI smoke + purge OCR + a11y subset.
+  RET: green run id + screenshot reel.
+U466 [OPEN] Installer ISO path in VMware: BIOS and UEFI both; Anaconda graphical
+  mode under vmware-svga with fallback if modesetting fails.
+  RET: installer screenshots in both modes.
+U467 [OPEN] Release naming/metadata: deterministic names, SHA256SUMS, build.json
+  (git sha, image digest, versions), SBOM included.
+  RET: bundle listing.
+U468 [OPEN] VMWARE QUICKSTART (docs/vmware/QUICKSTART.md + a .txt copy in the
+  bundle): exact steps for (A) ISO install (Create New VM > Installer disc image
+  > Linux > guest OS pick > UEFI > 8GB/4 CPU/40GB > enable 3D > finish) and
+  (B) VMDK/OVA open/import; first screens expected; where the shared folder is.
+  Screenshots from the QEMU rig labeled "approximation".
+  RET: doc reviewed against real artifact names.
+U469 [OPEN] Troubleshooting: black screen, no resize, no network, Secure Boot
+  complaint, slow graphics, host Hyper-V/WHP conflict on Windows hosts,
+  clipboard not working, audio crackle - each with a remedy.
+  RET: doc + each remedy tried where emulatable.
+U470 [OPEN] Windows-host notes: running Workstation with Hyper-V/WHP enabled
+  slows guests; how to check; what to turn off (document, no system changes).
+  RET: doc.
+U471 [OPEN] Demo/Tour data: bundled sample wallpapers, welcome tour, local-only
+  sample documents; NO fake system data presented as real (RR6).
+  RET: first-boot screenshots.
+U472 [OPEN] "Try it" interactive tour: checklist where the user performs real
+  actions (toggle dark theme, change accent, turn Wi-Fi off/on, open Control
+  Center, preview a draft, view Work Log) and each step is verified by reading
+  real state via statd; ticks appear automatically.
+  RET: scripted GUI run completes the tour.
+U473 [OPEN] AI features without a backend: clear states when offline or logged
+  out (local features work; cloud AI says why unavailable); BYOK CLI path
+  explained; staging-backend login path for Aditya's tests.
+  RET: screenshots offline/online.
+U474 [OPEN] VM performance tuning: zram, I/O scheduler, indexer throttling in
+  VMs, animation level via U419; measured before/after.
+  RET: numbers.
+U475 [OPEN] Guest agents coexist (open-vm-tools vs qemu-guest-agent vs spice):
+  only the relevant one runs per hypervisor.
+  RET: service lists under both profiles.
+U476 [OPEN] Disk/space: image 20GB min; recommended 40GB; cleanup tools reachable.
+  RET: sizes + doc.
+U477 [OPEN] Verification matrix: [ISO UEFI][ISO BIOS][VMDK UEFI][OVA import] x
+  [vmware-profile CI] (auto) x [Aditya VMware] (manual). Publish as a table with
+  green/unknown honestly marked.
+  RET: matrix in docs/evidence/M16/.
+U478 [OPEN] ACCEPTANCE_CHECKLIST.txt (~40 checks): boot menu branding, login,
+  desktop, resize, clipboard, drag-drop, shared folder, audio, network, Control
+  Center pages, theme switch, accent, tour, About page, "no Fedora" visual
+  scan, update screen, rollback entry, shutdown/reboot. Each has expected
+  result and a pass/fail box.
+  RET: file in bundle.
+U479 [OPEN] Screenshot reel from the vmware-profile CI run (boot -> installer ->
+  OOBE -> desktop -> every Control Center page -> every theme), as an animated
+  mp4/gif plus a contact sheet PNG.
+  RET: artifacts.
+U480 [OWNER-AUTH] Aditya runs the image in VMware Workstation Pro, completes the
+  checklist, runs the diagnostics tool, and sends the report + screenshots.
+  Failures become tasks. M16 is REAL-DONE only after this.
+  RET: Aditya's report.
+
+
+================================================================================
+M17  DAILY-DRIVER COMPLETENESS + IMPROVEMENTS  (U481-U520)
+================================================================================
+Goal: after boot, a normal person can live in it. Each task: install/configure
+the real app, theme it from tokens, give it an AI hook where sensible (draft
+cards only), prove it with a screenshot + RET.
+
+U481 [OPEN] File manager (Dolphin): layout, places, trash/undo wired to U147/
+  U148, context menu "Ask Directioner", themed.
+  RET: GUI delete -> Trash -> restore.
+U482 [OPEN] Terminal (Konsole): themed; "Explain this error" button creates a
+  DRAFT only.
+  RET: screenshot + draft card.
+U483 [OPEN] Core app set verified launching + themed: text editor, media player,
+  image viewer, PDF viewer, archiver, screenshot/recording tool, calculator,
+  clock/timer (ties to alarms U169), notes, system monitor.
+  RET: launcher listing + one screenshot per app.
+U484 [OPEN] Office suite policy (LibreOffice via Flatpak or layered; decide) and
+  file-association defaults.
+  RET: open .docx/.xlsx/.pptx test files.
+U485 [OPEN] Email/calendar/contacts minimal choice (memo + install).
+  RET: screenshot of setup screen.
+U486 [OPEN] Browser: default, hardware video decode where available (verify),
+  policy-managed defaults; extensions recommended, not forced.
+  RET: video playback test in VM.
+U487 [OPEN] Clipboard history manager; password-manager entries excluded.
+  RET: copy 3 items -> list; excluded type test.
+U488 [OPEN] Backups: GUI for scheduled backups (restic/borg/Kup-class; verify),
+  restore test, encryption by vetted tool.
+  RET: backup -> delete file -> restore -> identical bytes.
+U489 [OPEN] Online accounts (opt-in) page; nothing syncs by default.
+  RET: egress test.
+U490 [OPEN] Scanning/printing GUI complete (SANE + CUPS).
+  RET: virtual printer prints to PDF.
+U491 [OPEN] Security keys (FIDO2) for login/sudo design + enrollment UI
+  (pam-u2f/systemd-cryptenroll; verify).
+  RET: design approved; enrollment on a virtual key if feasible.
+U492 [OPEN] Lock/idle/sleep policies page.
+  RET: timers observed.
+U493 [OPEN] Notification history + DND schedule.
+  RET: screenshots.
+U494 [OPEN] Multitasking: virtual desktops, activities, tiling, hot corners UI.
+  RET: screenshots + KWin state.
+U495 [OPEN] Keyboard cheat-sheet overlay (hold Super) generated from real
+  shortcuts (U134).
+  RET: screenshot.
+U496 [OPEN] Search: KRunner/Baloo tuned; "Ask Directioner" runner plugin returns
+  draft intents; file indexing excludes secrets/dotfiles by default.
+  RET: search results screenshot; exclusion test.
+U497 [OPEN] Emoji picker, character map, on-screen keyboard for touch.
+  RET: screenshots.
+U498 [OPEN] Input methods + fonts for Indic scripts (Devanagari etc.), CJK,
+  Arabic/Hebrew RTL layout; IBus/fcitx5 setup UI in OOBE.
+  RET: type test strings via VM input; render screenshots.
+U499 [OPEN] Region/locale formats and time-zone auto-detect (consent-based).
+  RET: localectl/timedatectl read-back.
+U500 [OPEN] Gaming pack (opt-in): Steam via Flatpak, controller udev support,
+  Game Mode toggle (U334) measured.
+  RET: Steam launches in VM.
+U501 [OPEN] Developer pack (opt-in): toolbox, editor Flatpak, container tools,
+  AI-Engineer workspace launcher.
+  RET: hello-world build in a toolbox.
+U502 [OPEN] Remote access (all OFF by default): SSH server toggle with firewall
+  rule + auto-revert, RDP/VNC server toggle with consent banner.
+  RET: toggle on -> connect from the rig -> toggle off -> refused.
+U503 [OPEN] Screen sharing/recording via portals + PipeWire works in the browser
+  with the indicator visible (U217).
+  RET: portal test screenshot.
+U504 [OPEN] Bluetooth audio profiles and codecs (document patent/license limits,
+  U303).
+  RET: doc.
+U505 [OPEN] Wi-Fi hotspot (share connection) GUI.
+  RET: nmcli shows AP mode (or documented VM limit).
+U506 [OPEN] Phone link (KDE Connect-class), opt-in, firewall rules documented.
+  RET: screenshot + firewall diff.
+U507 [OPEN] Encrypted vaults GUI (Plasma Vault-class).
+  RET: create/lock/unlock/verify files hidden.
+U508 [OPEN] Firewall GUI: zones, services, ports, with lock-out guard (U186).
+  RET: firewall-cmd matches.
+U509 [OPEN] Performance explainer: "Why is my PC slow?" reads real metrics and
+  shows top offenders + DRAFT suggestions.
+  RET: induced CPU hog identified.
+U510 [OPEN] Storage cleanup assistant (caches, old deployments, flatpak unused,
+  logs) with sizes and per-item confirm.
+  RET: space reclaimed.
+U511 [OPEN] Default apps wizard + "import settings" in welcome.
+  RET: screenshots.
+U512 [OPEN] Screen reader complete path (OOBE voice, Orca profile, shortcuts).
+  RET: scripted a11y run + audio capture level.
+U513 [OPEN] Localization: gettext/Qt linguist pipeline; Hindi (and one more
+  Indian language) starter translations for OOBE and Control Center, marked
+  community-reviewable; RTL smoke.
+  RET: screenshots in 2 languages.
+U514 [OPEN] Local crash reporter UI (no upload by default); "Create problem
+  report" produces a scrubbed bundle.
+  RET: induced crash -> bundle contents listing.
+U515 [OPEN] Feedback bundle + "Share this with the developer" instructions
+  (manual).
+  RET: bundle.
+U516 [OPEN] Power user shell: Quake-style terminal hotkey; `dosctl` completions;
+  man pages for dosctl.
+  RET: completion test.
+U517 [OPEN] Idle behavior: screen dimming, sleep, wake locks from video/calls.
+  RET: tests where emulatable.
+U518 [OPEN] Webcam privacy: camera indicator + per-use consent; device kill
+  toggle.
+  RET: screenshots.
+U519 [OPEN] Offline tips/tutorials library (short, visual).
+  RET: screenshots.
+U520 [OPEN] M17 acceptance: "daily-driver week" checklist run in the VM (30+
+  tasks a normal user does) with pass/fail.
+  RET: docs/evidence/M17/.
+
+================================================================================
+M18  SHOW-IT-WORKING: FINAL E2E + HANDOVER  (U521-U535)
+================================================================================
+U521 [OPEN] 20 user stories run end to end on the vmware-profile CI image
+  (install -> OOBE -> theme -> connect -> install app -> AI draft -> approve ->
+  undo -> update -> rollback ...), screenshot per step.
+  RET: green run id + reel.
+U522 [OPEN] Video capture of the full story run (ffmpeg from QEMU display) as an
+  mp4 artifact for Aditya.
+  RET: artifact.
+U523 [OPEN] Local static docs site (no publishing): user guide, admin guide,
+  developer guide, catalog reference, parity report, VMware guide.
+  RET: docs bundle opens offline.
+U524 [OPEN] Release notes + known issues + residual-trace statement (from U448).
+  RET: reviewed against evidence.
+U525 [OPEN] "Four numbers" page: coverage % (U087), parity gaps (U347), purge
+  residuals (U448), accessibility pass rate (U223/U512).
+  RET: numbers from tools only.
+U526 [OPEN] Re-run every RET in docs/evidence against the RC (U319 extended).
+  RET: pass/fail table.
+U527 [OPEN] RC vs previous RC package diff and changelog.
+  RET: changelog.
+U528 [OPEN] Install from ISO on three virtual hardware profiles (virtio, vmware,
+  sata+e1000).
+  RET: three boot-to-desktop proofs.
+U529 [OPEN] Upgrade N -> N+1 and rollback in the VM.
+  RET: logs + screenshots.
+U530 [OPEN] Performance report (boot time, idle RAM, frame times per theme/
+  profile) - numbers only.
+  RET: report.
+U531 [OPEN] Final security rescan (SBOM/vuln/secrets/AVC).
+  RET: reports.
+U532 [OPEN] Final claims audit vs banned words (E) and evidence.
+  RET: table.
+U533 [OPEN] HANDOVER PACKAGE for Aditya (private artifacts): ISO, VMDK, OVA,
+  .vmx, SHA256SUMS, SBOM, QUICKSTART, TROUBLESHOOTING, ACCEPTANCE_CHECKLIST,
+  diagnostics tool, evidence bundle, reels, known issues.
+  RET: listing with hashes; instructions to download.
+U534 [OWNER-AUTH] Aditya's VMware acceptance (may be combined with U480). His
+  list of issues becomes the next plan.
+  RET: Aditya's notes.
+U535 [OPEN] Retrospective; docs/plan-status.md final; REAL-DONE only where
+  evidence exists.
+  RET: status file.
+
+
+################################################################################
+PART 3  FILE MANIFEST: WHAT NEW FILES TO CREATE AND WHAT EACH MUST CONTAIN
+################################################################################
+Paths are PROPOSALS (CC10). First run `git ls-files`; if an equivalent exists,
+extend it instead of duplicating. Restricted files (B2) are never edited: new
+behavior goes into the NEW files below. "Contains" lists the minimum content.
+
+--------------------------------------------------------------------------------
+P3.1  IMAGE BUILD (M1, M2, M15, M16)
+--------------------------------------------------------------------------------
+image/Containerfile.desktop        (or a `desktop` target in the existing file)
+   Contains: ARG BASE (verified Kinoite ref, pinned by digest); copy of built
+   RPMs/binaries; `rpm-ostree install` from packages lists; service enablement
+   (`systemctl enable` lines); SELinux module install; overlay copy; branding
+   package install + identity package replacement (U430); `bootc container lint`
+   as the last step. Targets: desktop (release), desktop-test (autologin test
+   user, test-only).
+image/packages/desktop.txt         one package per line, commented groups: plasma,
+   sddm, pipewire, networkmanager, bluez, cups, flatpak, fonts, codecs-free,
+   accessibility (orca), browser, apps (U483).
+image/packages/vm-guest.txt        open-vm-tools, open-vm-tools-desktop,
+   qemu-guest-agent, spice-vdagent, (hyperv tools if packaged).
+image/packages/remove.txt          branded packages to remove/override (U430,
+   U439), each with a comment on why.
+image/overlay/etc/os-release       our fields (U431).  Also overlay: etc/issue,
+   etc/motd, etc/hostname seed, etc/sddm.conf.d/10-directioner.conf,
+   etc/xdg/kdeglobals, etc/xdg/kwinrc, etc/xdg/kscreenlockerrc, etc/xdg/
+   plasma-org.kde.plasma.desktop-appletsrc, etc/xdg/kcm-about-distrorc,
+   etc/sysctl.d/90-directioner.conf (VM-friendly), etc/NetworkManager/conf.d/.
+image/overlay/usr/share/plasma/look-and-feel/org.directioner.desktop/
+   metadata.json + contents/ (defaults, layouts, lockscreen, splash).
+image/overlay/usr/share/wallpapers/Directioner*/   original wallpapers +
+   provenance.json each (author, license).
+image/systemd/<daemon>.service     one per daemon (statd, intentd, actd, taskd,
+   accountd, cloudd, worklog, cockpit, capabilityd): User/Group, ExecStart,
+   Restart, sockets 0600, hardening (NoNewPrivileges, ProtectSystem,
+   ProtectHome, PrivateTmp, CapabilityBoundingSet, SystemCallFilter...),
+   `systemd-analyze security` score noted in a comment.
+image/selinux/<daemon>.te/.fc     per-daemon policy modules (U097) built in the
+   image; Enforcing.
+image/polkit/50-directioner.rules  ONLY the rules Directioner needs (U073), each
+   commented with the action id and reason.
+image/greenboot/required.d/10-fabric.sh, 20-desktop.sh   health checks:
+   statd/intentd up, SDDM active, NetworkManager up; exit non-zero on failure.
+image/first-boot/directioner-firstboot.service + scripts   growfs (U458),
+   machine-id handling, hostname seed, OOBE trigger once.
+image/bib/config.toml, image/bib/vmdk.toml   bootc-image-builder configs
+   (kernel args, filesystem, no default users in release). Verify real schema.
+image/anaconda/directioner.conf, ks-interactive.ks, ks-unattended-test.ks
+   installer product config and kickstarts (U018, U436); unattended file only
+   used by tests and clearly separated.
+image/efi/bootentry.sh              sets the UEFI boot entry label (U437).
+image/brand/                         generated outputs only (from brand/).
+
+--------------------------------------------------------------------------------
+P3.2  BRAND + THEMES (M2, M14)
+--------------------------------------------------------------------------------
+brand/tokens/directioner.tokens.json     the schema'd master tokens (U396).
+brand/tokens/schema.json                 JSON Schema for tokens and themes.
+brand/themes/{dark,light,midnight,aurora,graphite,sunset,high-contrast}.json
+   each: id, name, mode, color roles, accent default, wallpaper ref, cursor,
+   icon accent, sounds ref, contrast report ref.
+brand/assets/logo.svg, wordmark.svg, mark-mono.svg   master vector assets
+   (placeholder labeled until U422).
+brand/assets/PROVENANCE.md               author/license of every asset.
+tools/dos-theme/                         token compiler (U397): `compile`,
+   `validate`, `apply`, `diff`; outputs under brand/dist/{plasma,gtk,qml,sddm,
+   grub,plymouth,konsole,wallpaper,installer}/.
+tools/dos-theme/tests/                   determinism + contrast tests (U414).
+brand/gen/make-assets.sh                 logo -> all sizes (U421).
+docs/brand/GUIDELINES.md                 generated from tokens (U423).
+
+--------------------------------------------------------------------------------
+P3.3  CONTROL FABRIC CRATES (M3-M5)
+--------------------------------------------------------------------------------
+crates/directioner-statd/       src/main.rs (socket+peercred), providers/
+   {network,bluetooth,audio,display,power,input,apps,services,image,storage,
+   users,security,settings,hardware}.rs, tree.rs (versioned state tree),
+   redact.rs, consent.rs; tests/ for redaction goldens + soak.
+crates/directioner-intentd/     real broker (U070): schema.rs (deny_unknown_
+   fields), identity.rs (peercred+exe+cgroup), ratelimit.rs, router.rs, draft.rs
+   (drafts only before U171), events.rs (subscribe stream).
+crates/directioner-actd/        user-scope executor: backends/{networkmanager,
+   bluez,pipewire,kde,logind,flatpak,files,alarms}.rs, preview.rs, undo.rs,
+   verify.rs; one module per backend, each with RET tests in tests/vm/.
+crates/dos-catalog/             catalog loader/linter (U062-U064);
+catalog/<domain>.toml           one file per domain; each entry: id, summary,
+   params (JSON Schema), scope, tier_hint, preview, undo, backend, consent
+   level, status, help_text, gui_route (needed by dos-parity).
+crates/dosctl/                  reference CLI: observe, catalog, preview, submit,
+   subscribe, dbus-tree, completions.
+crates/dos-coverage/            introspection coverage tool (U087).
+crates/dos-parity/              GUI parity tool (U347): reads catalog + GUI
+   route table `gui/routes.toml`.
+crates/dos-nostub/              stub detector (U348).
+crates/dos-purge-scan/          purge scanner (U429) + allowlist loader.
+crates/directioner-os-mcp/      read-only MCP server (U082-U083).
+crates/dos-tokenbroker/         shared Beyonders token broker (U252-U253).
+
+--------------------------------------------------------------------------------
+P3.4  GUI (M6, M13, M14, M17)   Qt6 / QML (Kirigami); Rust backends over D-Bus
+--------------------------------------------------------------------------------
+gui/common/qml/Theme.qml         singleton generated from tokens; no hard-coded
+   colors anywhere else (lint enforces).
+gui/common/qml/components/       ApprovalCard.qml, SchemaForm.qml (U365),
+   StatusBadge.qml, EmptyState.qml, ErrorState.qml, Skeleton.qml, Toggle
+   Row.qml, SensitiveField.qml, DiffView.qml, RiskMeter.qml.
+gui/common/qml/dbus/             thin QML<->D-Bus/Unix-socket bridges for
+   statd/intentd/actd/accountd/taskd (C++ or Rust cxx-qt; memo decides).
+gui/shell/                       tray app + quick panel + approval queue +
+   notifications (U198-U202, U214, U357).
+gui/controlcenter/Main.qml, Router.qml, CommandPalette.qml, AskBox.qml;
+   pages/{Network,Bluetooth,Sound,Display,Power,Apps,Files,Services,Updates,
+   Security,Users,Storage,Printers,Hardware,Accessibility,Appearance,
+   AI,Privacy,Backups,Remote}.qml ; each page file: header, state binding,
+   all 5 states (GP4), a11y names, `routes.toml` entry.
+gui/controlcenter/Appearance/ThemeEditor.qml, AccentPicker.qml, Wallpaper.qml.
+gui/cockpit/                     health, incidents, work log, system changes,
+   policy viewer, reviewer verdicts, task manager, system explorer.
+gui/oobe/                        wizard pages (language, keyboard, network,
+   account, privacy, theme, AI/voice) + Tour.qml (U472).
+gui/kcm/                         System Settings module "Directioner".
+gui/plasmoids/{health,ai-activity,quick-toggles,approvals}/   metadata.json +
+   main.qml each.
+gui/aria/Orb.qml, EdgeGlow.qml   overlay (U215-U217) with fallbacks.
+gui/routes.toml                  route table consumed by dos-parity.
+gui/tests/                       Qt Quick Test / AT-SPI scripts + goldens.
+
+--------------------------------------------------------------------------------
+P3.5  VMWARE BUNDLE (M16)
+--------------------------------------------------------------------------------
+vmware/template.vmx.in           .vmx template (U453) with @NAME@ @DISK@ tokens.
+vmware/build-vmx.sh              fills the template from build.json.
+vmware/build-ova.sh              builds OVF + packs OVA with the VMDK (verify
+   ovftool is not required; otherwise documented tar layout).
+vmware/dos-vmware-check          guest diagnostics script (U463), read-only,
+   scrubbed output.
+vmware/README-VMWARE.txt         short bundle readme pointing to the guides.
+docs/vmware/QUICKSTART.md, TROUBLESHOOTING.md, HOST-NOTES.md,
+   ACCEPTANCE_CHECKLIST.txt      (U468-U470, U478).
+
+--------------------------------------------------------------------------------
+P3.6  CI, TESTS, EVIDENCE
+--------------------------------------------------------------------------------
+.github/workflows/
+   build-images.yml              desktop + test + release images, SBOM.
+   iso-vmdk-ova.yml              bootc-image-builder outputs, bundle, private
+                                 artifacts with retention.
+   vmware-profile.yml            QEMU with vmware-svga/vmxnet3/pvscsi/OVMF (U465).
+   gui-smoke.yml                 boot, screenshot stats, plasmashell check.
+   gui-regression.yml            screenshot goldens, themes matrix (U420).
+   purge.yml                     dos-purge-scan + OCR gate (U438).
+   parity.yml                    dos-parity + dos-nostub + qmllint.
+   security.yml                  SBOM, vuln scan, secrets, cargo audit.
+   restricted-guard.yml          B2 file-change guard (U008).
+tests/vm/rig/qemu.py             boots images; QMP screendump; serial/SSH helpers;
+   profiles: virtio, vmware, sata-e1000; KVM vs TCG selection.
+tests/vm/ret/<domain>_test.py    one RET file per capability domain (M4).
+tests/vm/ocr_scan.py             OCR for "fedora" in screenshots.
+docs/plan-status.md, docs/scaffold-register.md, docs/handoff/<milestone>.md,
+docs/evidence/<task>/, docs/parity/matrix.csv (generated),
+docs/purge/{TAXONOMY.md,ALLOWLIST_REASONS.md,REPORT.md}, docs/integration/
+{ledger.md,backend-asks.md}.
+
+################################################################################
+DEFINITION OF DONE (v4 - whole plan)
+################################################################################
+DD1  Aditya downloads the private bundle, opens the OVA/VMDK (or installs from
+     the ISO) in VMware Workstation Pro, and gets a fully graphical, fully
+     rebranded Directioner OS desktop; his checklist passes (U480/U534).
+DD2  ZERO Fedora branding on screen, at boot, at login, in the installer, in
+     VM settings and in os-release/identity files; the purge report lists every
+     remaining string by class with a reason (U448). No claim beyond that.
+DD3  Every REAL capability and every shipped daemon has a GUI surface; dos-parity
+     reports 0 gaps (U395/U347). All U261 journeys work by mouse (U382).
+DD4  The CLI on that desktop can read live state, list the catalog and propose
+     actions as approval cards; after Aditya's U171 authorization it performs
+     real, independently observed, undoable actions.
+DD5  Color themes: 7 built-ins + custom themes + accent + auto dark/light, applied
+     consistently to Plasma, Qt, GTK/Flatpak apps, login, lock, boot, installer,
+     terminal (U425).
+DD6  Coverage (U087), parity (U347), purge (U448), accessibility numbers are in
+     the "four numbers" page, produced by tools (U525).
+DD7  Every REAL-DONE task has commit hash on main, green CI run id, RET log and
+     screenshots; stubs are zero (dos-nostub); SCAFFOLD items are listed.
+DD8  Safety unchanged: kill-switch, Safe Mode, SELinux Enforcing, 0600 sockets,
+     B1/B2/B4, no raw root, no "run any command", voice never sole confirmer.
+
+################################################################################
+OWNER DECISIONS (Aditya) - v3 Q1-Q10 still apply, plus:
+################################################################################
 Q1  Desktop: KDE Plasma (default proposed) or GNOME? Veto before U009.
 Q2  Typed authorization phrase for U171 (agent will quote it from the guard
     comment). Do you want to enable the execution switch at all, and when?
@@ -1239,14 +2180,31 @@ Q9  Confirm folder roles (Beyonders-Backend, Beyonders-Frontend, WakeWord).
 Q10 Housekeeping: check CI on PR #41; push the unpushed CLI commits; decide on
     the public server on ports 12000/12001; revoke the exposed GitHub token;
     provide the CLI and Aria repos.
+Q11 Kernel release string (`uname -r` ends .fcNN): leave (recommended) or
+    commission a custom signed kernel build (big project, Secure Boot impact)?
+Q12 os-release ID_LIKE: keep "fedora" (best third-party compatibility, one
+    residual trace) or drop it (cleaner, may break some tools)?
+Q13 Update source: private image registry + upstream RPM mirrors (default) or
+    host Directioner mirrors (needs a B4 publishing decision)?
+Q14 Logo/wordmark: supply final assets, or accept a labeled placeholder first?
+Q15 Which of the 7 built-in themes should be the default (dark or light)?
+Q16 Default session in VMware: Wayland or X11 (agent recommends after U456)?
+Q17 Which optional packs ship in the first image: gaming, developer, office?
+Q18 Is your host Windows (Hyper-V/WHP enabled?) - affects VMware performance
+    notes (U470).
 
+################################################################################
+HOW TO START  (for the agent)
+################################################################################
+1. Read PART 1 sections 0-5, V4-A..V4-D, and this PART 3 fully.
+2. Report in one message: toolchain (U001), state of main (U002), folder map
+   (U003), and whether KVM is available in CI (U007).
+3. Then wait for "next" or run the range Aditya names (`run M1`, `run M13-M16`,
+   `run all`). In RUN-ALL mode follow CC4-CC7: stop at the first red RET or
+   OWNER-AUTH gate, commit small on main, write handoff files.
+4. EARLY WIN: as soon as M1 passes, upload the first private ISO+VMDK and tell
+   Aditya; do not wait for later milestones.
+5. Never mark anything REAL-DONE without its RET evidence.
 ================================================================================
-HOW TO START (for the agent)
-================================================================================
-Read this file fully. Report back in one message: toolchain status (U001),
-state of main (U002), and the folder map (U003). Then wait for "next".
-Aditya may say "run M1" to run the whole first-ISO milestone; stop at the first
-red RET.
-================================================================================
-END OF PLAN v3
+END OF PLAN v4
 ================================================================================

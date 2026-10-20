@@ -1,0 +1,57 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+# ret - Real-Effect Test (RET) evidence runner and recorder for Directioner-OS
+# Usage: ./scripts/ret <task-id> <command...>
+
+if [ "$#" -lt 2 ]; then
+  echo "Usage: $0 <task-id> <command...>"
+  echo "Example: $0 U001 cargo test --workspace"
+  exit 1
+fi
+
+TASK_ID="$1"
+shift
+CMD=("$@")
+
+TIMESTAMP=$(date -u +"%Y%m%d_%H%M%SZ")
+EVIDENCE_DIR="docs/evidence/${TASK_ID}"
+mkdir -p "${EVIDENCE_DIR}"
+
+LOG_FILE="${EVIDENCE_DIR}/ret-${TIMESTAMP}.log"
+LATEST_FILE="${EVIDENCE_DIR}/latest.log"
+
+COMMIT_HASH=$(git rev-parse HEAD 2>/dev/null || echo "unknown")
+BRANCH=$(git rev-parse --abbrev-ref HEAD 2>/dev/null || echo "unknown")
+
+{
+  echo "================================================================================"
+  echo "DIRECTIONER-OS REAL-EFFECT TEST (RET) LOG"
+  echo "================================================================================"
+  echo "Task ID:      ${TASK_ID}"
+  echo "Timestamp:    ${TIMESTAMP}"
+  echo "Commit Hash:  ${COMMIT_HASH}"
+  echo "Git Branch:   ${BRANCH}"
+  echo "Working Dir:  $(pwd)"
+  echo "Command:      ${CMD[*]}"
+  echo "--------------------------------------------------------------------------------"
+} | tee "${LOG_FILE}"
+
+EXIT_CODE=0
+"${CMD[@]}" 2>&1 | tee -a "${LOG_FILE}" || EXIT_CODE=$?
+
+{
+  echo "--------------------------------------------------------------------------------"
+  echo "Exit Code:    ${EXIT_CODE}"
+  echo "Completed:    $(date -u +"%Y%m%d_%H%M%SZ")"
+  echo "================================================================================"
+} | tee -a "${LOG_FILE}"
+
+cp -f "${LOG_FILE}" "${LATEST_FILE}"
+
+if [ "${EXIT_CODE}" -ne 0 ]; then
+  echo "[RET FAILURE] Command failed with exit code ${EXIT_CODE}"
+  exit "${EXIT_CODE}"
+else
+  echo "[RET SUCCESS] Evidence recorded to ${LOG_FILE}"
+fi

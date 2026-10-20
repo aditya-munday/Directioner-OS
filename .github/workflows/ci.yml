@@ -124,6 +124,7 @@ jobs:
           set -euo pipefail
           mkdir -p vm
           chmod 600 vm-test/ci_key
+          if [ -e /dev/kvm ]; then sudo chmod 666 /dev/kvm || true; fi
           ACCEL=tcg
           if [ -e /dev/kvm ] && [ -w /dev/kvm ]; then ACCEL=kvm; fi
           echo "==> accel: $ACCEL"

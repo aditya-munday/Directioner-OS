@@ -1,0 +1,18 @@
+name: Restricted Files Guard (Rule B2)
+
+on:
+  push:
+    branches: [main, "plan/**"]
+  pull_request:
+    branches: [main]
+
+jobs:
+  guard:
+    name: Check Restricted Files (Rule B2)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 2
+      - name: Run restricted files check
+        run: ./scripts/check-restricted-files.sh HEAD~1
