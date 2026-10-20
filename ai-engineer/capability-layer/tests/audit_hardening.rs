@@ -89,10 +89,10 @@ fn test_audit_cap_02_peercred_caller_uid_verification() {
     let mut req_bytes = serde_json::to_vec(&ping_req).unwrap();
     req_bytes.push(b'\n');
     let write_result = client.write_all(&req_bytes);
-    if let Err(ref e) = write_result {
-        if e.kind() != std::io::ErrorKind::BrokenPipe {
-            write_result.expect("Unexpected write error");
-        }
+    match write_result {
+        Ok(()) => {}
+        Err(ref e) if e.kind() == std::io::ErrorKind::BrokenPipe => {}
+        Err(e) => panic!("Unexpected write error: {e}"),
     }
     let _ = client.flush();
 
