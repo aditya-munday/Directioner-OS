@@ -25,7 +25,7 @@ if echo "${COMMIT_MSG}" | grep -q "${AUTH_MARKER}"; then
   exit 0
 fi
 
-CHANGED_FILES=$(git diff --name-only "${BASE_REF}" HEAD 2>/dev/null || git status --porcelain | awk '{print $2}')
+CHANGED_FILES=$( { git diff --name-only "${BASE_REF}" HEAD 2>/dev/null || true; git diff --name-only HEAD 2>/dev/null || true; } | sort -u )
 
 VIOLATIONS=()
 for rf in "${RESTRICTED_FILES[@]}"; do
