@@ -6,7 +6,7 @@ on:
       skip-vm-smoke:
         description: 'Skip VM smoke test'
         required: false
-        default: 'false'
+        default: false
         type: boolean
   schedule:
     - cron: '0 3 * * *'

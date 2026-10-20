@@ -204,34 +204,59 @@ RUN if id -u ci >/dev/null 2>&1; then echo "FATAL: ci user present in release im
     && if [ -f /root/.ssh/authorized_keys ]; then echo "FATAL: authorized_keys found in release /root/.ssh!" >&2; exit 1; fi
 
 # ==================================================================
-# Target: desktop (KDE Plasma Wayland desktop base - M1 / U010)
+# Target: desktop (KDE Plasma Wayland - Kinoite atomic base - U009/U010)
 # ==================================================================
-FROM base AS desktop
+# Verified base: quay.io/fedora/fedora-kinoite:42 amd64
+# manifest digest: sha256:db05d8e07e40741e604d3cc11822987d742c1d0ae3eee5f09c89041bd59379c9
+# ostree commit: a1a57b0b7ba958dc200fcd2d856ed375570dd105a3f4c34d2b470a467af74309
+# version: 42.20260527.1  containers.bootc=1  ostree.bootable=true
+FROM quay.io/fedora/fedora-kinoite:42@sha256:db05d8e07e40741e604d3cc11822987d742c1d0ae3eee5f09c89041bd59379c9 AS desktop
 
-# Install KDE Plasma Wayland minimal desktop and guest hypervisor tools
+# Apply Directioner branding on top of Kinoite
+COPY configs/os-release /etc/os-release
+COPY configs/issue /etc/issue
+COPY configs/motd /etc/motd
+COPY configs/directioner.repo /etc/yum.repos.d/directioner.repo
+
+# Install guest hypervisor tools not in Kinoite base
 RUN dnf install -y \
-    plasma-desktop \
-    plasma-workspace-wayland \
-    kwin-wayland \
-    sddm \
     open-vm-tools \
     open-vm-tools-desktop \
     qemu-guest-agent \
     spice-vdagent \
-    mesa-dri-drivers \
-    xorg-x11-server-Xwayland \
     && dnf clean all
 
-# Enable SDDM display manager and guest agents
-RUN systemctl enable sddm open-vm-tools qemu-guest-agent \
+# Deploy Directioner OS control plane binaries
+COPY bin/ /usr/bin/
+COPY libexec/ /usr/libexec/
+
+# Greenboot health check for desktop A/B rollback
+COPY configs/systemd/directioner-milestone.service /usr/lib/systemd/system/directioner-milestone.service
+COPY configs/greenboot/01_directioner_milestone.sh /etc/greenboot/check/required.d/01_directioner_milestone.sh
+RUN chmod 755 /etc/greenboot/check/required.d/01_directioner_milestone.sh \
+    && systemctl enable greenboot-healthcheck.service directioner-milestone.service \
+    && systemctl enable sddm \
+    && { systemctl enable vmtoolsd.service 2>/dev/null || true; } \
+    && { systemctl enable qemu-guest-agent.service 2>/dev/null || true; } \
+    && { systemctl enable spice-vdagentd.service 2>/dev/null || true; } \
     && echo "directioner-desktop-build" > /etc/directioner-build-target
 
+# Post-branding invariant check
+RUN ID_VALUE=$(grep '^ID=' /etc/os-release | cut -d= -f2 | tr -d '"') \
+    && if [ "$ID_VALUE" != "directioner" ]; then \
+        echo "FATAL: os-release ID='$ID_VALUE' must be 'directioner'" >&2; exit 1; \
+    fi \
+    && echo "Brand check OK: ID=directioner"
+
 # ==================================================================
-# Target: desktop-test (Desktop with autologin test user for CI verification)
+# Target: desktop-test (Desktop + CI autologin user for smoke tests)
 # ==================================================================
 FROM desktop AS desktop-test
 
 RUN (id -u testuser >/dev/null 2>&1 || useradd -m -G wheel -s /bin/bash testuser) \
+    && echo '%wheel ALL=(ALL) NOPASSWD: ALL' > /etc/sudoers.d/wheel \
+    && chmod 0440 /etc/sudoers.d/wheel \
     && echo 'testuser:directioner' | chpasswd \
     && mkdir -p /etc/sddm.conf.d \
-    && printf "[Autologin]\nUser=testuser\nSession=plasmawayland\n" > /etc/sddm.conf.d/autologin.conf
+    && printf '[Autologin]\nUser=testuser\nSession=plasmawayland\n' > /etc/sddm.conf.d/autologin.conf \
+    && echo "directioner-desktop-test-build" > /etc/directioner-build-target
