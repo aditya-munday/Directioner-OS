@@ -1,0 +1,28 @@
+[package]
+name = "dosctl"
+description = "Directioner OS Reference Control Fabric CLI (U079, U080, U085)"
+workspace = "../../ai-engineer"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+publish = false
+
+[dependencies]
+dos-catalog = { path = "../dos-catalog" }
+directioner-statd = { path = "../directioner-statd" }
+directioner-actd = { path = "../directioner-actd" }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+tokio = { version = "1", features = ["full"] }
+thiserror = "1"
+
+[dev-dependencies]
+tempfile = "3"
+
+[[bin]]
+name = "dosctl"
+path = "src/main.rs"
+
+[lints.rust]
+missing_docs = "allow"

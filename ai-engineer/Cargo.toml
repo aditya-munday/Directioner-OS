@@ -10,6 +10,11 @@ members = [
     "accountd",
     "directioner-services",
     "../crates/dos-catalog",
+    "../crates/directioner-statd",
+    "../crates/directioner-actd",
+    "../crates/dosctl",
+    "../crates/dos-coverage",
+    "../crates/directioner-os-mcp",
 ]
 
 [workspace.package]

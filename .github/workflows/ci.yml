@@ -244,8 +244,8 @@ jobs:
 
           # Inject a real crash-looping service in the guest
           echo "injecting real crash-looping service into guest..."
-          ssh_cmd 'sudo bash -c "printf \"[Unit]\nDescription=Canary Crashloop Service\n[Service]\nType=simple\nRestart=always\nRestartSec=100ms\nExecStart=/usr/bin/false\n\" > /etc/systemd/system/canary-crashloop.service && systemctl daemon-reload && systemctl start canary-crashloop.service || true"'
-          sleep 1
+          ssh_cmd 'sudo bash -c "printf \"[Unit]\nDescription=Canary Crashloop Service\nStartLimitBurst=2\nStartLimitIntervalSec=2s\n[Service]\nType=simple\nRestart=always\nRestartSec=50ms\nExecStart=/usr/bin/false\n\" > /etc/systemd/system/canary-crashloop.service && systemctl daemon-reload && systemctl start canary-crashloop.service || true"'
+          sleep 2
 
           # Sync world model to ingest the failure state transitions
           ssh_cmd '/var/lib/ai-bin/ai-worldmodel --db /tmp/wm.sqlite sync'

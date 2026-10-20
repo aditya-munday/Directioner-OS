@@ -224,7 +224,7 @@ impl HealthModel {
         // Query active failed units
         let mut failed_units: Vec<(String, String)> = Vec::new();
         if let Ok(mut stmt) = conn.prepare(
-            "SELECT name, since_ts FROM units WHERE active_state = 'failed' OR sub_state = 'failed'",
+            "SELECT name, since_ts FROM units WHERE active_state = 'failed' OR sub_state = 'failed' OR sub_state = 'auto-restart'",
         )
             && let Ok(rows) = stmt.query_map([], |r| Ok((r.get(0)?, r.get(1)?)))
         {
