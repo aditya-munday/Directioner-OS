@@ -1,0 +1,1252 @@
+================================================================================
+DIRECTIONER-OS  --  ULTIMATE PLAN v3:  "MAKE IT REAL"
+A bootable GUI ISO, a Control Fabric the AI engineer can see and drive,
+and every claim backed by a real effect on a real running system.
+================================================================================
+Owner: Aditya.  For the main OS agent (Antigravity IDE).
+Supersedes the ORDER of v2 (DIRECTIONER_OS_ULTIMATE_PLAN.txt) and the stage
+order of DIRECTIONER_INTEGRATION_RUN.txt. Those files stay as reference lists.
+This plan changes what counts as "done".
+
+--------------------------------------------------------------------------------
+0. WHY V3 EXISTS (read this)
+--------------------------------------------------------------------------------
+0.1 After the v2 run, there was still no bootable GUI ISO. The v2 "500 tasks"
+    produced Rust modules that model behavior in memory (power governor, A/B
+    slot controller, desktop theme engine, trust checks). They passed unit
+    tests. None of them touched NetworkManager, bootc, a compositor, a TPM or
+    a screen. That is scaffolding, not an operating system.
+0.2 Therefore EVERY v2 task 051-500 is treated as SCAFFOLD at best, none as
+    DONE (docs/plan-status.md already says so after CLEANUP-1; keep it so).
+    V3 re-does the important ones against the REAL system, in an order that
+    produces something Aditya can boot and click on.
+0.3 Priority order is fixed: (1) a bootable GUI ISO, (2) a real Control Fabric
+    (the AI sees and drives the real OS through typed capabilities), (3) real
+    GUI surfaces, (4) real account/backend/CLI/Aria binding, (5) hardening.
+
+--------------------------------------------------------------------------------
+1. THE REALITY RULES (RR) - these override everything below
+--------------------------------------------------------------------------------
+RR1  REAL-EFFECT TEST (RET). A task is DONE only when a test boots the real
+     image in a VM (QEMU/KVM or TCG), performs the action through the real
+     path, and observes the effect with an INDEPENDENT tool (nmcli, flatpak
+     list, rpm-ostree status, gsettings/kreadconfig, a screenshot, journalctl,
+     busctl...). Unit tests against in-memory structs never close a task.
+RR2  STATUS VOCABULARY. NOT-STARTED | SCAFFOLD (in-memory/mocked, labeled) |
+     REAL-PARTIAL (works on the running image, gaps listed) | REAL-DONE (RET
+     passed on main, CI run id attached). Never "DONE" without a RET log.
+RR3  DONE EVIDENCE: commit hash on main + CI run id (green) + RET log under
+     docs/evidence/<task>/ + screenshot for anything visual. Paste literal
+     output. If cargo/CI/QEMU is unavailable in your shell, say so and mark
+     the task UNVERIFIED - do not claim passing.
+RR4  DON'T REIMPLEMENT THE OS. Integrate real components: bootc/rpm-ostree/
+     greenboot, NetworkManager, BlueZ, PipeWire/WirePlumber, systemd/logind,
+     UPower/power-profiles-daemon, firewalld, udisks2, flatpak, fwupd, CUPS,
+     AccountsService, polkit, KDE/KWin D-Bus. A Rust struct that "models" one of
+     them is SCAFFOLD. (Repeat offender: custom watchdog/slot controller.)
+RR5  NO CUSTOM CRYPTO. Vetted libraries or OS facilities only (kernel keyring,
+     Secret Service, TPM2 via tpm2-tss). In-memory only until done properly.
+RR6  SIMULATION LABELING. Any mock/simulated module carries a top-of-file
+     header "SCAFFOLD: no real OS integration" and appears in the mock register.
+RR7  ONE TASK PER SESSION by default, then STOP; resume on "next". Aditya may
+     write "run M1" (a whole milestone) or "run U040-U060"; that explicit
+     instruction replaces the rhythm for that range only. Each task in the
+     range still needs its own RET, and you STOP at the first red result.
+RR8  WORK DIRECTLY ON MAIN (Aditya's standing instruction): small commits,
+     clear messages with evidence, run fmt/clippy/test before each push, never
+     force-push or rewrite history. No per-task issues/PRs/branches. Exception
+     (safety): OWNER-AUTH and restricted-file changes are prepared as a patch
+     under docs/owner-auth/<id>.patch with tests and NOT applied.
+RR9  Status goes in docs/plan-status.md, updated in the same commit as the work.
+RR10 If a real integration is impossible in the environment, write the exact
+     blocker and the smallest next step. Never paper over it with a mock.
+
+--------------------------------------------------------------------------------
+2. PERMANENT BOUNDARIES (unchanged from v2; "next"/"run M1" never override)
+--------------------------------------------------------------------------------
+B1  Conversational/voice/CLI paths never EXECUTE without Aditya's exact named
+    authorization (see U171 - the single switch). Drafts, previews, approval
+    cards are fine.
+B2  Restricted files (policy.rs, reviewer.rs, self_healing.rs,
+    incident_response.rs, conversational.rs, CapabilityKind enum): no edits
+    without an exact named instruction; verify real paths with git ls-files;
+    new code goes in new files/crates.
+B3  Never merge an existing PR/branch without Aditya's typed instruction.
+B4  No publishing: no public servers, domains, registry pushes, public
+    downloads, real secrets in repos. CI artifacts private to Aditya are fine.
+B5  No fabrication; mocks labeled.
+B7  SELinux stays Enforcing; kill-switch stays immediate SIGKILL; socket 0600 +
+    peercred; self-healing ships DISABLED.
+B9  CLI and Aria never talk to ai-capabilityd directly; they use the Intent
+    Broker / Control Fabric (Section 3).
+B11 No Beyonders production provider keys on any device. User-owned BYOK keys
+    for the CLI are allowed, stored only in the keyring.
+B12 Fedora name/logos removed from the product; B13 "closed source" = our own
+    code only; B14 telemetry/cloud/voice-cloud OFF by default.
+E   Banned words (guaranteed, zero telemetry, sandboxed, tamper-proof,
+    unlimited, godmode, "can do anything", "every function", "100% coverage"...)
+    unless a named test proves it. Coverage is MEASURED (U087, reported in U110), never claimed.
+REJECTED designs (will not be built, even on request without a new decision):
+    CLI/Aria -> unrestricted root; raw shell/"run any command" intent; website
+    or backend pushing commands into a device; silent bulk deletion; voice
+    "yes" as sole confirmation for destructive actions.
+
+--------------------------------------------------------------------------------
+3. THE CONTROL FABRIC  (how "every OS function is visible to the CLI")
+--------------------------------------------------------------------------------
+Aditya's goal: the AI engineer can see everything the OS can do and control it
+- Wi-Fi, settings, apps, files, services, kernel-level knobs. Delivered as:
+
+   Directioner CLI / Aria / Qt shell / MCP clients
+              |  (typed requests; never raw sockets to the root daemon)
+              v
+        directioner-intentd  (Intent Broker: auth, schema, origin, rate limit)
+         |            |                         |
+   OBSERVE plane   ACT-USER plane          ACT-SYSTEM plane
+   directioner-    directioner-actd        draft -> Planner -> PolicyEngine ->
+   statd           (runs as the user,      Reviewer -> Implementer (ai-
+   (read-only      polkit-authorized       capabilityd, root, --exec) ->
+   state tree)     D-Bus calls)            Verifier -> Work Log
+         \             |                         /
+          real system: NetworkManager, BlueZ, PipeWire, KWin/KConfig, logind,
+          systemd, flatpak, rpm-ostree/bootc, firewalld, udisks2, fwupd, CUPS...
+
+3.1 OBSERVE: statd exposes a read-only STATE TREE of the whole machine
+    (network, bluetooth, audio, display, power, input, apps, services,
+    packages/image, storage, users, security posture, settings, hardware).
+    Everything in it is readable by the CLI/Aria subject to consent levels
+    and redaction. No approval needed to read non-sensitive state.
+3.2 DISCOVER: a machine-readable CAPABILITY CATALOG lists every action:
+    id, params schema, scope (user/system), tier, preview, undo, backend used,
+    status (REAL / SCAFFOLD / PLANNED). The CLI can enumerate it. The honest
+    answer to an unsupported request is "not in the catalog" (+ how to add it).
+3.3 ACT: every action = typed intent -> tiered by blast radius. Low-risk
+    reversible user-scope actions can auto-run (once U171 is authorized).
+    Anything destructive, privileged, boot/kernel/storage/firewall/user-account
+    related is Confirm or ExpertReview and goes through the full pipeline.
+3.4 EXPLAIN + UNDO: every action supports dry-run preview, an undo record where
+    possible, and a Work Log entry (origin, who approved, result).
+3.5 DEEP ACCESS WITHOUT RAW ROOT: "very deep" = typed capabilities down to
+    sysctl, kernel modules, kernel args, systemd units, packages, boot, firmware.
+    Unknown D-Bus methods are NOT callable generically; introspection is
+    read-only for all, and a new method becomes callable only by adding a
+    catalog entry (DESIGN-FIRST). That keeps reach wide and blast radius named.
+3.6 COVERAGE IS MEASURED: a tool introspects the live image (busctl, systemd
+    units, KConfig/gsettings keys, sysctl, /sys) and reports which functions
+    are in the catalog and which are not (U087, reported in U110). The number is reported, not
+    claimed.
+
+--------------------------------------------------------------------------------
+4. MILESTONES (in order) AND GATES
+--------------------------------------------------------------------------------
+Gate tags: OPEN | DESIGN-FIRST | RESEARCH-FIRST | OWNER-AUTH |
+WAITING-ON-REPOS | BACKEND-ASK | PROPOSED (extra idea; needs Aditya's yes).
+ M0  Ground truth                      U001-U008
+ M1  FIRST BOOTABLE GUI ISO            U009-U040   <- the thing Aditya can boot
+ M2  Real rebrand on the running OS    U041-U060
+ M3  Control Fabric core               U061-U110
+ M4  Real capability domains           U111-U170
+ M5  Execution switch + autonomy       U171-U195
+ M6  GUI surfaces (shell, settings...) U196-U235
+ M7  Account, cloud, backend (real)    U236-U255
+ M8  Directioner CLI integration       U256-U270
+ M9  Aria integration                  U271-U285
+ M10 Security + trust (real)           U286-U300
+ M11 Install, update, rollback, HW     U301-U315
+ M12 End-to-end QA + release candidate U316-U325
+ X   Ultimate extras (PROPOSED)        U326-U345
+Task format: ID [GATE] title (v2 ref) / what / RET = the real-effect test.
+
+--------------------------------------------------------------------------------
+5. HONEST LIMITS THE AGENT MUST REPORT
+--------------------------------------------------------------------------------
+- "Every function" of Linux cannot be covered. Coverage is a measured number.
+- VM screenshots differ from real GPUs; real-hardware testing is Aditya's.
+- Kernel/glibc/systemd remain upstream Fedora builds (rebrand is by packages).
+- Aria's edge glow depends on the compositor; fallbacks must exist.
+- Backend login is Supabase-based; any device-code flow must be verified
+  against the real backend before building it (U236).
+
+
+================================================================================
+M0  GROUND TRUTH  (U001-U008)
+================================================================================
+U001 [OPEN] Make the toolchain real
+  a) Install Rust/cargo in the working environment; if impossible, say so.
+  b) Run cargo build/test/fmt/clippy for the whole workspace; paste per-crate
+     test counts.
+  RET: pasted counts; failing tests listed.
+U002 [OPEN] State of main
+  a) git log -10, branches, open PRs/issues (#41 cleanup), last CI run ids.
+  b) Does main build in CI after CLEANUP-1 edits? (the edits were never
+     compiled in the last shell).
+  RET: CI run id + conclusion pasted.
+U003 [OPEN] Repo/folder map
+  a) ls the parent folder; map Beyonders-Backend / Beyonders-Frontend /
+     WakeWord to roles with evidence (README, package.json, remotes).
+  b) State which of CLI and Aria repos are present; do NOT touch AetherQ,
+     create-cpp-app, goGreen.
+  RET: table in docs/integration/ledger.md.
+U004 [OPEN] Scaffold inventory
+  a) List every module that models rather than integrates (hardware_power,
+     security_trust, release_installer, desktop_experience, ...).
+  b) Each gets the SCAFFOLD header and a "replaced by U###" pointer.
+  RET: docs/scaffold-register.md.
+U005 [OPEN] plan-status.md rebuilt for V3 IDs
+  a) Map each v2 area to V3 tasks; no task REAL-DONE without RET.
+  RET: file in repo.
+U006 [OPEN] Evidence harness
+  a) docs/evidence/<task>/ layout, a `ret` helper script that records command,
+     output, timestamp, image digest.
+  RET: sample evidence run committed.
+U007 [OPEN] VM test rig on the real image
+  a) Script that boots the built image under QEMU, drives it over serial/SSH
+     and QMP (screendump), returns logs/screenshots.
+  b) Document KVM vs TCG timing (verify /dev/kvm in CI).
+  RET: rig boots current headless image and returns a login prompt log.
+U008 [OPEN] Restricted-file guard check with REAL paths
+  a) CI step failing if B2 files change without the authorization marker.
+  RET: demonstrate red on a scratch change, green otherwise.
+
+================================================================================
+M1  FIRST BOOTABLE GUI ISO  (U009-U040)   <- highest priority in the plan
+================================================================================
+Goal: Aditya downloads an ISO (and a VMDK/qcow2) from CI, boots it in VMware /
+QEMU / real UEFI PC, installs it, and lands on a graphical desktop that says
+Directioner OS. Everything here is verified by booting.
+
+U009 [RESEARCH-FIRST] Desktop base decision
+  a) DEFAULT unless Aditya vetoes: KDE Plasma on Wayland (Windows-like layout,
+     deep theming, rich D-Bus/KWin scripting for window control, layer-shell
+     for Aria's overlay). Compare briefly with GNOME; list what each means
+     for the Control Fabric.
+  b) Verify what Fedora provides for an atomic KDE bootc base (Kinoite) and
+     its current image reference; do not assume registry paths.
+  RET: memo with commands showing the base image pulls and its package list.
+U010 [OPEN] Desktop Containerfile target
+  a) New target `desktop` building from the verified KDE atomic base + our
+     layers (ai-capabilityd, services, brand packages).
+  b) Keep `headless` and `test` targets working.
+  RET: `podman build --target desktop` succeeds in CI; size reported.
+U011 [OPEN] Display stack
+  a) Plasma Wayland session default, X11 fallback; SDDM configured.
+  RET: VM boots to SDDM login screenshot.
+U012 [OPEN] Guest integration
+  a) Install/enable open-vm-tools, qemu-guest-agent, spice-vdagent (+hyperv
+     tools if packaged); clipboard and resize.
+  RET: resize the VM window; screenshot shows new resolution.
+U013 [OPEN] Graphics baseline
+  a) Verify virtio-gpu, VMware SVGA, bochs/std VGA boot; software rendering
+     fallback works.
+  RET: screenshots for each virtual GPU.
+U014 [OPEN] Test-only autologin
+  a) `test` target autologins a test user for screenshots; absent from
+     `release` (scan proves it).
+  RET: release image scan output.
+U015 [OPEN] GUI smoke test in CI
+  a) Boot desktop image, wait for Plasma, take QMP screendump, assert it is
+     not a black/blank frame (pixel stats) and that plasmashell is running.
+  RET: CI artifact screenshot + `systemctl --user` / process listing.
+U016 [OPEN] Installer ISO build
+  a) bootc-image-builder anaconda-iso (verify the exact type/flags) in CI with
+     the required privileges; also build vmdk and qcow2 outputs.
+  b) Upload as PRIVATE CI artifacts with the retention Aditya needs (B4: no
+     public release).
+  RET: CI run id and artifact names + sizes.
+U017 [OPEN] ISO boots (BIOS and UEFI)
+  a) Boot ISO in QEMU with OVMF (UEFI) and SeaBIOS; reach the installer.
+  RET: screenshots of installer welcome screen in both modes.
+U018 [OPEN] Scripted install to a virtual disk
+  a) Kickstart/installer config that installs unattended to a qcow2 disk.
+  b) No hardcoded real credentials; test user only in the test flow.
+  RET: reboot from installed disk -> SDDM screenshot.
+U019 [OPEN] Secure Boot check
+  a) Boot installed image under OVMF with Secure Boot enabled; record result.
+  RET: `mokutil --sb-state` output or a documented failure and next step.
+U020 [OPEN] First boot after install
+  a) systemd first-boot services run once; greenboot health checks pass;
+     boot counter resets.
+  RET: `rpm-ostree status`, `systemctl --failed`, greenboot log pasted.
+U021 [OPEN] Services present in the ISO
+  a) ai-capabilityd (dry-run default), worklog, cockpit backend start clean on
+     the desktop image.
+  RET: systemctl status listing; socket mode 0600 verified.
+U022 [OPEN] Plasma defaults
+  a) Taskbar layout, launcher, system tray, default apps (browser, files,
+     terminal, text editor, media, image viewer, archiver).
+  RET: screenshot + `.desktop` associations listing.
+U023 [OPEN] Fonts, cursors, icons baseline
+  a) Open-license fonts incl. CJK/emoji; icon theme complete (no missing-icon
+     placeholders in a scripted scan).
+  RET: missing-icon scan output.
+U024 [OPEN] Audio works
+  a) PipeWire/WirePlumber running; play a test tone in the VM (virtual sound
+     device).
+  RET: `wpctl status` + captured audio level.
+U025 [OPEN] Networking works
+  a) NetworkManager; wired DHCP up; Wi-Fi stack present (hostapd-based virtual
+     Wi-Fi test if feasible, else document).
+  RET: `nmcli` output; ping through VM network.
+U026 [OPEN] Bluetooth/printing stack present
+  a) BlueZ and CUPS installed and running; no hardware needed to verify the
+     services.
+  RET: service status.
+U027 [OPEN] Browser + codecs policy
+  a) Default browser installed and launching; codec limits documented
+     (non-free repos are a licensing decision, U303).
+  RET: browser screenshot.
+U028 [OPEN] Flatpak ready
+  a) Flatpak configured; remote policy documented; install a small test app
+     offline from a local repo in the VM.
+  RET: `flatpak list` shows it; app launches.
+U029 [OPEN] Toolbox/dev containers
+  a) toolbox/distrobox works for developer tools on the immutable OS.
+  RET: enter container, run a compiler hello-world.
+U030 [OPEN] Release vs test separation
+  a) release target: no ci user, no test key, no passwordless sudo, no mock
+     backends, no autologin.
+  RET: scan output proving absence.
+U031 [OPEN] Size and boot-time budget
+  a) Record ISO/image size and boot-to-login time in VM (numbers only).
+  RET: numbers in docs/evidence.
+U032 [OPEN] "Try it" instructions for Aditya
+  a) One page: download the artifact, boot in VMware/VirtualBox/QEMU, USB
+     write for a real PC, expected first screens, known issues.
+  RET: doc reviewed against the real artifact names.
+U033 [OPEN] VMware-specific pass
+  a) Boot the vmdk/ISO under VMware settings Aditya uses (the earlier agetty
+     crash was found there); capture serial/console issues.
+  RET: Aditya reports or a documented inability to test here.
+U034 [OPEN] Plymouth/GRUB visible
+  a) Boot splash and boot menu show Directioner branding (placeholder logo
+     labeled if no assets).
+  RET: screenshots.
+U035 [OPEN] Crash visibility
+  a) Coredump/journal capture on the desktop image works (coredumpctl list).
+  RET: induced test crash appears in coredumpctl.
+U036 [OPEN] Lock/sleep/logout works in VM
+  a) Lock screen, logout, reboot, shutdown from the GUI.
+  RET: screenshots / journal entries.
+U037 [OPEN] Update path visible in GUI
+  a) Discover/Plasma update surface shows bootc status read-only.
+  RET: screenshot.
+U038 [OPEN] Accessibility baseline
+  a) Orca starts via shortcut; high-contrast and large-text toggles work.
+  RET: screenshots.
+U039 [OPEN] ISO acceptance pack
+  a) Checklist run, screenshots, hashes of artifacts, known issues.
+  RET: pack in docs/evidence/M1/.
+U040 [OWNER-AUTH] Aditya boots it
+  a) Aditya downloads and boots the ISO and reports. M1 is REAL-DONE only
+     after he confirms or the CI RETs plus screenshots are accepted by him.
+  RET: Aditya's confirmation.
+
+================================================================================
+M2  REAL REBRAND ON THE RUNNING OS  (U041-U060)
+================================================================================
+Everything is checked INSIDE the booted image, not in the source tree.
+
+U041 [OPEN] directioner-release package built and installed (v2 054)
+  RET: `cat /etc/os-release` in VM; `rpm -qi directioner-release`.
+U042 [OPEN] Replace upstream branding packages via rpm-ostree override/replace
+  (fedora-release/-logos equivalents). Verify dnf/rpm-ostree/bootc/greenboot
+  still work after the change.
+  RET: `rpm-ostree status`; bootc upgrade dry-run OK.
+U043 [OPEN] /etc/issue, motd, system-release, cpe decisions verified in VM.
+  RET: serial console + SSH banner paste.
+U044 [OPEN] GRUB + BLS titles show "Directioner OS".
+  RET: boot-menu screenshot.
+U045 [OPEN] Plymouth theme shows, with text fallback; LUKS prompt unaffected.
+  RET: boot screenshots.
+U046 [OPEN] SDDM theme (branding, session picker, a11y menu).
+  RET: login screenshot.
+U047 [OPEN] Plasma look-and-feel package (colors, wallpaper, panel layout).
+  RET: desktop screenshot; `plasma-apply-lookandfeel` default verified.
+U048 [OPEN] Lock screen and splash branded.
+  RET: screenshots.
+U049 [OPEN] About page shows Directioner OS, image digest, build id.
+  RET: screenshot.
+U050 [OPEN] Default browser policies (homepage, bookmarks, search) point to
+  config values; offline welcome page works.
+  RET: first-run screenshot offline.
+U051 [OPEN] App launcher cleanup (hide irrelevant/Fedora-branded entries by
+  override, never delete upstream files).
+  RET: launcher listing before/after.
+U052 [OPEN] Installer branding (anaconda product).
+  RET: installer screenshots.
+U053 [OPEN] Hostname scheme and /etc/skel defaults.
+  RET: new-user tree listing.
+U054 [OPEN] Fonts/sounds/cursors/icons license manifest verified by script.
+  RET: manifest check output.
+U055 [OPEN] Rebrand lint run on the BUILT image (rootfs scan for "Fedora"
+  strings; allowlist for legal notices/package names).
+  RET: scan report, violations listed.
+U056 [OPEN] Logo/asset provenance scan on the image.
+  RET: scan output.
+U057 [RESEARCH-FIRST] Fedora trademark checklist applied to the image and to
+  wording (what "based on Fedora" statements are allowed). Cite sources.
+  RET: memo.
+U058 [OPEN] Unified brand tokens drive Plasma colors, SDDM, GRUB, Plymouth
+  (v2 077/078/091/092) and are exported for the website/CLI/Aria agents.
+  RET: regeneration is deterministic; screenshots match tokens.
+U059 [OPEN] Version/channel scheme visible in os-release and About.
+  RET: VM output.
+U060 [OPEN] Rebrand acceptance pack with remaining Fedora strings + reasons.
+  RET: pack in docs/evidence/M2/.
+
+
+================================================================================
+M3  CONTROL FABRIC CORE  (U061-U110)
+================================================================================
+New crates/files only (B2). Everything runs on the real desktop image.
+
+U061 [DESIGN-FIRST] Control Fabric architecture (Section 3)
+  a) Components, sockets, identities, trust boundaries, failure modes.
+  b) What runs as user vs root; polkit usage; D-Bus names.
+  RET: design doc approved by Aditya.
+U062 [DESIGN-FIRST] Catalog entry schema v1
+  a) id, params (JSON Schema), scope, tier hint, preview, undo, backend,
+     consent level, status (REAL/SCAFFOLD/PLANNED), docs text.
+  RET: schema + 5 sample entries validated.
+U063 [OPEN] Catalog registry service + loader (new crate)
+  RET: `dosctl catalog list` prints entries from the running daemon.
+U064 [OPEN] Catalog lint (rejects entries with missing preview/undo/tier).
+  RET: failing example rejected in CI.
+U065 [DESIGN-FIRST] State tree schema v1 (observe plane)
+  a) Top-level nodes: network, bluetooth, audio, display, power, input, apps,
+     services, image/packages, storage, users, security, settings, hardware.
+  b) Per-node: version, source, freshness, sensitivity level (public/private/
+     secret), redaction rules.
+  RET: schema approved.
+U066 [OPEN] directioner-statd skeleton (read-only service, socket 0600,
+  peercred, no write path).
+  RET: service running in VM; write attempt impossible by construction
+  (no code path) + test.
+U067 [OPEN] statd provider framework (providers poll or subscribe to D-Bus
+  signals; bounded memory; rate limits).
+  RET: soak 1h in VM, RSS flat.
+U068 [OPEN] Sensitivity + consent levels
+  a) Level 0 public facts; 1 device/state; 2 personal paths/names/networks;
+     3 secrets (never exposed).
+  b) Per-client grants in a consent ledger.
+  RET: client without grant gets level-0 only (test).
+U069 [OPEN] Redaction engine (SSIDs, MACs, IPs, usernames, paths) driven by
+  consent level.
+  RET: golden redaction tests on real outputs.
+U070 [OPEN] Intent Broker (directioner-intentd) for real
+  a) Replace the in-memory model: unix socket, peercred, schema validation
+     (deny_unknown_fields), origin identity, rate limits.
+  b) Output is ONLY: result (read), preview, or draft plan - no execution (B1)
+     until U171.
+  RET: tests + integration over the real socket in VM.
+U071 [OPEN] Client identity verification (SO_PEERCRED + exe path + cgroup +
+  hash when packaged); unknown clients denied.
+  RET: impostor binary denied (VM test).
+U072 [OPEN] User-session executor (directioner-actd): runs as the user, no
+  root, own allowlist, reachable only from intentd.
+  RET: attempt to write a root-owned file fails.
+U073 [OPEN] polkit integration map
+  a) For each user-scope action, which polkit action/D-Bus method authorizes
+     it; ship Directioner polkit rules only where needed.
+  RET: table + test of denied/allowed for the active session user.
+U074 [OPEN] Preview/dry-run framework (every capability must implement it).
+  RET: catalog lint blocks entries without preview.
+U075 [OPEN] Undo journal (per action: inverse operation + expiry + storage
+  under the user's state dir).
+  RET: set volume -> undo restores (observed with wpctl).
+U076 [OPEN] Work Log integration for all Control Fabric actions (origin,
+  approver, params hash, result). Uses the real ai-worklog.
+  RET: entries visible in the real log for a test action.
+U077 [OPEN] Per-origin rate limits and breakers at the broker.
+  RET: hammer test; kill-switch unaffected.
+U078 [OPEN] Global stop: cancels in-flight Control Fabric work, revokes broker
+  grants; existing kill-switch semantics untouched (B7).
+  RET: timing test.
+U079 [OPEN] `dosctl` reference client (observe, catalog, preview, submit).
+  RET: scripted session in VM.
+U080 [OPEN] Streaming/subscribe API (state change events to the CLI/Aria).
+  RET: toggle Wi-Fi in the VM -> event received.
+U081 [OPEN] Versioning + compatibility (N-1) with contract tests.
+  RET: compat matrix test.
+U082 [DESIGN-FIRST] OS MCP server (`directioner-os-mcp`)
+  a) Expose catalog + state (read-only) + preview/draft tools to MCP clients.
+  b) Threat model: tool poisoning, over-broad scopes, confused deputy.
+  RET: design approved.
+U083 [OPEN] MCP server implementation per approved design (OWNER gate if it
+  can reach execution).
+  RET: MCP client lists tools and reads state in VM.
+U084 [OPEN] Untrusted-content envelope for all OS text given to models
+  (journals, filenames, window titles, notification text).
+  RET: injection fixtures wrapped (test).
+U085 [OPEN] Generic D-Bus INTROSPECTION (read-only): list services/objects/
+  interfaces so the AI can discover functions not yet in the catalog.
+  RET: `dosctl dbus tree` on the live image.
+U086 [DESIGN-FIRST] "Add a capability" workflow: how a newly discovered D-Bus
+  method becomes a catalog entry (review, tier, preview, undo, tests).
+  RET: design approved.
+U087 [OPEN] Coverage tool `dos-coverage`
+  a) Introspect live image: D-Bus services/methods, systemd units, KConfig
+     groups, sysctl keys, /sys controls, flatpak/rpm-ostree verbs.
+  b) Report per area: in-catalog / readable-only / uncovered.
+  RET: first matrix (expect low numbers; report honestly).
+U088 [OPEN] Coverage gate in CI: coverage may not decrease.
+  RET: CI step.
+U089 [OPEN] Catalog docs generator (human page + machine JSON for the CLI).
+  RET: generated docs from live registry.
+U090 [OPEN] Human-readable "what I am about to do" text for every capability
+  (golden strings).
+  RET: golden test.
+U091 [OPEN] Error taxonomy (denied, needs-approval, unsupported, backend-down,
+  invalid-params, conflict) with stable codes.
+  RET: table-driven tests.
+U092 [OPEN] Idempotency keys + request ids for retries.
+  RET: replay test returns the same result.
+U093 [OPEN] Concurrency control (locks per resource, e.g., one Wi-Fi change at
+  a time).
+  RET: parallel-request test.
+U094 [OPEN] Fuzz intentd/statd protocol parsers.
+  RET: fuzz run log.
+U095 [OPEN] Property tests: no intent can reach system scope without a draft.
+  RET: proptest logs.
+U096 [OPEN] Systemd hardening for fabric daemons; record
+  `systemd-analyze security` scores.
+  RET: before/after table.
+U097 [OPEN] SELinux modules for statd/intentd/actd; Enforcing; AVC-clean.
+  RET: `ausearch -m avc` empty after the RET suite (or AVCs listed and fixed).
+U098 [OPEN] Health checks (greenboot) for fabric services.
+  RET: kill statd -> greenboot flags on next boot (VM).
+U099 [OPEN] Fabric crash recovery: daemons restart without leaking grants.
+  RET: kill -9 test.
+U100 [OPEN] Multi-user: one actd per user session; no cross-user visibility.
+  RET: two-user VM test.
+U101 [OPEN] Locked-screen policy: which intents are allowed while locked
+  (default almost none).
+  RET: lock screen -> intent denied.
+U102 [OPEN] Fast user switching: broker binds to the active seat/session.
+  RET: switch user in VM; actions go to the right user.
+U103 [OPEN] Time-boxed SESSION GRANTS (design-first): "allow Wi-Fi changes for
+  1 hour" - how grants interact with approval and tiers (Reviewer red lines
+  and Policy still apply).
+  RET: design approved.
+U104 [OPEN] Clipboard/screen/mic access always per-use consent with visible
+  indicator (portal-mediated).
+  RET: indicator visible in screenshot during capture.
+U105 [OPEN] Fabric configuration file + drop-ins, validated at startup.
+  RET: invalid config rejected.
+U106 [OPEN] Fabric telemetry (opt-in, default off) event list.
+  RET: list; nothing sent by default (egress test).
+U107 [OPEN] Fabric integration tests suite in QEMU (CI job).
+  RET: CI run green.
+U108 [OPEN] Performance budget: broker round-trip latency measured, numbers
+  reported only.
+  RET: latency table.
+U109 [OPEN] Fabric operator docs + developer docs ("how to add a capability").
+  RET: docs reviewed against the code.
+U110 [OPEN] Fabric acceptance pack (M3).
+  RET: pack + coverage matrix in docs/evidence/M3/.
+
+================================================================================
+M4  REAL CAPABILITY DOMAINS  (U111-U170)
+================================================================================
+Each capability: catalog entry + preview + undo (where possible) + RET in the
+booted desktop image using an independent observer. Tool names below are the
+expected real backends - VERIFY on the actual image before use.
+Tier hints are defaults; final tiers are decided by the existing PolicyEngine
+(B2) - do not edit it to make a capability easier.
+
+--- Network (NetworkManager D-Bus / nmcli) -------------------------------------
+U111 [OPEN] network.status/read: links, IPs, routes, DNS, Wi-Fi radio state.
+  RET: matches `nmcli` output.
+U112 [OPEN] wifi.radio on/off (user-scope via polkit). Undo = restore state.
+  RET: `nmcli radio wifi` observed before/after (virtual Wi-Fi or documented).
+U113 [OPEN] wifi.scan + list networks (SSID redaction by consent level).
+  RET: list matches `nmcli dev wifi`.
+U114 [OPEN] wifi.connect to KNOWN profile; new network password only via a
+  secure prompt (never voice/CLI argv/logs).
+  RET: connection active per `nmcli con show --active`.
+U115 [OPEN] wifi.disconnect/forget (forget = Confirm).
+  RET: profile removed per nmcli.
+U116 [OPEN] vpn.up/down for existing profiles.
+  RET: nmcli state.
+U117 [OPEN] dns/hostname change (system scope, Confirm; auto-revert timer for
+  network-affecting changes).
+  RET: resolvectl/hostnamectl output; auto-revert fires in test.
+U118 [OPEN] airplane mode (radios) with undo.
+  RET: rfkill list.
+--- Bluetooth (BlueZ) ----------------------------------------------------------
+U119 [OPEN] bluetooth.status + power on/off.
+  RET: bluetoothctl show.
+U120 [OPEN] bluetooth connect/disconnect PAIRED devices; pairing = Confirm.
+  RET: bluetoothctl info (virtual adapter or documented).
+--- Audio (PipeWire/WirePlumber) -----------------------------------------------
+U121 [OPEN] audio.volume/mute (sink/source), output/input device switch.
+  RET: wpctl get-volume before/after.
+U122 [OPEN] audio.mic global mute that revokes capture access (privacy switch).
+  RET: no capture stream can open (test).
+--- Display (KDE/KScreen/KWin) -------------------------------------------------
+U123 [OPEN] display.brightness / night light / scale / resolution / layout;
+  resolution changes auto-revert if unconfirmed.
+  RET: kscreen-doctor output (verify tool) + screenshot.
+U124 [OPEN] display.dark/light theme switch.
+  RET: kreadconfig6 value + screenshot.
+--- Power ----------------------------------------------------------------------
+U125 [OPEN] power.profile (power-profiles-daemon), battery status read.
+  RET: powerprofilesctl output.
+U126 [OPEN] power.sleep/lock/logout via logind; shutdown/reboot = Confirm.
+  RET: logind session states / VM resumes.
+--- Input / accessibility ------------------------------------------------------
+U127 [OPEN] input.* (mouse speed, touchpad, key repeat, layout).
+  RET: config values read back.
+U128 [OPEN] accessibility.* (text size, contrast, cursor size, screen reader on/
+  off, sticky keys, magnifier, reduce motion, captions).
+  RET: config + Orca process + screenshot.
+--- Notifications / focus ------------------------------------------------------
+U129 [OPEN] notifications.dnd on/off, read/clear (user-scope).
+  RET: D-Bus state + screenshot.
+--- Appearance / settings ------------------------------------------------------
+U130 [OPEN] settings.get/set for a curated allowlist of KConfig keys (theme,
+  wallpaper, fonts, language, locale, time zone, default apps, shortcuts).
+  RET: kreadconfig6 read-back per key.
+U131 [OPEN] wallpaper.set, lookandfeel.set, colorscheme.set.
+  RET: screenshot + config.
+U132 [OPEN] autostart apps list/add/remove (desktop files in autostart dir).
+  RET: files on disk + effect after re-login.
+U133 [OPEN] default apps (browser, mail, files, terminal) set/get via mime
+  associations.
+  RET: xdg-mime query.
+U134 [OPEN] keyboard shortcuts get/set (conflict check).
+  RET: kglobalaccel state.
+--- Apps -----------------------------------------------------------------------
+U135 [OPEN] apps.list (desktop entries, flatpaks, layered rpms) with sizes.
+  RET: matches flatpak list / rpm-ostree status.
+U136 [OPEN] app.launch (by desktop id; ambiguity => ask).
+  RET: process appears.
+U137 [OPEN] app.close (graceful via KWin/D-Bus; force-kill = Confirm).
+  RET: process exits.
+U138 [OPEN] flatpak.install (Confirm; shows source + permissions).
+  RET: flatpak list shows it; launches.
+U139 [OPEN] flatpak.uninstall (Confirm; keep-data default; data-delete = extra
+  confirm).
+  RET: removed per flatpak list.
+U140 [OPEN] rpm layered install/remove via rpm-ostree (system scope, Confirm+,
+  needs reboot - UI says so). NOT `dnf remove` (incompatible with ostree).
+  RET: `rpm-ostree status` pending deployment; after reboot package present/
+  absent.
+U141 [OPEN] base-image package removal (override remove): ExpertReview only.
+  RET: pending deployment shown; rollback restores.
+U142 [OPEN] app permissions (flatpak overrides) read + change (Confirm).
+  RET: `flatpak override --show`.
+--- Files ----------------------------------------------------------------------
+U143 [OPEN] file.search/read (index query; consent for personal paths).
+  RET: results match `find`/index.
+U144 [OPEN] file.create/write (user dirs; no overwrite without Confirm).
+  RET: file content on disk.
+U145 [OPEN] file.edit as diff-patch with pre-edit copy; undo.
+  RET: edit -> undo restores bytes.
+U146 [OPEN] file.move/copy/rename (overwrite = Confirm).
+  RET: filesystem state.
+U147 [OPEN] file.delete -> Trash by default; permanent delete = Confirm with
+  count/size; bulk = extra confirm with listing; protected paths refused.
+  RET: Trash contents; protected-path refusal log.
+U148 [OPEN] file.undo (restore from Trash / pre-edit copies).
+  RET: bytes identical after restore.
+U149 [OPEN] Protected path set with openat2 resolution; traversal/symlink tests.
+  RET: attack tests fail safely.
+--- Services / system ----------------------------------------------------------
+U150 [OPEN] services.list/status (all units, read) - already read-only.
+  RET: matches systemctl.
+U151 [OPEN] services.start/stop/restart/enable/disable via the EXISTING
+  pipeline capabilities; protected units unchanged (ssh/sshd, dbus, firewalld,
+  udevd...).
+  RET: restart a harmless test unit; protected unit refused.
+U152 [OPEN] journal read (scrubbed, size-capped, untrusted envelope).
+  RET: matches journalctl.
+U153 [OPEN] system.updates: check/stage/rollback PROPOSALS via bootc/rpm-ostree.
+  RET: staged deployment visible; rollback target visible.
+U154 [OPEN] firewall: status read; open/close port = proposal (Confirm+) via
+  firewalld D-Bus; lock-out guard with auto-revert.
+  RET: `firewall-cmd --list-all` before/after.
+U155 [OPEN] storage: usage/mounts read (udisks2); mount/unmount removable =
+  Confirm; format/partition = ExpertReview only.
+  RET: lsblk/findmnt; format refused without ExpertReview path (VM disk).
+U156 [OPEN] users: list read; create/delete/password = ExpertReview; never
+  voice-only.
+  RET: getent output; test user created and removed in VM.
+U157 [OPEN] time/locale/timezone/hostname via timedated/localed/hostnamed
+  (system scope).
+  RET: timedatectl/localectl output.
+U158 [OPEN] printers: list/default/add via CUPS.
+  RET: lpstat output (virtual printer).
+U159 [OPEN] firmware: fwupd list/updates read; install = ExpertReview.
+  RET: fwupdmgr get-devices (VM may show none; documented).
+--- Deep level (existing Tier-2/Phase-3 capabilities exposed, not changed) ------
+U160 [OPEN] sysctl read/write via existing Tier-2 capability (denylist intact).
+  RET: sysctl value changed and reverted in VM.
+U161 [OPEN] kernel module load/unload via existing allowlist + refcount guard.
+  RET: lsmod before/after (harmless module).
+U162 [OPEN] kernel args via existing Phase-3 capabilities (floor at Notify+).
+  RET: pending deployment karg shown; rollback.
+U163 [OPEN] boot: bootc/rpm-ostree status, rollback proposal, greenboot state
+  read.
+  RET: output matches tools.
+U164 [OPEN] security posture read: SELinux mode, Secure Boot state, TPM
+  presence, disk encryption state, firewall zone (read-only).
+  RET: matches getenforce/mokutil/tpm2 tools.
+U165 [OPEN] hardware inventory read (CPU, GPU, disks, sensors, batteries).
+  RET: matches lscpu/lspci/sensors.
+U166 [OPEN] window management (KWin D-Bus/scripting): list, focus, move, snap,
+  minimize, virtual desktops.
+  RET: window geometry via KWin query + screenshot.
+U167 [OPEN] clipboard/screenshot (per-use consent).
+  RET: indicator + file produced.
+U168 [OPEN] media control (MPRIS).
+  RET: fake player state changes.
+U169 [OPEN] alarms/timers/reminders (systemd user timers or KDE equivalent;
+  mechanism memo first); survive reboot.
+  RET: set -> reboot -> fires (journal + notification).
+U170 [OPEN] Domain acceptance pack: coverage matrix rerun (U087), RET log per
+  capability, list of capabilities still SCAFFOLD/PLANNED.
+  RET: pack in docs/evidence/M4/.
+
+
+================================================================================
+M5  EXECUTION SWITCH + AUTONOMY  (U171-U195)
+================================================================================
+This milestone is how the CLI/Aria go from "see and propose" to "do". It is
+gated on Aditya on purpose. Everything BEFORE U171 is observe/preview/draft.
+
+U171 [OWNER-AUTH] THE EXECUTION SWITCH (B1)
+  a) Agent reads the governance-guard comment above run_conversational_
+     preview() in ai-engineer.rs and tells Aditya the EXACT authorization
+     phrase it requires.
+  b) Aditya types that phrase in a standalone message. Nothing below U171
+     (U172-U195) is applied before that.
+  c) Agent prepares the change as docs/owner-auth/U171.patch with tests:
+     approved drafts from the Intent Broker (and only from it) may enter the
+     existing pipeline (Policy -> Reviewer -> Implementer -> Verifier) with
+     approved:true bound to ONE plan hash.
+  RET (after authorization): approve a draft in the GUI -> real change observed
+  (e.g., test unit restarted) -> Work Log entry; unapproved draft -> nothing
+  happens.
+U172 [OPEN] Approval binding: approval token = (plan hash, user, expiry, origin,
+  single use). Replays, edits to the plan, and expiry all fail.
+  RET: replay/modify/expire tests over the real socket.
+U173 [OPEN] Approval UX: on-screen card with steps, preview diff, blast radius,
+  who asked (CLI/Aria/user), timeout; same card everywhere.
+  RET: screenshot + click-through test.
+U174 [OPEN] Voice/CLI confirmation rules: Confirm+ requires an on-screen action
+  (click/keypress); ExpertReview adds re-auth (password/passkey).
+  RET: injected "yes" audio does not approve.
+U175 [OPEN] Two-phase execution: reserve -> preview verified -> execute ->
+  verify -> commit/undo; failure path tested.
+  RET: induced failure triggers rollback in VM.
+U176 [OPEN] Verification step per capability: independent check after execution
+  (e.g., nmcli reports the state requested).
+  RET: negative test: backend lies -> verifier flags.
+U177 [DESIGN-FIRST] AUTONOMY DIAL (the "powerful but safe" feature)
+  a) Per domain (network, apps, files, settings, system) the user picks:
+     ASK-EVERYTHING / ASK-RISKY (default) / AUTO-LOW-RISK / POWER-USER.
+  b) Reviewer red lines and ExpertReview items are NEVER auto; destructive-
+     bulk, boot/kernel, storage format, firewall opens, user accounts always
+     ask.
+  c) Any change to policy tiers = OWNER-AUTH (policy.rs is restricted).
+  RET: design approved; owner decides whether to build U178.
+U178 [OWNER-AUTH] Autonomy dial implementation (patch file only until named).
+  RET: after authorization, each level behaves per table in VM tests.
+U179 [OPEN] Session grants (U103) built on approval binding: scoped, expiring,
+  revocable; constrained params; Reviewer/Policy still run.
+  RET: grant expires; out-of-scope request asks again.
+U180 [OPEN] Permission center data model: who (CLI/Aria/MCP client) can do
+  what, since when, last used.
+  RET: ledger reflects real actions.
+U181 [OPEN] Rollback journal UI model: "undo last N actions" per domain.
+  RET: undo restores real state.
+U182 [OPEN] Safe Mode for AI: one switch disabling all Control Fabric ACT
+  planes (observe may stay) without touching the kill-switch.
+  RET: actions refused in safe mode (VM).
+U183 [OPEN] Kill-switch from GUI + hotkey; semantic parity with the existing
+  switch (immediate SIGKILL).
+  RET: timing test; fabric halts.
+U184 [OPEN] Audit export (local file, user-readable) of all fabric actions.
+  RET: export validates against Work Log.
+U185 [OPEN] Rate limits per origin and per capability class (e.g., max 3
+  network changes/min).
+  RET: limit trips; message is clear.
+U186 [OPEN] Dead-man auto-revert for network/firewall/display changes.
+  RET: lock-out simulated; revert fires.
+U187 [OPEN] Dry-run everywhere: `dosctl preview` for every capability; the
+  GUI "What will happen?" button.
+  RET: preview equals executed effect in tests.
+U188 [OPEN] Idempotent re-apply and conflict handling (two clients racing).
+  RET: race test.
+U189 [OPEN] Resource ceilings for actions (time, output size, children).
+  RET: runaway child killed at limit.
+U190 [OPEN] Secret scrubbing in all fabric outputs and logs.
+  RET: planted secret never appears.
+U191 [OPEN] Reviewer-style independent check for user-scope actions? Evaluate
+  (memo): which user-scope actions deserve a second check.
+  RET: memo.
+U192 [OPEN] Prompt-injection regression corpus run against the live fabric.
+  RET: pass/fail table; nothing escalates.
+U193 [OPEN] Failure-injection matrix for the fabric (kill NM, drop D-Bus, fill
+  disk, clock jump).
+  RET: matrix with real outcomes.
+U194 [OPEN] Execution path tests for each M4 capability class (one real
+  approved action per domain).
+  RET: per-domain RET logs.
+U195 [OPEN] M5 acceptance pack.
+  RET: docs/evidence/M5/.
+
+================================================================================
+M6  GUI SURFACES  (U196-U235)
+================================================================================
+Stack suggestion (confirm in U196): Qt6/QML (Kirigami) front-ends talking to
+the Rust daemons over D-Bus/sockets, so apps look native on Plasma.
+
+U196 [DESIGN-FIRST] GUI stack + app list
+  a) QML apps: `directioner-shell` (tray + quick panel + approval cards),
+     `directioner-settings` (KCM module), `directioner-cockpit`, OOBE/Welcome.
+  b) Packaging as RPMs; theming from tokens.
+  RET: design approved.
+U197 [OPEN] Qt6/QML toolchain in the image + a hello-world app launching.
+  RET: screenshot.
+U198 [OPEN] Tray app: account state, quota, mic-in-use, health, cloud, AI
+  activity indicator.
+  RET: screenshots of each state.
+U199 [OPEN] Approval card component used by shell, settings, cockpit.
+  RET: a11y + screenshot tests.
+U200 [OPEN] Pending-actions queue view (CLI/Aria/MCP proposals).
+  RET: real draft appears.
+U201 [OPEN] Quick panel (spotlight-like): apps, files, settings, intents, "Ask".
+  RET: global shortcut opens it (KGlobalAccel registered).
+U202 [OPEN] Global shortcut registry (user-bindable -> intents; conflicts).
+  RET: shortcut triggers a real preview.
+U203 [OPEN] System Settings module "Directioner" skeleton.
+  RET: appears in System Settings.
+U204 [OPEN] Settings: Account page (login/devices/plan/quota; states).
+  RET: screenshots per state against the real accountd.
+U205 [OPEN] Settings: Cloud page.
+  RET: screenshots.
+U206 [OPEN] Settings: AI & Voice page (Aria on/off, wake word, mic, data).
+  RET: toggles change real config.
+U207 [OPEN] Settings: Privacy & Permissions center (consent ledger, grants,
+  telemetry off, egress list).
+  RET: reflects real grants.
+U208 [OPEN] Settings: AI Control page (autonomy dial, safe mode, kill switch,
+  audit export).
+  RET: changes real behavior (after U171/U178).
+U209 [OPEN] Settings: Updates page (bootc status, channel, rollback proposal).
+  RET: matches `rpm-ostree status`.
+U210 [OPEN] Settings: Capability catalog browser ("what can the AI do here").
+  RET: matches `dosctl catalog list`.
+U211 [OPEN] Cockpit app: health score, incidents, timeline, Work Log viewer
+  with verification badge.
+  RET: real data screenshots.
+U212 [OPEN] OOBE wizard: language, keyboard, network (real Wi-Fi/Ethernet),
+  account (skippable), privacy choices (all OFF), theme, AI/voice explanation.
+  RET: scripted run to desktop in VM + screenshots.
+U213 [OPEN] Welcome tour (offline).
+  RET: screenshots.
+U214 [OPEN] Notifications for AI events (grouped, DND aware).
+  RET: real events produce notifications.
+U215 [OPEN] Aria orb window + states (via layer-shell-qt or fallback; verify).
+  RET: screenshots per state.
+U216 [OPEN] Screen-edge glow overlay (click-through, reduced motion; frame time
+  measured in VM).
+  RET: screenshots + numbers.
+U217 [OPEN] Mic-in-use and camera indicators always visible.
+  RET: screenshot during capture.
+U218 [OPEN] Launcher/file manager integration: context-menu "Ask Directioner",
+  "Sync", "Version history".
+  RET: menu entries work.
+U219 [OPEN] App store surface: curated Flatpak browsing/install/uninstall via
+  Discover or own UI, wired to U138/U139 with approval cards.
+  RET: install + uninstall in GUI.
+U220 [OPEN] Update UI: staged update, reboot prompt, rollback.
+  RET: real staged deployment.
+U221 [OPEN] Error/empty/loading/offline states for every Directioner surface.
+  RET: state gallery screenshots.
+U222 [OPEN] Dark/light + auto switch; HiDPI/fractional scaling tests.
+  RET: screenshots 100/150/200%.
+U223 [OPEN] Accessibility pass (screen reader names, focus, contrast measured,
+  keyboard-only OOBE/Settings).
+  RET: audit log + contrast numbers.
+U224 [OPEN] Motion tokens (durations/easing) and reduced-motion honored.
+  RET: test with setting on/off.
+U225 [OPEN] i18n scaffold (gettext/Qt linguist); English baseline.
+  RET: extraction works.
+U226 [OPEN] Window rules/animations defaults tuned (calm, fast).
+  RET: frame-time numbers.
+U227 [OPEN] Lock screen widgets (media, notification privacy default hidden).
+  RET: screenshots.
+U228 [OPEN] Login screen: account hint, accessibility menu.
+  RET: screenshot.
+U229 [OPEN] Multi-monitor defaults.
+  RET: two-display VM test.
+U230 [OPEN] Touch/pen/gesture defaults.
+  RET: checklist.
+U231 [OPEN] Visual quality bars scored for each screen (contrast, spacing
+  scale, type scale, icons, states, focus) - script + manual review.
+  RET: score table; failures fixed or listed.
+U232 [OPEN] Visual gallery (static HTML + screenshots, local) of every screen
+  and state, dark+light.
+  RET: gallery committed for Aditya.
+U233 [OPEN] GUI performance baseline (idle RAM/CPU, time-to-interactive) in VM.
+  RET: numbers only.
+U234 [OPEN] Screenshot regression suite in CI (golden compare with tolerance).
+  RET: CI run.
+U235 [OWNER-AUTH] Aditya reviews the gallery and the ISO desktop; notes become
+  tasks. M6 is not REAL-DONE until he accepts.
+  RET: Aditya's notes.
+
+
+================================================================================
+M7  ACCOUNT, CLOUD, BACKEND (REAL)  (U236-U255)
+================================================================================
+OS side only. Backend facts come from the backend agent's docs; never invent
+endpoints. Backend -> OS capability broker is `not_integrated` and stays a
+BACKEND-ASK until Aditya decides (the backend never pushes commands to a
+device: REJECTED list).
+
+U236 [RESEARCH-FIRST] Verify the real login flow
+  a) Read Beyonders-Backend docs/OpenAPI: Supabase Auth + JWKS. Is there a
+     device-code/PKCE flow usable from an OS daemon? If not, list the minimum
+     backend ask.
+  RET: memo with file/line citations; BACKEND-ASK list if gaps.
+U237 [BACKEND-ASK] Device login endpoint(s) if missing (device code or PKCE with
+  loopback). Written as a requirements note for the backend agent only.
+  RET: note in docs/integration/backend-asks.md.
+U238 [OPEN] accountd real login against the backend (dev/staging URL from
+  config; no production keys in the image).
+  RET: log in from the Settings page in VM; token stored in the keyring.
+U239 [OPEN] Token storage via Secret Service/kernel keyring; refresh; logout
+  wipes. No custom crypto (RR5).
+  RET: `secret-tool`/keyctl shows entry; after logout absent.
+U240 [OPEN] Offline-first: OS fully usable logged out and offline.
+  RET: airplane-mode boot to desktop; all non-cloud features work.
+U241 [OPEN] Entitlements/tier read (Free/Standard/Pro/Ultimate) from backend;
+  cached with expiry; UI shows plan and quota.
+  RET: screenshots against the real/staging backend.
+U242 [OPEN] Credits/quota display and reserve/settle for cloud AI calls made by
+  the OS (Aria, Quick panel "Ask"). Prices/credits are unset: placeholders
+  labeled, no invented numbers.
+  RET: request -> reservation -> settlement observed in backend logs.
+U243 [OPEN] Model gateway client (Groq/Gemini via the backend); streaming NDJSON;
+  cancellation.
+  RET: streamed answer in the Quick panel; cancel stops tokens.
+U244 [OPEN] Session limits per tier: Pro 3 / Ultimate 5 OS sessions running
+  AI-Engineer; enforcement is the backend's, OS shows state.
+  RET: sixth session shows the backend's refusal.
+U245 [OPEN] Device registration + device list in Settings.
+  RET: device appears in backend + UI; remove works.
+U246 [OPEN] Cloud sync design (settings/files) - DESIGN-FIRST sub-memo: what is
+  synced, E2E encryption via vetted libs, conflict rules. Default OFF (B14).
+  RET: design approved.
+U247 [OPEN] Cloud features strictly opt-in with an egress list (domains, data
+  classes) shown in Settings.
+  RET: packet capture in VM shows no egress when everything is off.
+U248 [OPEN] Backend outage behavior: degrade gracefully; cached plan; clear UI.
+  RET: block backend in VM; screenshots.
+U249 [OPEN] Error mapping from backend problem+json to UI messages.
+  RET: golden strings.
+U250 [OPEN] Clock-skew and JWT expiry handling.
+  RET: clock-jump test.
+U251 [OPEN] Account deletion/export entry points link to the backend flows.
+  RET: buttons reach the real endpoints on staging.
+U252 [OPEN] Beyonders single-account SSO across OS/CLI/Aria design (shared token
+  broker on the device so the CLI and Aria do not each log in).
+  RET: design approved (DESIGN-FIRST).
+U253 [OPEN] Token broker implementation per U252.
+  RET: CLI and Aria obtain scoped tokens from the broker in VM.
+U254 [OPEN] Contract tests against the backend OpenAPI (generated client).
+  RET: CI contract run.
+U255 [OPEN] M7 acceptance pack.
+  RET: docs/evidence/M7/.
+
+================================================================================
+M8  DIRECTIONER CLI INTEGRATION  (U256-U270)   [WAITING-ON-REPOS where noted]
+================================================================================
+The CLI is its own product (AI-Engineer, `directioner`). The OS agent only
+builds the OS side: packaging, the Control Fabric client contract, session
+plumbing. Do not edit the CLI repo.
+
+U256 [OPEN] Package the CLI RPM/Flatpak/toolbox decision (memo) and ship it on
+  the image if the CLI agent provides an artifact. [WAITING-ON-REPOS]
+  RET: `directioner --version` in VM.
+U257 [OPEN] CLI <-> Control Fabric contract doc (what CLI may call: observe,
+  catalog, preview, submit-draft, subscribe).
+  RET: doc + `dosctl` conformance tests.
+U258 [OPEN] CLI as a registered client in the consent ledger with a distinct
+  identity; default grants = level 0/1 read.
+  RET: ledger shows CLI; level 2 requires consent.
+U259 [OPEN] MCP server exposure (U083) wired as the CLI's OS tool source.
+  RET: CLI lists OS tools and reads network state.
+U260 [OPEN] CLI "ask the OS to do X": proposal -> approval card on screen.
+  RET: CLI proposes Wi-Fi off; card appears; approve -> effect (after U171).
+U261 [OPEN] Demonstration journeys (each with RET): turn Wi-Fi off/on; change
+  theme; install/uninstall a Flatpak; delete a file to Trash and undo;
+  restart a service; stage an update; open a firewall port with auto-revert.
+  RET: scripted E2E in VM for each.
+U262 [OPEN] AI-Engineer sessions inside OS (Pro 3 / Ultimate 5) UI: list,
+  start, stop, resource ceilings.
+  RET: screenshots; limits respected.
+U263 [OPEN] Workspace trust: the CLI can edit only project dirs the user opens;
+  OS-level actions never via raw shell.
+  RET: attempt outside scope refused.
+U264 [OPEN] BYOK keys for the CLI live in the keyring only (B11).
+  RET: scan finds no key on disk.
+U265 [OPEN] Local-model fallback hook (PROPOSED X): CLI/Aria can use a local
+  model when offline. Design only here.
+  RET: memo.
+U266 [OPEN] CLI telemetry OFF by default, visible in Privacy center.
+  RET: egress test.
+U267 [OPEN] CLI crash isolation (cgroup limits; cannot starve the desktop).
+  RET: stress test keeps the desktop responsive (frame-time numbers).
+U268 [OPEN] CLI update channel follows the OS channel decisions (memo).
+  RET: memo.
+U269 [OPEN] CLI docs for OS integration.
+  RET: docs reviewed against code.
+U270 [OPEN] M8 acceptance pack.
+  RET: docs/evidence/M8/.
+
+================================================================================
+M9  ARIA INTEGRATION  (U271-U285)   [WAITING-ON-REPOS where noted]
+================================================================================
+Aria is an OS feature in all tiers (rising capability), not a product. OS side:
+mic/privacy plumbing, overlay, Control Fabric client.
+
+U271 [OPEN] Aria packaged/enabled but OFF by default; first-run consent.
+  RET: fresh VM: Aria inactive.
+U272 [OPEN] Wake-word service lifecycle (WakeWord folder role to be confirmed
+  in U003); audio never leaves device unless cloud voice is ON.
+  RET: egress test with cloud voice OFF.
+U273 [OPEN] Mic privacy: hardware/soft mute honored, indicator (U217), push-
+  to-talk fallback.
+  RET: muted mic -> no capture.
+U274 [OPEN] Aria -> Intent Broker only (B9); identity + consent entry.
+  RET: direct ai-capabilityd attempt denied.
+U275 [OPEN] Voice flows with RET: alarms/timers (U169), open app, volume, Wi-Fi,
+  brightness, DND, accessibility toggles, file delete -> Trash with spoken
+  confirmation for low-risk, ON-SCREEN confirm for Confirm+ (U174).
+  RET: scripted voice/text injection tests in VM.
+U276 [OPEN] Delegation: Aria hands complex work to AI-Engineer as a draft task
+  with visible progress.
+  RET: handoff visible in the tray.
+U277 [OPEN] Overlay (U215/U216) states bound to real Aria state.
+  RET: screenshots per state from a live session.
+U278 [OPEN] Accessibility-first modes (screen-reader coexistence, captions).
+  RET: Orca + Aria coexist test.
+U279 [OPEN] Language/locale handling for voice (list supported; no overclaim).
+  RET: table.
+U280 [OPEN] Offline Aria features (alarms, local settings) with no network.
+  RET: offline run.
+U281 [OPEN] Tier behavior: Free/Standard/Pro/Ultimate capability levels read
+  from entitlements; levels unset = placeholders.
+  RET: screenshots per tier on staging.
+U282 [OPEN] Transcript/audio retention defaults (none) and delete controls.
+  RET: files absent after session.
+U283 [OPEN] Prompt-injection from audio/text-on-screen: untrusted envelope.
+  RET: corpus run (U192 extension).
+U284 [OPEN] Aria docs + privacy page text reviewed against behavior.
+  RET: review log.
+U285 [OPEN] M9 acceptance pack.
+  RET: docs/evidence/M9/.
+
+================================================================================
+M10  SECURITY + TRUST (REAL)  (U286-U300)
+================================================================================
+U286 [OPEN] Secure Boot: Fedora shim path verified; document custom-key option
+  only as a design (no custom keys now).
+  RET: mokutil output in VM with SB.
+U287 [OPEN] Disk encryption at install (LUKS2) option; TPM2 auto-unlock design
+  using systemd-cryptenroll (vetted).
+  RET: encrypted VM install boots with passphrase.
+U288 [OPEN] SELinux Enforcing across all images; AVC audit of the full RET run.
+  RET: ausearch output; policy fixes in new modules only.
+U289 [OPEN] Image signing/verification: use bootc/ostree/cosign facilities;
+  no homegrown scheme. Private keys never in repo.
+  RET: signed image verifies in VM; tampered image rejected.
+U290 [OPEN] SBOM + vulnerability scan on the built image (syft/grype-class; verify
+  tooling). Results reported, not hidden.
+  RET: report artifact.
+U291 [OPEN] Rootless/default-deny firewall zone baseline; verify listening ports.
+  RET: `ss -tulpn` in VM; expected set only.
+U292 [OPEN] Default accounts: no default passwords in release; first-user via
+  OOBE.
+  RET: release scan.
+U293 [OPEN] sudo/polkit policy review (documented table of all Directioner
+  rules).
+  RET: table + tests.
+U294 [OPEN] Service sandboxing review for every shipped daemon (U096 scores
+  recorded).
+  RET: table.
+U295 [OPEN] Secrets scanning in repo + image (gitleaks-class).
+  RET: scan outputs.
+U296 [OPEN] Dependency audit (cargo-audit/deny, npm audit where relevant).
+  RET: results.
+U297 [OPEN] Threat model refresh for the Control Fabric + MCP; red-team
+  scenarios executed manually/scripted.
+  RET: scenario table with outcomes.
+U298 [OPEN] Privacy dashboard accuracy test: UI claims == measured behavior.
+  RET: diff report.
+U299 [OPEN] Incident drill: kill-switch, safe mode, rollback in a live VM.
+  RET: timed drill log.
+U300 [OPEN] M10 acceptance pack with all known weaknesses listed.
+  RET: docs/evidence/M10/.
+
+================================================================================
+M11  INSTALL, UPDATE, ROLLBACK, HARDWARE  (U301-U315)
+================================================================================
+U301 [OPEN] Installer UX end-to-end (language, disk, encryption, user, summary).
+  RET: scripted + screenshots.
+U302 [OPEN] Update channels (stable/beta/dev) as image tags; bootc upgrade works
+  from a private registry/CI artifact for Aditya's tests (B4: no public push).
+  RET: staged update seen in GUI (U220).
+U303 [RESEARCH-FIRST] Codecs/non-free policy: what can ship, what the user
+  opts into; licensing memo with sources.
+  RET: memo.
+U304 [OPEN] Rollback test: bad update -> greenboot auto-rollback; manual
+  rollback from the GUI.
+  RET: VM boot-fail injection -> automatic return to the old deployment.
+U305 [OPEN] Offline/air-gapped update via local OCI archive.
+  RET: update applied with the network disabled.
+U306 [OPEN] Hardware matrix: documented classes (UEFI laptops/desktops; Intel/
+  AMD/NVIDIA) with known-issues; NVIDIA path memo.
+  RET: memo; claims limited to what was tested.
+U307 [OPEN] Wi-Fi/BT firmware inclusion policy.
+  RET: package list.
+U308 [OPEN] Laptop features: suspend/resume, lid, brightness keys, touchpad,
+  battery (what VM can test; rest = Aditya's checklist).
+  RET: VM subset + checklist doc.
+U309 [OPEN] USB write instructions + checksum verification page.
+  RET: doc reviewed.
+U310 [OPEN] Dual-boot/Windows coexistence notes (no auto-resizing claims).
+  RET: memo.
+U311 [OPEN] Live/try mode decision (ISO live session vs install-only).
+  RET: memo; owner decides.
+U312 [OPEN] Recovery: boot to previous deployment, rescue shell, "Recovery
+  assistant" design (PROPOSED).
+  RET: rescue boot test.
+U313 [OPEN] Disk/space management (ostree prune, flatpak cleanup) surfaced in
+  Settings.
+  RET: space reclaimed in VM.
+U314 [OPEN] Time travel/snapshots design for user data (btrfs/snapper-class;
+  decide FS default).
+  RET: memo + owner decision.
+U315 [OPEN] M11 acceptance pack.
+  RET: docs/evidence/M11/.
+
+================================================================================
+M12  END-TO-END QA + RELEASE CANDIDATE  (U316-U325)
+================================================================================
+U316 [OPEN] Full journey suite in QEMU (install -> OOBE -> login -> use
+  Control Fabric -> update -> rollback). Nightly in CI.
+  RET: green run id + screenshot reel.
+U317 [OPEN] Soak test 24h in VM (memory/CPU of all daemons).
+  RET: graphs/numbers.
+U318 [OPEN] Fresh-eyes UX walk by a second agent without prior context; findings
+  filed as tasks.
+  RET: findings list.
+U319 [OPEN] Regression run of every RET in docs/evidence (script re-executes).
+  RET: pass/fail table.
+U320 [OPEN] Coverage matrix final (U087) + honest statement of what the AI can
+  and cannot control.
+  RET: published in docs/ (local), numbers only.
+U321 [OPEN] Known-issues + limitations page.
+  RET: reviewed against evidence.
+U322 [OPEN] Claims audit: every marketing/UI/docs claim vs banned words (E) and
+  evidence.
+  RET: audit table.
+U323 [OPEN] RC image set (ISO/VMDK/qcow2) with hashes, SBOM, evidence bundle.
+  RET: private CI artifacts.
+U324 [OWNER-AUTH] Aditya's RC review; his decisions become the next plan.
+  RET: Aditya's notes.
+U325 [OPEN] Retrospective + plan-status final; mark REAL-DONE only where RET
+  passed.
+  RET: plan-status.md.
+
+
+================================================================================
+X  ULTIMATE EXTRAS  (U326-U345)   [PROPOSED - each needs Aditya's explicit yes]
+================================================================================
+Ideas to make the product stand out. None starts without a "yes U###".
+
+U326 [PROPOSED] Autonomy Dial polish: per-app and per-domain presets, "Teach
+  me" mode that explains every action before doing it.
+U327 [PROPOSED] Time Travel: one-click restore of system settings AND user files
+  to a prior point (builds on U181/U314).
+U328 [PROPOSED] "Why did that happen?" - ask the OS to explain any recent change
+  from the Work Log + journal (read-only, local).
+U329 [PROPOSED] Permission center "nutrition label" for every app and every AI
+  client (what it can see/do, last used).
+U330 [PROPOSED] Local-model fallback (small on-device model for offline Aria/CLI
+  basics; hardware requirements measured).
+U331 [PROPOSED] Windows migration assistant (import files, browser data,
+  Wi-Fi names; never passwords without consent; documented limits).
+U332 [PROPOSED] Curated Directioner Store view (Flatpak subset, human reviewed
+  list, permission summaries).
+U333 [PROPOSED] Guest and Kids modes (restricted capability catalog; separate
+  Aria profile).
+U334 [PROPOSED] Game mode (power profile, DND, compositor tweaks; Steam/Proton
+  via Flatpak; measured, not claimed).
+U335 [PROPOSED] Recovery assistant: guided repair UI using rollback + safe mode
+  + log explanation.
+U336 [PROPOSED] Smart Focus modes (work/study/sleep) bundling DND, display,
+  audio, notifications - all as catalog intents with undo.
+U337 [PROPOSED] Automation recipes ("when I plug in headphones...") that are
+  stored declaratively and run only through the catalog/approval rules.
+U338 [PROPOSED] Device-to-device handoff via the Beyonders account (opt-in).
+U339 [PROPOSED] Phone companion notifications/clipboard (opt-in; design first).
+U340 [PROPOSED] Power report: per-app energy view and one-click battery tune.
+U341 [PROPOSED] Accessibility Pro pack: voice-only OS control profile, eye/
+  switch control research.
+U342 [PROPOSED] Developer mode: toolbox + AI-Engineer workspace templates,
+  containers with resource caps, one-click project environments.
+U343 [PROPOSED] Self-service diagnostics bundle (scrubbed) the user can send.
+U344 [PROPOSED] Theme marketplace (local packs; signed; no remote code).
+U345 [PROPOSED] Enterprise/managed profile design (policy lock-down, audit
+  export) - memo only.
+
+================================================================================
+DEFINITION OF DONE  (whole plan)
+================================================================================
+DD1  Aditya downloads the private ISO artifact, boots it in VMware/QEMU or on a
+     UEFI PC, installs, and sees a graphical Directioner OS desktop (U040).
+DD2  Rebrand verified inside the image, remaining Fedora strings explained (U060).
+DD3  The CLI, on that desktop, can: read live system state; list the catalog;
+     propose actions that appear as approval cards; and, after Aditya's U171
+     authorization, perform the journeys in U261 with real, independently
+     observed effects and undo.
+DD4  Coverage matrix exists and is honest (U087/U320). No "everything" claims.
+DD5  Every REAL-DONE task has commit hash, green CI run id, RET log (and a
+     screenshot if visual).
+DD6  Safety intact: kill-switch, SELinux Enforcing, 0600 sockets, B1/B2/B4.
+DD7  Remaining SCAFFOLD items are listed in docs/scaffold-register.md.
+
+================================================================================
+OWNER DECISIONS NEEDED (Aditya)
+================================================================================
+Q1  Desktop: KDE Plasma (default proposed) or GNOME? Veto before U009.
+Q2  Typed authorization phrase for U171 (agent will quote it from the guard
+    comment). Do you want to enable the execution switch at all, and when?
+Q3  Autonomy dial: should POWER-USER level exist (U177)?
+Q4  Live/try mode in the ISO (U311)?
+Q5  Default filesystem / snapshots (U314)?
+Q6  Codecs/non-free policy (U303)?
+Q7  Which PROPOSED extras (U326-U345) do you want?
+Q8  Backend asks (U237, U252): approve passing them to the backend agent?
+Q9  Confirm folder roles (Beyonders-Backend, Beyonders-Frontend, WakeWord).
+Q10 Housekeeping: check CI on PR #41; push the unpushed CLI commits; decide on
+    the public server on ports 12000/12001; revoke the exposed GitHub token;
+    provide the CLI and Aria repos.
+
+================================================================================
+HOW TO START (for the agent)
+================================================================================
+Read this file fully. Report back in one message: toolchain status (U001),
+state of main (U002), and the folder map (U003). Then wait for "next".
+Aditya may say "run M1" to run the whole first-ISO milestone; stop at the first
+red RET.
+================================================================================
+END OF PLAN v3
+================================================================================
